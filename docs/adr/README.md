@@ -16,11 +16,13 @@ ADR 记录一项重要架构决策：当时面对什么问题、考虑过哪些�
 | [ADR-001](ADR-001-modular-monolith.md) | 采用模块化单体，而不是微服务 | 提议 |
 | [ADR-002](ADR-002-database-mysql.md) | 业务数据使用 MySQL 8 | 提议 |
 | [ADR-003](ADR-003-extension-rule-execution.md) | 拓展评分规则的服务端执行方式 | 提议 |
-| [ADR-004](ADR-004-data-access-mybatis.md) | 数据访问使用 MyBatis | 提议 |
+| [ADR-004](ADR-004-data-access-mybatis.md) | 数据访问使用 MyBatis（关键路径手写 SQL，简单增删改查可用 MyBatis-Plus） | 提议 |
 | [ADR-005](ADR-005-session-auth.md) | 浏览器使用服务端会话，设备使用不透明令牌 | 提议 |
 | [ADR-006](ADR-006-frontend-reuse.md) | 复用旧 Web 前端，以源码分叉方式改造 | 提议 |
 | [ADR-007](ADR-007-file-storage.md) | 文件存储使用本地磁盘与内容寻址，私有文件由 Java 授权、Nginx 发送 | 提议 |
 | [ADR-008](ADR-008-data-migration.md) | 旧数据采用停机一次性迁移，以接口输出对比验证 | 提议 |
+| [ADR-009](ADR-009-redis.md) | Redis 用于 AI 短期对话记忆与限流计数 | 提议 |
+| [ADR-010](ADR-010-rabbitmq-outbox.md) | RabbitMQ 处理 AI 评分与通知任务，配合事务发件箱 | 提议 |
 
 ## 模板
 
