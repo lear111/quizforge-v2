@@ -90,6 +90,8 @@ cloud.treenewbee.quizforge
 
 **唯一的例外是规则执行服务（rule-runner）。** 它独立部署，原因不是业务拆分，而是语言和安全隔离（见 [ADR-003](ADR-003-extension-rule-execution.md)）。它不保存任何数据，所以不会带来跨服务的数据一致性问题。
 
+**Redis 与 RabbitMQ 不改变这一决策。** 它们是基础设施组件，分别用于短期数据与异步任务（[ADR-009](ADR-009-redis.md)、[ADR-010](ADR-010-rabbitmq-outbox.md)），业务代码仍在同一个应用中，模块之间仍直接调用接口，不通过消息解耦。
+
 ### 什么时候考虑拆分
 
 满足以下任一条件，并有压测或监控数据支持时，再提出新的 ADR：
