@@ -1,6 +1,6 @@
 # 数据库设计
 
-> **文档版本：** v0.2（草案，待评审）
+> **文档版本：** v0.3（草案，待评审）
 > **日期：** 2026-10-27
 > **依据：** 需求 v1.1，[ADR-001](../adr/ADR-001-modular-monolith.md)、[ADR-002](../adr/ADR-002-database-mysql.md)、[ADR-004](../adr/ADR-004-data-access-mybatis.md)、[ADR-005](../adr/ADR-005-session-auth.md)、[ADR-007](../adr/ADR-007-file-storage.md)，[遗留契约](../legacy/01-contracts.md)，[旧数据字典](../legacy/02-data-dictionary.md)
 
@@ -269,6 +269,7 @@ CREATE TABLE content_question (
   outline           JSON          NULL,
   listening         JSON          NULL,
   data              JSON          NOT NULL,        -- 原始题目数据，包含标准答案，绝不直接返回前端
+  max_score         DECIMAL(12,4) NOT NULL,        -- 导入时由 scoreBatch 计算（rule-runner 协议第 6 节）
   content_sha256    BINARY(32)    NOT NULL,        -- 题目内容版本（契约中的 contentVersion）
   PRIMARY KEY (bank_id, question_id),
   UNIQUE KEY uk_question_position (bank_id, position)
@@ -330,6 +331,10 @@ CREATE TABLE practice_question_state (
   answer_state           JSON          NULL,       -- 小题即时作答状态（API 1.3）
   result                 JSON          NULL,       -- 评分结果
   grading_status         ENUM('none','pending','graded') NOT NULL DEFAULT 'none',
+  score                  DECIMAL(12,4) NULL,       -- 写时计算：提交后的得分（待评分为 NULL）
+  max_score              DECIMAL(12,4) NULL,       -- 写时计算：getScore 返回的满分
+  outline_states         JSON          NULL,       -- 写时计算：小题状态
+  projection             JSON          NULL,       -- 提交后的投影结果，读已提交题目时直接返回
   revision               BIGINT        NOT NULL,   -- 乐观锁（契约中的 revision）
   submission_generation  INT           NOT NULL DEFAULT 0,
   grading_generation     INT           NOT NULL DEFAULT 0,   -- 防止过期的 AI 评分结果覆盖新结果
@@ -480,11 +485,11 @@ INSERT INTO practice_request_receipt (...) VALUES (...);
 
 ```text
 1. 不开事务：读取题目数据与当前作答状态（含 revision）
-2. 不开事务：调用 rule-runner 的 validateAnswer + grade（可能耗时数百毫秒）
+2. 不开事务：调用 rule-runner 的 submit（含作答校验、评分、getScore 与提交后投影，可能耗时数百毫秒）
 3. 开事务：
    a. SELECT ... FROM practice_context WHERE id = ? AND user_id = ? FOR UPDATE
       —— 锁住上下文，保证“第一次提交时创建轮次”只发生一次
-   b. 条件更新 practice_question_state（WHERE revision = 第 1 步读到的值）
+   b. 条件更新 practice_question_state（WHERE revision = 第 1 步读到的值），同时写入 result、score、outline_states、projection
       —— 0 行：评分期间有人改了作答 → 409，前端刷新后重试
    c. 若 current_round_id 为空：创建 practice_round 并写回上下文
    d. 写入 / 更新 practice_round_question
@@ -505,21 +510,37 @@ SELECT ... FROM content_question  WHERE bank_id = ? AND question_id = ?;        
 SELECT ... FROM practice_question_state WHERE context_id = ? AND question_id = ? AND user_id = ?;
 ```
 
-然后用“题目内容哈希 + 拓展摘要”查投影缓存，未命中再调用 rule-runner。前端带 `X-QuizForge-Question-Stamp` 且未变化时，直接返回 `{unchanged:true}`，跳过投影。三次查询都走主键或唯一索引。
+已提交的题目直接返回 `projection` 列；未提交的题目用“题目内容哈希 + 拓展摘要”查投影缓存，未命中再调用 rule-runner。前端带 `X-QuizForge-Question-Stamp` 且未变化时，直接返回 `{unchanged:true}`，跳过投影。三次查询都走主键或唯一索引。
 
-### 5.4 再练一次（restart）
+### 5.4 得分汇总
+
+分数在写入时已经算好（rule-runner 协议第 6 节），汇总不需要调用 rule-runner：
+
+```sql
+SELECT COUNT(*)                                             AS question_count,
+       SUM(COALESCE(s.status = 'submitted', 0))             AS submitted_count,
+       SUM(COALESCE(s.grading_status = 'pending', 0))       AS pending_count,
+       SUM(CASE WHEN s.grading_status = 'graded' THEN s.score ELSE 0 END) AS score,
+       SUM(COALESCE(s.max_score, q.max_score))              AS max_score
+  FROM content_question q
+  LEFT JOIN practice_question_state s
+         ON s.context_id = ? AND s.user_id = ? AND s.question_id = q.question_id
+ WHERE q.bank_id = ?;
+```
+
+### 5.5 再练一次（restart）
 
 在一个事务中：锁上下文 → 将该上下文的全部作答状态更新为 `unanswered`、清空作答与结果、`revision + 1` → 删除白板 → `current_round_id = NULL`、`progress_version + 1` → 写回执。
 
 这里用**更新而不是删除**作答行：如果删除后重建，`revision` 会回到初始值，前端缓存的旧版本号可能恰好与之相同，乐观锁就会失效。
 
-### 5.5 考试到期自动交卷
+### 5.6 考试到期自动交卷
 
 - 每个考试请求都先检查 `deadline_at`，过期则拒绝写入并触发交卷。
 - 另有定时任务每分钟扫描 `WHERE status = 'in_progress' AND deadline_at < NOW()`（走 `idx_exam_deadline`）执行交卷。
 - 单实例部署下定时任务只运行一份；以后部署多个实例时，需要加分布式锁（例如 ShedLock），或使用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取任务。
 
-### 5.6 资源鉴权（ADR-007）
+### 5.7 资源鉴权（ADR-007）
 
 ```sql
 -- 用户能否读取某个题库附件：
@@ -598,3 +619,4 @@ SELECT 1
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
 | v0.2 | 2026-10-27 | 取消临时练习（在线版统一保存历史）；拓展示例不作为可练习题库 |
+| v0.3 | 2026-10-27 | 写时计算分数与投影：新增 `content_question.max_score`，`practice_question_state.score / max_score / outline_states / projection`（[rule-runner 协议第 6 节](03-rule-runner-protocol.md)） |
