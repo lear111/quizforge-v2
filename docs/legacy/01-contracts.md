@@ -42,6 +42,8 @@
 - 拓展绑定：`"extension":{"path":"extensions/<组>/<拓展>"}`。可在题库根上设默认，也可逐题覆盖。
 - `questions[].data` 的结构**由拓展的 Schema 决定**，宿主不解析其内部字段。
 - 可选 `features`：`editing`、`whiteboard`、`history`、`exam` 四个开关，省略时默认为 `true`。
+  - **拓展示例（`manifest.examples`）：** 在线版保留文件但不展示、不可练习，开发者导出后在本地调试（2026-10-27 决定）。
+  - **在线版的处理（2026-10-27 决定）：** `whiteboard`、`exam` 照常生效；`editing` 无意义（在线版不提供编辑）；`history:false` 被忽略，在线版**统一保存历史**。题库文件本身不改，Windows / 本地版仍按原语义处理。
 - 图片以 SHA-256 引用，文件名为 `assets/<sha256>.<扩展名>`，支持 PNG / JPEG / WebP / GIF。
 
 ### 对 V2 的影响

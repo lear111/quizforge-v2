@@ -39,6 +39,7 @@ V2 后端要承担的业务有：账号与权限、题库广场（上传、审�
 cloud.treenewbee.quizforge
 ├── identity    账号与权限
 ├── catalog     题库广场
+├── content     题库内容与拓展包：.qbank 解析、校验与存储（无用户数据）
 ├── practice    练习
 ├── exam        考试与历史
 ├── resource    资源授权
