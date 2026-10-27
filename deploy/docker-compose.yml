@@ -1,0 +1,60 @@
+# QuizForge V2 single-server stack (architecture overview, section 7).
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#   curl http://localhost:8088/api/health
+#
+# Services: nginx (only public entry) -> app (Spring Boot) -> mysql.
+# rule-runner joins in milestone M2.
+
+name: quizforge
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: quizforge
+      MYSQL_USER: quizforge
+      MYSQL_PASSWORD: ${QF_DB_PASSWORD:-quizforge}
+      MYSQL_ROOT_PASSWORD: ${QF_DB_ROOT_PASSWORD:-quizforge-root}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uquizforge -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [internal]
+
+  app:
+    build: ../backend
+    environment:
+      QF_DB_URL: jdbc:mysql://mysql:3306/quizforge?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
+      QF_DB_USER: quizforge
+      QF_DB_PASSWORD: ${QF_DB_PASSWORD:-quizforge}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${QF_HTTP_PORT:-8088}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../frontend/public:/usr/share/nginx/html:ro
+    depends_on:
+      - app
+    networks: [internal, public]
+
+networks:
+  # The app, database and (later) rule-runner only talk to each other.
+  internal:
+  public:
+
+volumes:
+  mysql-data:

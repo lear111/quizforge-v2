@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QuizForge V2</title>
+</head>
+<body>
+  <!-- Placeholder until the reused legacy frontend is forked in (ADR-006, milestone M4). -->
+  <h1>QuizForge V2</h1>
+  <p id="status">正在检查后端…</p>
+  <script>
+    fetch('/api/health').then(r => r.json()).then(v => {
+      document.getElementById('status').textContent = v.ok ? '后端与数据库连接正常' : '后端异常';
+    }).catch(() => { document.getElementById('status').textContent = '无法连接后端'; });
+  </script>
+</body>
+</html>
