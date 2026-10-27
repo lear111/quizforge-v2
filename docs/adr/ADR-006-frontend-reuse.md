@@ -95,8 +95,9 @@ quizforge-v2/
 | 改造 | 内容 |
 | --- | --- |
 | 接口适配 | 只修改 `shared/api.js`：去掉 `X-QuizForge-Token`，改用 Cookie（ADR-005）；沿用旧接口已有的 `requestId`（幂等）与 `revision`（乐观锁）字段；统一处理 401、409 冲突等错误 |
-| 删除本地功能 | 网络连接设置、开发者设置、本机 AI 配置、本机登录窗口、题库导出到本地文件系统等 |
+| 删除本地功能 | 网络连接设置、开发者设置、本机 AI 配置、本机登录窗口、**题目编辑器**（在线版不提供编辑，需求第 5 节）等 |
 | 增加在线功能 | 与 Hub 页面之间的导航、用户中心入口、AI 辅导侧边栏（FR-08） |
+| 听力播放 | 由“`fetch` 整个文件后生成 Blob URL”改为直接 `<audio src>`（Cookie 认证后可行），支持流式播放与 Range（ADR-007） |
 | 拓展宿主 | Bridge 协议与 iframe 沙箱方式（`srcdoc` + `sandbox="allow-scripts"`）均不变，见[遗留契约 C-02](../legacy/01-contracts.md) |
 
 **3. 后端接口策略**
