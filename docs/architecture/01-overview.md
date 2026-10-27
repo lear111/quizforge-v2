@@ -42,7 +42,7 @@
 flowchart TB
     subgraph Client["浏览器（电脑 / 手机）"]
         Host["练习宿主页面<br/>导航 · 状态 · 保存 · AI 侧栏"]
-        Ext["题型拓展页面<br/>（独立源的 iframe）"]
+        Ext["题型拓展页面<br/>（沙箱 iframe，不透明源）"]
         Ext <-- "Bridge API 1.x<br/>postMessage" --> Host
     end
 
@@ -63,7 +63,7 @@ flowchart TB
     LLM["外部大模型 API"]
 
     Host -- "REST /api" --> Nginx
-    Ext -- "静态页面与资源" --> Nginx
+    Host -- "前端页面与静态资源" --> Nginx
     Nginx -- "/api/*" --> App
     Nginx -- "/files/*（授权后直发）" --> Files
     Practice -- "评分 / 投影 / 校验" --> Rule
@@ -92,7 +92,7 @@ flowchart TB
 
 - **负责：** 渲染题目、实现题型交互、组织作答数据，通过 Bridge 请求保存或提交。
 - **不负责：** 直接访问后端或用户数据。
-- **安全边界：** 拓展页面放在**独立的源**下（例如 `ext.` 子域名），并加 `sandbox` 属性，使其无法读取宿主的 Cookie 和页面内容。宿主校验每条 Bridge 消息的来源、格式和版本。
+- **安全边界：** 沿用旧前端已有的做法（[遗留契约 C-02](../legacy/01-contracts.md)）：宿主读取拓展资源后，以 `srcdoc` 注入 `sandbox="allow-scripts"`（不含 `allow-same-origin`）的 iframe，拓展运行在不透明源中，读不到宿主的 Cookie 和页面；iframe 的 CSP 禁止一切网络请求（`connect-src 'none'`）。宿主按 `session` 和 `event.source` 校验每条 Bridge 消息，并校验格式和版本。
 - **兼容性：** 消息格式沿用 Extension API 1.x，旧拓展无需修改。
 
 ### 4.4 Java 后端（模块化单体）
@@ -150,7 +150,7 @@ sequenceDiagram
 
     E->>H: Bridge: submit(answer)
     H->>H: 校验消息来源与格式
-    H->>J: POST /api/practice/.../submit<br/>（带 Idempotency-Key、当前版本号）
+    H->>J: POST /api/practice/.../submit<br/>（请求体带 requestId、revision）
     J->>J: 校验登录与题库归属
     J->>D: 读取题目数据与当前作答（含版本号）
     J->>R: grade(题目数据, 作答)
@@ -164,7 +164,7 @@ sequenceDiagram
 要点：
 
 - **只有数据库事务提交成功后，才告诉用户“已保存”**（FR-04、NFR-05）。
-- **幂等键：** 网络超时后浏览器重试，同一个 `Idempotency-Key` 不会产生两次提交（验收场景 3）。
+- **幂等：** 沿用旧接口的 `requestId`（[遗留契约 F-01](../legacy/01-contracts.md)）。网络超时后浏览器重试，同一个 `requestId` 不会产生两次提交，并返回原来的结果（验收场景 3）。
 - **版本号：** 两个标签页同时保存同一题，后到的一方收到 409，界面提示刷新，不会静默覆盖。
 - 规则执行服务出错时返回明确错误，作答本身仍可作为草稿保存成功。
 
@@ -228,4 +228,4 @@ Java 读取题目数据后，调用规则服务的 `project` 生成“给前端�
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
-| v0.2 | 2026-10-27 | 前端改为复用旧 Web 前端；ADR 清单同步 ADR-004/005 的提议结论 |
+| v0.2 | 2026-10-27 | 前端改为复用旧 Web 前端；ADR 清单同步 ADR-004/005 的提议结论；按遗留契约清单更正拓展隔离方式与幂等字段 |
