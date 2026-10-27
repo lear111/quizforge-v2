@@ -109,7 +109,7 @@
 | `POST /api/library/import` | 上传 `.qbank` 导入（`Content-Type: application/vnd.quizforge.qbank`） | `content_*`、`practice_collection` | 包内拓展须在审核白名单中（C-04），否则返回 422 并提示提交审核 |
 | `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 删除为软删除，不进入回收站流程 |
 | `POST /api/library/export` | 导出为 `.qbank` | `content_*`、`quota_traffic` | 计流量（沿用旧云端规则） |
-| `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | |
+| `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；可以立即更新时先完成更新（FR-10） |
 | `GET /api/collections/{kind}/{id}/questions/{qid}` | 读题（投影 + 状态 + 白板 + 版本戳） | `content_question`、`practice_question_state`、`practice_whiteboard` | 投影走缓存（数据库设计 4.2 节） |
 | `GET .../questions/{qid}/stamp` | 只读版本戳 | `practice_question_state` | |
 | `POST .../questions/{qid}/actions` | `draft` / `submit` / `review` / `retry` / `whiteboard` | `practice_question_state`、`practice_whiteboard`、`practice_round*`、`practice_request_receipt` | 流程见数据库设计 5.1、5.2 节 |
@@ -118,6 +118,7 @@
 | `POST .../restart` | 再练一次 | 同上 | |
 | `GET .../history`、`GET .../history/{historyId}` | 历史列表与快照 | `practice_round`、`practice_round_question` | 冻结页面通过拓展摘要取回，不再读取复制的页面文件 |
 | `DELETE .../history/{historyId}` | 删除历史记录 | `practice_round` | 软删除 |
+| `POST /api/collections/bank/{id}/update` | **新增**：“立即更新”到作者的新版本 `{requestId}` | `practice_*` | 见[题库共享与版本更新](04-bank-sharing-and-updates.md) |
 
 ### 2.3 考试（exam）
 
@@ -169,7 +170,7 @@
 | `POST /api/packs`、`PUT /api/packs/{id}`、`DELETE /api/packs/{id}` | 上传、编辑（带 `revision` 冲突检查）、删除 |
 | `GET /api/packs/{id}/download`、`POST /api/packs/{id}/download-selection`、`GET .../download-status` | 整包 / 部分下载、下载预检 |
 | `POST /api/packs/{id}/comments`、`DELETE /api/comments/{id}`、`POST /api/packs/{id}/report` | 评论与举报 |
-| `POST /api/packs/{id}/practice` | **新增**：把公开题库直接导入到“我的题库”（取代旧系统中跨站跳转到练习服务的导入流程） |
+| `POST /api/packs/{id}/practice` | **新增**：把公开题库加入“我的题库” `{banks:[bank_key…]}`，可选其中一本或多本；不复制文件，只建实例（FR-10）；取代旧系统跨站跳转导入 |
 
 ### 2.7 管理（admin，沿用旧 Java Hub 接口）
 
@@ -269,3 +270,4 @@ practice/
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
+| v0.2 | 2026-10-27 | 题库按本加入、版本更新相关接口 |

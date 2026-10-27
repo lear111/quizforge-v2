@@ -1,6 +1,6 @@
 # 数据库设计
 
-> **文档版本：** v0.3（草案，待评审）
+> **文档版本：** v0.4（草案，待评审）
 > **日期：** 2026-10-27
 > **依据：** 需求 v1.1，[ADR-001](../adr/ADR-001-modular-monolith.md)、[ADR-002](../adr/ADR-002-database-mysql.md)、[ADR-004](../adr/ADR-004-data-access-mybatis.md)、[ADR-005](../adr/ADR-005-session-auth.md)、[ADR-007](../adr/ADR-007-file-storage.md)，[遗留契约](../legacy/01-contracts.md)，[旧数据字典](../legacy/02-data-dictionary.md)
 
@@ -299,12 +299,17 @@ CREATE TABLE practice_collection (                 -- 用户的题库实例（�
   group_name       VARCHAR(200)  NULL,             -- 一层分组
   source           JSON          NOT NULL,         -- {"type":"hub","packId":..,"revision":..} 或 {"type":"upload","filename":..}
   legacy_route_id  VARCHAR(80)   NULL,             -- 迁移来的旧路由 ID（g.<id>），旧链接重定向用
+  source_pack_id   CHAR(36)      NULL,             -- 来自题库广场时填写；用户自己上传的为 NULL（不参与更新）
+  source_bank_key  VARCHAR(255)  NULL,             -- 包内题库路径 question-banks/<组>/<题库>/
+  source_revision  INT           NULL,             -- 当前使用的题库包版本
+  update_status    ENUM('current','pending','removed') NOT NULL DEFAULT 'current',
   created_at       DATETIME(3)   NOT NULL,
   deleted_at       DATETIME(3)   NULL,             -- 软删除
   PRIMARY KEY (id),
   KEY idx_collection_user (user_id, deleted_at, group_name),
   KEY idx_collection_bank (bank_id),               -- 资源鉴权、垃圾回收
-  UNIQUE KEY uk_collection_legacy (user_id, legacy_route_id)
+  UNIQUE KEY uk_collection_legacy (user_id, legacy_route_id),
+  KEY idx_collection_source (source_pack_id, source_bank_key)
 );
 
 CREATE TABLE practice_context (                    -- 作答进度的容器
@@ -361,7 +366,7 @@ CREATE TABLE practice_round (                      -- 练习轮次 / 历史记�
   collection_id        CHAR(36)     NOT NULL,
   context_id           CHAR(36)     NOT NULL,
   mode                 ENUM('practice','exam') NOT NULL,
-  status               ENUM('in_progress','completed') NOT NULL,
+  status               ENUM('in_progress','completed','interrupted') NOT NULL,   -- interrupted：因“立即更新”封存
   collection_snapshot  JSON         NOT NULL,      -- 冻结的标题、题序、大纲、题目指纹
   summary              JSON         NULL,          -- 完成时冻结的得分汇总
   created_at           DATETIME(3)  NOT NULL,
@@ -433,7 +438,8 @@ CREATE TABLE exam_exam (
 
 | 模块 | 表 | 主要字段 / 说明 |
 | --- | --- | --- |
-| catalog | `catalog_pack` | 对应旧 `packs`：id, user_id, title, summary, description, category, tags(JSON), version, downloads, status, revision, review_note, reviewed_by/at, created/updated_at |
+| catalog | `catalog_pack` | 对应旧 `packs`：id, user_id, title, summary, description, category, tags(JSON), version, downloads, status, revision, **approved_revision**（最新已审核版本）, review_note, reviewed_by/at, created/updated_at |
+| catalog | `catalog_pack_bank` | 某版本中的一本题库：pack_id, revision, bank_key, bank_id（共享内容）, title；DDL 见[题库共享与版本更新](04-bank-sharing-and-updates.md)第 4 节 |
 | catalog | `catalog_pack_revision` | 每个已提交版本的 `.qbank`：pack_id, revision, blob_sha256, size, submitted_at（对应旧 `pack_admin_reviews`，不可变） |
 | catalog | `catalog_pack_file` | 截图等附件：id, pack_id, kind, name, mime, size, blob_sha256 |
 | catalog | `catalog_pack_review`、`catalog_cloud_approval` | 审核记录；云端许可（含该版本所用拓展摘要列表） |
@@ -619,4 +625,5 @@ SELECT 1
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
 | v0.2 | 2026-10-27 | 取消临时练习（在线版统一保存历史）；拓展示例不作为可练习题库 |
+| v0.4 | 2026-10-27 | 题库共享与版本更新：`practice_collection` 增加来源与更新状态，新增 `catalog_pack_bank`，轮次增加 `interrupted` |
 | v0.3 | 2026-10-27 | 写时计算分数与投影：新增 `content_question.max_score`，`practice_question_state.score / max_score / outline_states / projection`（[rule-runner 协议第 6 节](03-rule-runner-protocol.md)） |
