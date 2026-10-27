@@ -1,6 +1,6 @@
 # 数据库设计
 
-> **文档版本：** v0.1（初稿，待评审）
+> **文档版本：** v0.2（草案，待评审）
 > **日期：** 2026-10-27
 > **依据：** 需求 v1.1，[ADR-001](../adr/ADR-001-modular-monolith.md)、[ADR-002](../adr/ADR-002-database-mysql.md)、[ADR-004](../adr/ADR-004-data-access-mybatis.md)、[ADR-005](../adr/ADR-005-session-auth.md)、[ADR-007](../adr/ADR-007-file-storage.md)，[遗留契约](../legacy/01-contracts.md)，[旧数据字典](../legacy/02-data-dictionary.md)
 
@@ -37,13 +37,15 @@
 | 概念 | 含义 | 对应的表 |
 | --- | --- | --- |
 | **题库内容** | 一本题库的题目、附件和设置。导入后**不可变**，内容相同的题库只存一份 | `content_bank`、`content_question`、`content_bank_asset` |
-| **拓展包** | 一个题型拓展的全部文件，以审核摘要（C-04）作为标识，不可变 | `content_extension_package`、`content_extension_file` |
+| **拓展包** | 一个题型拓展的全部文件，以审核摘要（C-04）作为标识，不可变。拓展自带的示例题库只作为拓展包中的文件保存（审核摘要和导出需要它），**在线版不向用户展示、不可练习**；开发者导出题库包后在本地调试（2026-10-27 决定） | `content_extension_package`、`content_extension_file` |
 | **题库实例**（集合） | 用户“我的题库”中的一项，指向某份题库内容。每次导入都创建新实例（C-01） | `practice_collection` |
-| **练习上下文** | 一组作答进度的容器。同一个题库实例可以有三种上下文：**普通练习**（持久）、**临时练习**（关闭历史的题库，按页面会话存在，过期清除）、**考试**（每场考试一个） | `practice_context` |
+| **练习上下文** | 一组作答进度的容器。同一个题库实例有两种上下文：**普通练习**（每个题库实例一个）和**考试**（每场考试一个） | `practice_context` |
 | **作答状态** | 某个上下文中某道题当前的作答、评分和版本号 | `practice_question_state`、`practice_whiteboard` |
 | **练习轮次**（历史） | 从第一次提交开始，到点击“完成”为止的一轮练习；完成后冻结为历史记录 | `practice_round`、`practice_round_question` |
 
-为什么要有“练习上下文”：旧系统中普通练习、临时练习和考试的作答状态分别保存在不同地方（集合状态文件、进程内存、`.state/exams/`）。V2 把它们统一成一张作答状态表，区别只在于上下文的类型。这样保存、提交、评分的代码只需要写一套。
+为什么要有“练习上下文”：旧系统中普通练习和考试的作答状态分别保存在不同地方（集合状态文件、`.state/exams/`）。V2 把它们统一成一张作答状态表，区别只在于上下文的类型。这样保存、提交、评分的代码只需要写一套。
+
+> 在线版**统一保存历史**：题库中的 `features.history:false` 在在线版被忽略，按开启处理（2026-10-27 决定）。因此不需要旧系统中“只存在页面会话里的临时练习”。草稿白板（`whiteboard`）、考试（`exam`）开关仍然生效。
 
 ---
 
@@ -247,7 +249,6 @@ CREATE TABLE content_extension_file (
 CREATE TABLE content_bank (
   id              CHAR(36)      NOT NULL,
   content_sha256  BINARY(32)    NOT NULL,          -- 规范化后的 bank.json + 附件清单 + 拓展摘要
-  kind            ENUM('bank','example') NOT NULL, -- example：拓展自带的示例题库
   source_title    VARCHAR(300)  NOT NULL,
   description     TEXT          NULL,
   format_version  INT           NOT NULL,
@@ -309,17 +310,15 @@ CREATE TABLE practice_context (                    -- 作答进度的容器
   id                CHAR(36)     NOT NULL,
   user_id           CHAR(36)     NOT NULL,
   collection_id     CHAR(36)     NOT NULL,
-  kind              ENUM('practice','ephemeral','exam') NOT NULL,
-  scope_key         VARCHAR(64)  NOT NULL,         -- practice：''；ephemeral：页面会话 ID；exam：考试 ID
+  kind              ENUM('practice','exam') NOT NULL,
+  scope_key         VARCHAR(64)  NOT NULL,         -- practice：''；exam：考试 ID
   progress_version  BIGINT       NOT NULL DEFAULT 0,   -- 汇总版本（契约中的 summaryVersion）
   current_round_id  CHAR(36)     NULL,             -- 进行中的轮次
-  expires_at        DATETIME(3)  NULL,             -- ephemeral：30 分钟无访问后过期
   created_at        DATETIME(3)  NOT NULL,
   updated_at        DATETIME(3)  NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_context_scope (collection_id, kind, scope_key),
-  KEY idx_context_user (user_id),
-  KEY idx_context_expiry (kind, expires_at)        -- 清理过期的临时练习
+  KEY idx_context_user (user_id)
 );
 
 CREATE TABLE practice_question_state (
@@ -540,7 +539,6 @@ SELECT 1
 | 任务 | 频率 | 内容 |
 | --- | --- | --- |
 | 会话清理 | 每小时 | 删除过期的 `auth_session`、`auth_connect_request`、`auth_connect_code`、`auth_verification_code` |
-| 临时练习清理 | 每 5 分钟 | 删除过期的 `ephemeral` 上下文及其作答与白板 |
 | 回执清理 | 每天 | 删除 7 天前的 `practice_request_receipt` |
 | 考试到期 | 每分钟 | 见 5.5 |
 | 文件垃圾回收 | 每天 | 删除不再被任何表引用、且创建已超过 24 小时的文件（宽限期用于防止删掉正在上传的文件） |
@@ -590,7 +588,7 @@ SELECT 1
 | DB-3 | 旧历史中无法匹配到拓展包的冻结页面如何保存（作为单独文件存入 `blobs/`？） | 迁移设计时 |
 | DB-4 | AI 评分任务表结构 | AI 模块详细设计 |
 | DB-5 | 考试状态文件的旧格式 | 迁移设计时（遗留契约 V-3） |
-| DB-6 | 临时练习（`features.history:false`）是否真的需要入库，还是在线版统一按开启历史处理 | 需求确认 |
+| ~~DB-6~~ | ~~临时练习是否入库~~ | **已决定**：在线版统一保存历史，忽略 `history:false`，不设临时练习 |
 | DB-7 | 外键约束：本稿未声明外键。倾向**模块内**声明外键（例如 `content_question.bank_id`），**跨模块**不声明（例如 `practice_collection.user_id`），以保持模块可拆分；代价是跨模块的引用完整性由应用和测试保证 | 实现前 |
 | DB-8 | 本文 DDL 尚未在真实 MySQL 上执行，实现阶段编写 Flyway 脚本时用 Testcontainers 验证 | 实现阶段 |
 
@@ -599,3 +597,4 @@ SELECT 1
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
+| v0.2 | 2026-10-27 | 取消临时练习（在线版统一保存历史）；拓展示例不作为可练习题库 |
