@@ -1,0 +1,14 @@
+# Build output
+backend/target/
+**/node_modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local environment and data (never commit real data or secrets)
+.env
+deploy/.env
+data/
+*.sqlite

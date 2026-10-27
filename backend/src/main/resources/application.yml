@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: quizforge-backend
+  datasource:
+    url: ${QF_DB_URL:jdbc:mysql://localhost:3306/quizforge?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC}
+    username: ${QF_DB_USER:quizforge}
+    password: ${QF_DB_PASSWORD:quizforge}
+    hikari:
+      # Initial value; tune after load testing (ADR-002).
+      maximum-pool-size: ${QF_DB_POOL_SIZE:20}
+      connection-timeout: 5000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${QF_PORT:8080}
+  # The app sits behind Nginx; trust X-Forwarded-* only from it (deploy/nginx).
+  forward-headers-strategy: native
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+
+logging:
+  level:
+    root: INFO
