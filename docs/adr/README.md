@@ -16,8 +16,8 @@ ADR 记录一项重要架构决策：当时面对什么问题、考虑过哪些�
 | [ADR-001](ADR-001-modular-monolith.md) | 采用模块化单体，而不是微服务 | 提议 |
 | [ADR-002](ADR-002-database-mysql.md) | 业务数据使用 MySQL 8 | 提议 |
 | [ADR-003](ADR-003-extension-rule-execution.md) | 拓展评分规则的服务端执行方式 | 提议 |
-| ADR-004 | 数据访问方式（MyBatis / JPA） | 待写 |
-| ADR-005 | 登录会话方式 | 待写 |
+| [ADR-004](ADR-004-data-access-mybatis.md) | 数据访问使用 MyBatis | 提议 |
+| [ADR-005](ADR-005-session-auth.md) | 浏览器使用服务端会话，设备使用不透明令牌 | 提议 |
 | ADR-006 | 前端技术栈 | 待写 |
 | ADR-007 | 文件存储与私有资源授权 | 待写 |
 | ADR-008 | 旧数据迁移策略 | 待写 |
