@@ -29,7 +29,7 @@
     return `<article class="question-card" aria-label="静态题卡示意"><div class="q-head">${pill(q.type)}<span data-field="question.maxScore">满分 ${q.points} 分</span></div><h2 data-field="question.title">${questionNumber}. ${alt?'导数的几何意义':q.title}</h2><p data-field="question.projectedData">${alt?'请说明函数在一点处的导数与切线斜率之间的关系。':q.prompt}</p>${alt?'':`<div class="math-line">${q.math}</div>`}<div class="response-area"><div class="response-label">下方区域的文字、手写和图片均作为答案进行评分。</div>${graded?`<div class="readonly-answer" data-field="question.answer">${q.draft}<br><br>所以 a = 1。</div>`:`<textarea aria-label="答题输入（原型不保存）">${updated?'':latest?'根据服务端最新记录：先求左右极限。':q.draft}</textarea>`}</div>${graded?`<div class="grade-box" data-field="question.result"><strong>本题 ${q.score} / ${q.points} 分</strong><br>思路正确，建议补充左右极限相等的论证。</div>`:''}<div class="button-row">${graded?button('重新作答','retry','small'):button('提交答案','submit','primary')}${graded?button('继续记草稿','draft','small'):''}</div><div class="save-label" data-field="question.saveStatus">${updated?'尚未作答':graded?'已提交 · 答案已锁定':scene==='保存冲突'?'尚未保存：存在其他页面的修改':scene==='暂不可用'?'输入保留在当前页面，尚未确认保存':'已保存（演示）'}</div><p class="stub-note">此题为静态示意，输入不会保存。</p></article>`;
   }
   function tutor(){
-    
+
     const graded=scene==='已评分',redo=scene==='重做后',failed=['请求超时','额度不足','服务不可用'].includes(scene),number=altQuestion?4:3;
     const state=graded?'已评分':redo?'重做中':'答题中';
     const context=graded?'可以结合你的作答与评分讲解答案。':'只提供思路，不直接给答案。';

@@ -36,6 +36,7 @@
 .up-wrap .prototype-upload-note{margin-top:20px;font-size:12px;line-height:1.8;color:#8c7b9a}
 .share-version-state{padding:10px 0 16px;font-size:12px}.share-version-state>div{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px}
 .prototype-share-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}.prototype-share-grid .card-title{white-space:normal}
+.prototype-share-grid .quiz-card{animation:none}
 .prototype-share-grid .card-bottom{flex-wrap:wrap}.prototype-share-grid .card-buttons{gap:7px}.prototype-share-grid .card-buttons a{display:inline-flex;align-items:center;justify-content:center}
 body[data-size=mobile] .v2-practice-nav{height:40px;gap:15px;padding:0 12px;font-size:11px}body[data-size=mobile] .v2-practice-nav .spacer{display:none}body[data-size=mobile] .v2-practice-nav button{margin-left:auto}
 body[data-size=mobile] .prototype-app{height:calc(100dvh - 110px);min-height:600px;grid-template-columns:1fr;--document-header-height:45px}
@@ -45,6 +46,7 @@ body[data-size=mobile] .prototype-app .library.open{transform:translateX(0)}
 body[data-size=mobile] .prototype-app .document-header{padding:6px 8px;gap:8px}.prototype-app .document-header .draft-toggle{white-space:nowrap}
 body[data-size=mobile] .prototype-app .document-header h1{font-size:14px}body[data-size=mobile] .prototype-app .document-actions{gap:6px}
 body[data-size=mobile] .prototype-app .question-frame-wrapper{padding:0 12px;margin-top:22px}
+body[data-size=mobile] .prototype-app .overview-panel{padding:20px 14px}
 body[data-size=mobile] .prototype-app .shared-panel{position:absolute;top:auto;bottom:0;right:0;left:0;width:100%;height:var(--panel-height,65%);min-height:240px;grid-column:auto;border:1px solid #e1d7ed;border-radius:16px 16px 0 0;background:#fff;box-shadow:0 -12px 40px #30233d20;transform:translateY(110%);padding-top:12px}
 body[data-size=mobile] .panel-resize{inset:0 0 auto;width:100%;height:12px;cursor:row-resize}
 body[data-size=mobile] .panel-resize:after{inset:4px auto auto 50%;width:36px;height:4px;transform:translateX(-50%);border-radius:4px;background:#c8bfd9}
