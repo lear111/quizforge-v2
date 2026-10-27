@@ -19,8 +19,8 @@ ADR 记录一项重要架构决策：当时面对什么问题、考虑过哪些�
 | [ADR-004](ADR-004-data-access-mybatis.md) | 数据访问使用 MyBatis | 提议 |
 | [ADR-005](ADR-005-session-auth.md) | 浏览器使用服务端会话，设备使用不透明令牌 | 提议 |
 | [ADR-006](ADR-006-frontend-reuse.md) | 复用旧 Web 前端，以源码分叉方式改造 | 提议 |
-| ADR-007 | 文件存储与私有资源授权 | 待写 |
-| ADR-008 | 旧数据迁移策略 | 待写 |
+| [ADR-007](ADR-007-file-storage.md) | 文件存储使用本地磁盘与内容寻址，私有文件由 Java 授权、Nginx 发送 | 提议 |
+| [ADR-008](ADR-008-data-migration.md) | 旧数据采用停机一次性迁移，以接口输出对比验证 | 提议 |
 
 ## 模板
 
