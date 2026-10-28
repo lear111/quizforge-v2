@@ -13,6 +13,8 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -113,6 +115,16 @@ class AuthServiceTest extends MySqlTestBase {
     @Test
     void normalizeEmailRejectsNull() {
         assertThatThrownBy(() -> AuthService.normalizeEmail(null))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.status()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "\t\r\n"})
+    void normalizeEmailRejectsEmptyOrWhitespace(String email) {
+        assertThatThrownBy(() -> AuthService.normalizeEmail(email))
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.status()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
