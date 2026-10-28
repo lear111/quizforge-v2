@@ -1,0 +1,9 @@
+{
+  "name": "quizforge-rule-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13 <23" },
+  "scripts": { "start": "node src/main.js", "test": "node --test test/*.test.js" },
+  "dependencies": { "ajv": "8.20.0" }
+}

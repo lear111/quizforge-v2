@@ -1,0 +1,42 @@
+{
+  "id": "quizforge.multiple-choice",
+  "version": "2.0.1",
+  "name": "多选题",
+  "description": "富文本多选题，全部选对得满分，漏选或错选不得分。",
+  "requiresApi": {
+    "major": 1,
+    "minMinor": 4,
+    "capabilities": [
+      "practice",
+      "editor",
+      "score",
+      "richtext",
+      "resources",
+      "lifecycle",
+      "answer-state",
+      "editor-drafts",
+      "appearance"
+    ]
+  },
+  "requiresRichText": {
+    "major": 1,
+    "minMinor": 0,
+    "documentFormat": 1,
+    "documentProfile": "advanced-v1",
+    "capabilities": [
+      "basic-formatting",
+      "images",
+      "advanced-formatting",
+      "tables",
+      "math",
+      "image-resize"
+    ]
+  },
+  "entry": "practice.html",
+  "script": "practice.js",
+  "style": "practice.css",
+  "rules": "rules.js",
+  "questionSchema": "question.schema.json",
+  "answerSchema": "answer.schema.json",
+  "examples": "examples/bank.json"
+}

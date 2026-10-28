@@ -1,0 +1,244 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "responses"
+  ],
+  "properties": {
+    "responses": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/area"
+      }
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "按稳定小问ID保存的答题区作答",
+  "definitions": {
+    "area": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "formatVersion",
+        "id",
+        "width",
+        "height",
+        "strokes"
+      ],
+      "properties": {
+        "type": {
+          "const": "qf-answer-area"
+        },
+        "formatVersion": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+        },
+        "targetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+        },
+        "width": {
+          "const": 760
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 120,
+          "maximum": 3200
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "inkSource": {
+          "const": "draft"
+        },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "properties": {
+            "x": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "y": {
+              "type": "number",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "width": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "height": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 20000
+            }
+          }
+        },
+        "strokes": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "color",
+              "width",
+              "points"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[a-fA-F0-9]{6}$"
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 64
+              },
+              "points": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10000,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "pressure"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -2000000,
+                      "maximum": 2000000
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -2000000,
+                      "maximum": 2000000
+                    },
+                    "pressure": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "id",
+              "attrs",
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "properties": {
+              "type": {
+                "const": "image"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+              },
+              "attrs": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "assetId"
+                ],
+                "properties": {
+                  "assetId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1600
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3200
+              },
+              "width": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 1600
+              },
+              "height": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 3200
+              }
+            }
+          }
+        },
+        "snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "attrs"
+          ],
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "attrs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "assetId"
+              ],
+              "properties": {
+                "assetId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,8 +3,7 @@
 #   docker compose -f deploy/docker-compose.yml up --build
 #   curl http://localhost:8088/api/health
 #
-# Services: nginx (only public entry) -> app (Spring Boot) -> mysql.
-# rule-runner joins in milestone M2.
+# Services: nginx (only public entry) -> app -> mysql / isolated rule-runner.
 
 name: quizforge
 
@@ -35,10 +34,34 @@ services:
       QF_DB_URL: jdbc:mysql://mysql:3306/quizforge?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC
       QF_DB_USER: quizforge
       QF_DB_PASSWORD: ${QF_DB_PASSWORD:-quizforge}
+      QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
     depends_on:
       mysql:
         condition: service_healthy
-    networks: [internal]
+    networks: [internal, rules-private]
+
+  rule-runner:
+    build: ../rule-runner
+    environment:
+      QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
+      QF_BLOB_DIR: /data/blobs
+      QF_RULE_WORKER_LIMIT: "4"
+    volumes:
+      - blobs:/data/blobs:ro
+    networks: [rules-private]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    pids_limit: 64
+    ulimits:
+      core: 0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/v1/health',{headers:{'X-Internal-Token':process.env.QF_RULE_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   nginx:
     image: nginx:1.27-alpine
@@ -52,9 +75,12 @@ services:
     networks: [internal, public]
 
 networks:
-  # The app, database and (later) rule-runner only talk to each other.
+  # Only app and rule-runner join this network; runner has no external route.
+  rules-private:
+    internal: true
   internal:
   public:
 
 volumes:
   mysql-data:
+  blobs:
