@@ -51,6 +51,13 @@
       <artifactId>mysql-connector-j</artifactId>
       <scope>runtime</scope>
     </dependency>
+    
+    <!-- scrypt for legacy password hashes (C-06) -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.86</version>
+    </dependency>
 
     <!-- Test: real MySQL via Testcontainers, never H2 (ADR-002) -->
     <dependency>
