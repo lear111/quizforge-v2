@@ -33,5 +33,7 @@ logging:
     root: INFO
 
 qf:
+  storage:
+    blob-dir: ${QF_BLOB_DIR:./data/blobs}
   security:
     allowed-origin: ${QF_PUBLIC_ORIGIN:http://localhost:8088}

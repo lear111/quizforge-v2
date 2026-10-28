@@ -26,9 +26,15 @@ class SchemaMigrationTest extends MySqlTestBase {
         assertThat(tables).contains(
                 "account_user", "auth_session", "auth_device",
                 "content_bank", "content_question", "content_extension_package",
+                "content_blob", "content_extension_file", "content_bank_asset", "admin_extension_review",
                 "practice_collection", "practice_context", "practice_question_state",
                 "practice_round", "practice_request_receipt",
                 "exam_exam");
+    }
+
+    @Test
+    void contentMigrationIsInstalled() {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='2' AND success=1", Integer.class)).isEqualTo(1);
     }
 
     @Test
