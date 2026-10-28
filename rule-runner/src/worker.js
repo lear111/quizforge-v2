@@ -33,10 +33,8 @@ function execute(job) {
     if (Buffer.byteLength(text) > LIMITS.output) return {...failure('RULE_OUTPUT_LIMIT', 'Rule output exceeds size limit'), retire: true};
     return {ok: true, data};
   } catch (error) {
-    if (error.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return {...failure('RULE_TIMEOUT', 'Rule hook exceeded its time limit'), retire: true};
     // Never echo errors originating in extension scripts or AJV: they may contain paths or secrets.
-    if (error instanceof RunnerError) return failure(error.code, error.message);
-    if (['INVALID_OUTLINE_ITEMS', 'INVALID_OUTLINE_STATES', 'SCORE_UNAVAILABLE'].includes(error.code)) return failure(error.code);
+    if (error instanceof RunnerError) return {...failure(error.code, error.message), ...(error.code === 'RULE_TIMEOUT' ? {retire: true} : {})};
     return failure();
   }
 }

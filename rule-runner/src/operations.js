@@ -44,7 +44,7 @@ export class Operations {
       this.question(data); this.vm.set({data});
       let items;
       try { items = this.vm.canOutline ? this.vm.call('getOutlineItems', ['data']) : []; }
-      catch (error) { if (error.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw error; reject('Invalid outline hook', 'INVALID_OUTLINE_ITEMS'); }
+      catch (error) { if (error.code === 'RULE_TIMEOUT') throw error; reject('Invalid outline hook', 'INVALID_OUTLINE_ITEMS'); }
       return outlineItems(items);
     }, true)};
   }

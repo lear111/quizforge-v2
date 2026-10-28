@@ -1,5 +1,7 @@
 import vm from 'node:vm';
+import {types} from 'node:util';
 import {reject} from './validation.js';
+import {RunnerError} from './errors.js';
 
 const bootstrap = `
 'use strict';
@@ -29,14 +31,29 @@ export class Realm {
   constructor(source, spec) {
     this.context = vm.createContext(Object.create(null), {codeGeneration: {strings: false, wasm: false}, microtaskMode: 'afterEvaluate'});
     this.run(bootstrap);
-    new vm.Script(source, {filename: 'extension-rules.js'}).runInContext(this.context, {timeout: 650, displayErrors: false});
+    this.run(source);
     if (!this.run('Boolean(__type)')) reject();
     this.canOutline = this.has('getOutlineItems');
     if (this.canOutline && (spec.outlineItemsDeclared !== true || spec.apiVersion.minor < 1)) reject('Invalid outline capability', 'INVALID_OUTLINE_ITEMS');
   }
-  run(code) { return vm.runInContext(code, this.context, {timeout: 650, displayErrors: false}); }
+  run(code) {
+    try { return vm.runInContext(code, this.context, {timeout: 650, displayErrors: false, filename: 'extension-rules.js'}); }
+    catch (error) {
+      // Inspect only an own data property on a non-Proxy. Never run an extension
+      // getter/prototype trap outside the VM's timeout while handling an exception.
+      const inspectable = error !== null && ['object', 'function'].includes(typeof error) && !types.isProxy(error);
+      const code = inspectable ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+      if (code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw new RunnerError('RULE_TIMEOUT', 'Rule hook exceeded its time limit');
+      if (['INVALID_OUTLINE_ITEMS', 'INVALID_OUTLINE_STATES', 'SCORE_UNAVAILABLE'].includes(code)) throw new RunnerError(code, 'Extension rules rejected or could not process this data');
+      throw new RunnerError('RULE_REJECTED', 'Extension rules rejected or could not process this data');
+    }
+  }
   has(hook) { return this.run(`typeof __type[${JSON.stringify(hook)}] === 'function'`); }
   set(input) { this.run(`globalThis.__input = JSON.parse(${JSON.stringify(JSON.stringify(input))});`); }
-  call(hook, args) { return JSON.parse(this.run(`JSON.stringify(__type[${JSON.stringify(hook)}](${args.map(key => `__input.${key}`).join(',')}))`)); }
+  call(hook, args) {
+    const encoded = this.run(`JSON.stringify(__type[${JSON.stringify(hook)}](${args.map(key => `__input.${key}`).join(',')}))`);
+    if (typeof encoded !== 'string') reject();
+    return JSON.parse(encoded);
+  }
   rejects(hook, args) { return this.run(`__type[${JSON.stringify(hook)}] ? __type[${JSON.stringify(hook)}](${args.map(key => `__input.${key}`).join(',')}) === false : false`); }
 }
