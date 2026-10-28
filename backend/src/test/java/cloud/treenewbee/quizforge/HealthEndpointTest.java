@@ -31,10 +31,10 @@ class HealthEndpointTest extends MySqlTestBase {
     }
 
     @Test
-    void unknownApiPathUsesSharedErrorFormat() throws Exception {
+    void unknownApiPathRequiresAuthentication() throws Exception {
         HttpResponse<String> response = get("/api/does-not-exist");
 
-        assertThat(response.statusCode()).isEqualTo(404);
-        assertThat(response.body()).contains("\"error\"").contains("\"code\":\"NOT_FOUND\"");
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("\"code\":\"UNAUTHENTICATED\"");
     }
 }
