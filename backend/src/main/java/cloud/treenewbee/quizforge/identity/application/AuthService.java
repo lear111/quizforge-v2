@@ -37,7 +37,8 @@ public class AuthService {
     private final Clock clock;
     private final TransactionTemplate transactions;
 
-    public AuthService(UserMapper users, SessionMapper sessions, PasswordHasher hasher, Clock clock, TransactionTemplate transactions) {
+    public AuthService(UserMapper users, SessionMapper sessions, PasswordHasher hasher, Clock clock,
+                       TransactionTemplate transactions) {
         this.users = users;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -49,7 +50,7 @@ public class AuthService {
     public AuthResult register(String email, String name, String password, String userAgent) {
         String normalizedEmail = normalizeEmail(email);
         String passwordHash = hasher.hash(password);
-        
+
         return transactions.execute(status -> {
             Instant now = clock.instant();
             UserRow user = new UserRow(
@@ -62,7 +63,7 @@ public class AuthService {
                     now,
                     now,
                     0L
-            );         
+            );
             try {
                 users.insert(user);
             } catch (DuplicateKeyException e) {
@@ -117,7 +118,7 @@ public class AuthService {
     }
 
     // 退出登录
-    public void logout(String rawToken){
+    public void logout(String rawToken) {
         if (SessionToken.isWellFormed(rawToken) == false) {
             return;
         }
@@ -125,4 +126,3 @@ public class AuthService {
         sessions.deleteByHash(hash);
     }
 }
-

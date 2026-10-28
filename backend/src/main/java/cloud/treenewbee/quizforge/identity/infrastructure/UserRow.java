@@ -13,5 +13,4 @@ public record UserRow(
         Instant createdAt,
         Instant updatedAt,
         long version) {
-                
 }
