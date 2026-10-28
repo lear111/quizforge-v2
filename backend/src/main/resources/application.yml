@@ -13,6 +13,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+mybatis:
+  type-handlers-package: cloud.treenewbee.quizforge.shared.persistence
+  configuration:
+    map-underscore-to-camel-case: true
+    arg-name-based-constructor-auto-mapping: true
+
 server:
   port: ${QF_PORT:8080}
   # The app sits behind Nginx; trust X-Forwarded-* only from it (deploy/nginx).
