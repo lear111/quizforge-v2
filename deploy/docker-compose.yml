@@ -8,6 +8,19 @@
 name: quizforge
 
 services:
+  blobs-init:
+    build: ../rule-runner
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command: ["chown -R 10001:0 /data/blobs && chmod 0755 /data/blobs"]
+    volumes:
+      - blobs:/data/blobs
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+
   mysql:
     image: mysql:8.4
     environment:
@@ -35,13 +48,21 @@ services:
       QF_DB_USER: quizforge
       QF_DB_PASSWORD: ${QF_DB_PASSWORD:-quizforge}
       QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
+      QF_BLOB_DIR: /data/blobs
+    volumes:
+      - blobs:/data/blobs
     depends_on:
+      blobs-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
     networks: [internal, rules-private]
 
   rule-runner:
     build: ../rule-runner
+    depends_on:
+      blobs-init:
+        condition: service_completed_successfully
     environment:
       QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
       QF_BLOB_DIR: /data/blobs
