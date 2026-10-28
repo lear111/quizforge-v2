@@ -1,8 +1,8 @@
 # 题库共享与版本更新
 
-> **文档版本：** v0.1（初稿，待评审）
-> **日期：** 2026-10-27
-> **依据：** [需求 FR-10](../requirements/01-requirements.md)，[数据库设计](01-database.md)，[rule-runner 协议](03-rule-runner-protocol.md)
+> **文档版本：** v0.2
+> **日期：** 2026-10-28
+> **依据：** [需求 FR-10、FR-11](../requirements/01-requirements.md)，[数据库设计](01-database.md)，[rule-runner 协议](03-rule-runner-protocol.md)
 
 本文说明三件事：题库内容如何在用户之间共享；作者增、删、改题库后，用户的题库如何变化；自动更新的具体算法与并发处理。
 
@@ -121,7 +121,7 @@ CREATE TABLE catalog_pack_bank (                   -- 某个版本中的一本�
 `practice_collection` 增加来源与更新状态字段：
 
 ```sql
-  source_pack_id   CHAR(36)      NULL,             -- 来自题库广场时填写；用户自己上传的 .qbank 为 NULL（不参与更新）
+  source_pack_id   CHAR(36)      NULL,             -- 指向公开包或私人包（第 6 节）；迁移来的旧数据可能为 NULL
   source_bank_key  VARCHAR(255)  NULL,
   source_revision  INT           NULL,             -- 当前使用的版本
   update_status    ENUM('current','pending','removed') NOT NULL DEFAULT 'current',
@@ -142,10 +142,79 @@ CREATE TABLE catalog_pack_bank (                   -- 某个版本中的一本�
 | `GET /api/collections/bank/{id}/questions/{qid}` | 被更新重置的题目带 `updatedByAuthor:true`，前端提示“本题已更新” |
 | `POST /api/packs/{id}/practice` | 加入“我的题库” `{banks:[bank_key…]}`，按本选择；同一用户重复加入同一本时，打开已有的实例（与旧系统“重复的 Hub 版本打开已有内容”一致） |
 
-## 6. 用户自己上传的 `.qbank`
+## 6. 我的题库与私人题库（需求 FR-11）
 
-- 内容同样共享存储（相同内容只存一份），但不关联任何题库包，**不参与自动更新**。
-- 用户上传同一题库的新文件，会生成一个新的题库实例（与旧系统“每次导入都是独立副本”一致，C-01）。
+### 6.1 私人上传与分享走同一流程
+
+用户上传 `.qbank`，平台创建一个**私人题库包**：与题库广场的题库包使用同一套表（`catalog_pack` 增加 `visibility`），区别只是不公开、只属于上传者。
+
+```text
+上传 .qbank → 解析与校验（M2 导入流程）→ 共享内容 content_bank（相同内容只存一份）
+           → catalog_pack(visibility=private, owner=上传者) 与第 1 个版本
+           → 为上传者创建题库实例 practice_collection（source_pack_id 指向该私人包）
+```
+
+这样设计的好处：
+
+- 只有**一条**导入、存储、审核的代码路径，不需要为私人题库再写一套；
+- 私人题库也能“上传新版本”，并按第 3 节自动更新（作者就是用户自己）；
+- **私人转公开**只需把 `visibility` 改为 `public` 并提交公开审核，内容直接复用，不用重新上传。
+
+直接导入（“导入题库”按钮）**每次都创建新的私人包和新实例**，仍符合 C-01“每次导入都是独立副本”；只有在已有私人包上明确选择“上传新版本”，才会更新原有实例。
+
+### 6.2 审核与可用性
+
+审核针对**拓展代码**：拓展的 JS 规则在服务器上执行，可能占用大量内存或死循环。
+
+| 包内拓展的情况 | 结果 |
+| --- | --- |
+| 全部拓展摘要都在白名单中且状态为 `approved` | 上传后**立即可用** |
+| 有拓展未审核 | 自动提交拓展审核；题库在“我的题库”中显示“审核中”，**不可打开** |
+| 有拓展审核不通过 | 显示“未通过”及原因，用户可以删除 |
+| 拓展被撤销审核（C-04） | 使用它的所有题库变为不可用，显示“拓展已停用” |
+
+**可用性不存成题库实例上的字段，而是在读取时由白名单推算：**
+
+```sql
+-- 该题库内容用到的拓展中，是否存在未批准的
+SELECT COUNT(*) FROM (SELECT DISTINCT extension_digest FROM content_question WHERE bank_id = ?) q
+LEFT JOIN admin_extension_review r ON r.digest = q.extension_digest AND r.status = 'approved'
+WHERE r.digest IS NULL;
+```
+
+原因：审核按拓展摘要记录，一次审核会同时影响很多用户的很多题库。如果把状态复制到每个题库实例上，审核通过或撤销时就要批量修改所有相关的行，容易遗漏、产生不一致；推算的方式在审核状态变化后**下一个请求就生效**。题库内容不可变，“某本题库用到哪些拓展”的结果可以缓存，只有白名单查询需要实时进行。
+
+**审核不代替隔离：** 已审核的拓展照样在 rule-runner 的隔离环境中执行，受内存和时间限制（ADR-003、rule-runner 协议第 7 节）。审核是第二道防线。
+
+### 6.3 “我的题库”的三种来源
+
+| 来源 | 数据 | 说明 |
+| --- | --- | --- |
+| 从题库广场加入 | `practice_collection`，`source_pack_id` 指向公开包 | 自动更新（第 3 节） |
+| 自己上传 | `practice_collection`，`source_pack_id` 指向私人包 | 可用性见 6.2 |
+| 收藏 | `catalog_favorite(user_id, pack_id, created_at)` | 只是书签，不是题库实例；点击后选择加入哪几本 |
+
+### 6.4 下载与导出
+
+- **题库广场下载**：返回作者上传的原始 `.qbank` 文件（`catalog_pack_revision` 记录其 `blob_sha256`），由 Nginx `X-Accel-Redirect` 发送。必须逐字节一致：Windows 客户端会校验 `sha256`（C-05）。
+- **导出我的题库**：从共享内容重新打包，不含作答、草稿和历史。
+
+### 6.5 数据库变更
+
+```sql
+-- catalog_pack 增加
+  visibility  ENUM('private','public') NOT NULL,
+  owner_id    CHAR(36) NOT NULL,                   -- 私人包只有 owner 可见
+
+CREATE TABLE catalog_favorite (
+  user_id     CHAR(36)     NOT NULL,
+  pack_id     CHAR(36)     NOT NULL,
+  created_at  DATETIME(3)  NOT NULL,
+  PRIMARY KEY (user_id, pack_id)
+);
+```
+
+`practice_collection.source_pack_id` 对私人上传同样填写（原设计为 NULL，已更正）。
 
 ## 7. 测试要点
 
@@ -169,3 +238,4 @@ CREATE TABLE catalog_pack_bank (                   -- 某个版本中的一本�
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
+| v0.2 | 2026-10-28 | 第 6 节改写：私人上传与分享走同一流程（私人题库包）、按拓展白名单推算可用性、“我的题库”三种来源、下载与导出 |
