@@ -19,7 +19,7 @@ import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, SessionMapper sessions, Clock clock) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, String allowedOrigin, SessionMapper sessions, Clock clock) throws Exception {
         http
                 // ① 不使用 Spring 的 HttpSession：会话存在我们自己的 auth_session 表里（ADR-005）
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -37,6 +37,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 // ⑤ 未登录时，返回我们统一的错误格式，而不是 Spring 默认的页面
                 .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))
+                .addFilterBefore(new OriginCheckFilter(allowedOrigin), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SessionAuthenticationFilter(sessions, clock),
                     UsernamePasswordAuthenticationFilter.class);
         return http.build();

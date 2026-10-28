@@ -31,3 +31,7 @@ server:
 logging:
   level:
     root: INFO
+
+qf:
+  security:
+    allowed-origin: ${QF_PUBLIC_ORIGIN:http://localhost:8088}
