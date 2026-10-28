@@ -50,10 +50,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
+import cloud.treenewbee.quizforge.identity.domain.PasswordHasher;
 import cloud.treenewbee.quizforge.identity.domain.SessionToken;
 import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 import cloud.treenewbee.quizforge.identity.infrastructure.SessionRow;
 import cloud.treenewbee.quizforge.identity.infrastructure.UserMapper;
+import cloud.treenewbee.quizforge.identity.infrastructure.UserRow;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import cloud.treenewbee.quizforge.shared.web.ErrorResponse;
 import tools.jackson.databind.json.JsonMapper;
@@ -71,6 +73,7 @@ class AuthApiIntegrationTest extends MySqlTestBase {
     @Autowired AuthService auth;
     @Autowired UserMapper users;
     @Autowired JdbcTemplate jdbc;
+    @Autowired PasswordHasher hasher;
     @MockitoSpyBean SessionMapper sessions;
 
     private final Set<String> emails = new HashSet<>();
@@ -241,15 +244,25 @@ class AuthApiIntegrationTest extends MySqlTestBase {
         assertValidation(login(email, PASSWORD));
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"", "1234567"})
-    void loginRejectsShortPassword(String password) throws Exception {
-        assertValidation(login(email(), password));
+    @Test
+    void loginRejectsEmptyPassword() throws Exception {
+        assertValidation(login(email(), ""));
+    }
+
+    @Test
+    void legacyAccountWithShortPasswordCanLogIn() throws Exception {
+        String email = email();
+        String id = Ids.uuidV7();
+        userIds.add(id);
+        users.insert(new UserRow(id, email, "Legacy", hasher.hash("pass123"), "scrypt-v1",
+                false, NOW, NOW, 0L));
+
+        assertThat(assertUser(login(email, "pass123"), email, "Legacy")).isEqualTo(id);
     }
 
     @Test
     void loginRejectsLongPasswordAndMissingFields() throws Exception {
-        assertValidation(login(email(), "p".repeat(129)));
+        assertValidation(login(email(), "p".repeat(1025)));
         assertValidation(login("a".repeat(169) + "@example.test", PASSWORD));
         assertValidation(post("/api/auth/login", Map.of("email", email()), null, ORIGIN, null));
         assertValidation(post("/api/auth/login", Map.of("password", PASSWORD), null, ORIGIN, null));

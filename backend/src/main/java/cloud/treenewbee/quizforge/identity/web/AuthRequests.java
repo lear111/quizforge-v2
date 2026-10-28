@@ -5,6 +5,7 @@ import java.util.regex.Pattern;
 import org.hibernate.validator.constraints.CodePointLength;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -29,7 +30,8 @@ public final class AuthRequests {
 
     public record Login(
             @NotBlank @Size(max = 180) @jakarta.validation.constraints.Pattern(regexp = EMAIL_PATTERN) String email,
-            @NotNull @CodePointLength(min = 8, max = 128) String password) {
+            // 登录不校验最短长度：旧账号可能使用短于 8 位的密码（C-06）；上限只为限制 scrypt 输入。
+            @NotEmpty @CodePointLength(max = 1024) String password) {
         public Login {
             email = trim(email);
         }
