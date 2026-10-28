@@ -3,6 +3,7 @@ package cloud.treenewbee.quizforge.identity.security;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -19,7 +20,7 @@ import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, String allowedOrigin, SessionMapper sessions, Clock clock) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, @Value("${qf.security.allowed-origin}")String allowedOrigin, SessionMapper sessions, Clock clock) throws Exception {
         http
                 // ① 不使用 Spring 的 HttpSession：会话存在我们自己的 auth_session 表里（ADR-005）
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -28,7 +29,6 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .logout(l -> l.disable())
                 // ③ 关闭 Spring 自带的 CSRF Token：改用 SameSite Cookie + Origin 校验（ADR-005），
-                //    Origin 校验在下一步实现
                 .csrf(c -> c.disable())
                 // ④ 哪些接口不需要登录
                 .authorizeHttpRequests(a -> a
