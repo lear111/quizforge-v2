@@ -96,7 +96,7 @@ public class AuthService {
 
     // 将邮箱地址规范化为小写并去除首尾空格
     static String normalizeEmail(String email) {
-        if (email == null) {
+        if (email == null || email.trim().isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "请填写邮箱");
         }
         return email.toLowerCase(Locale.ROOT).trim();
@@ -119,7 +119,7 @@ public class AuthService {
 
     // 退出登录
     public void logout(String rawToken) {
-        if (SessionToken.isWellFormed(rawToken) == false) {
+        if (!SessionToken.isWellFormed(rawToken)) {
             return;
         }
         byte[] hash = SessionToken.hash(rawToken);
