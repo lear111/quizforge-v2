@@ -173,7 +173,7 @@ class AuthApiIntegrationTest extends MySqlTestBase {
         String password = "\uD83D\uDE00".repeat(128);
         assertUser(register(email, "Alice", password), email, "Alice");
         assertUser(login(email, password), email, "Alice");
-        assertValidation(login(email, "\uD83D\uDE00".repeat(7)));
+        assertValidation(register(email(), "Alice", "\uD83D\uDE00".repeat(7)));
 
         String whitespaceEmail = email();
         assertUser(register(whitespaceEmail, "Alice", " ".repeat(8)), whitespaceEmail, "Alice");
