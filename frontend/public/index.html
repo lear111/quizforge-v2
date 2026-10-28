@@ -2,17 +2,94 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>QuizForge V2</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>登录 · QuizForge</title>
+  <link rel="icon" href="./quizforge-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./auth.css">
+  <script type="module" src="./auth.js"></script>
 </head>
 <body>
-  <!-- Placeholder until the reused legacy frontend is forked in (ADR-006, milestone M4). -->
-  <h1>QuizForge V2</h1>
-  <p id="status">正在检查后端…</p>
-  <script>
-    fetch('/api/health').then(r => r.json()).then(v => {
-      document.getElementById('status').textContent = v.ok ? '后端与数据库连接正常' : '后端异常';
-    }).catch(() => { document.getElementById('status').textContent = '无法连接后端'; });
-  </script>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="QuizForge 首页">
+      <img src="./quizforge-icon.svg" width="40" height="40" alt="">
+      <span><strong>QuizForge</strong><span class="brand-caption">让学习更有条理</span></span>
+    </a>
+    <span class="header-label">账号中心</span>
+  </header>
+
+  <main>
+    <section class="account-card" aria-labelledby="page-title">
+      <div class="card-mark" aria-hidden="true">Q<span>✓</span></div>
+      <h1 id="page-title" tabindex="-1">欢迎回来</h1>
+      <p id="page-description" class="description">登录你的 QuizForge 账号。</p>
+      <p id="feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
+
+      <div id="checking-view" class="checking" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="checking-message">正在检查登录状态…</span>
+        <button id="retry" class="secondary" type="button" hidden>重新连接</button>
+      </div>
+
+      <div id="forms-view" hidden>
+        <div class="tabs" role="tablist" aria-label="账号操作">
+          <button id="login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-panel">登录</button>
+          <button id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-panel" tabindex="-1">注册</button>
+        </div>
+
+        <section id="login-panel" role="tabpanel" aria-labelledby="login-tab">
+          <form id="login-form" novalidate>
+            <fieldset>
+              <div class="field">
+                <label for="login-email">邮箱</label>
+                <input id="login-email" name="email" type="email" inputmode="email" autocomplete="username" placeholder="你的邮箱地址" autocapitalize="none" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="login-password">密码</label>
+                <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+              </div>
+              <button class="primary" type="submit">登录</button>
+            </fieldset>
+          </form>
+          <p class="switch-note">还没有账号？<button id="to-register" class="text-button" type="button">注册新账号</button></p>
+        </section>
+
+        <section id="register-panel" role="tabpanel" aria-labelledby="register-tab" hidden>
+          <form id="register-form" novalidate>
+            <fieldset>
+              <div class="field">
+                <label for="register-email">邮箱</label>
+                <input id="register-email" name="email" type="email" inputmode="email" autocomplete="username" placeholder="你的邮箱地址" autocapitalize="none" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="register-name">姓名</label>
+                <input id="register-name" name="name" type="text" autocomplete="nickname" placeholder="怎么称呼你">
+              </div>
+              <div class="field">
+                <label for="register-password">设置密码</label>
+                <input id="register-password" name="password" type="password" autocomplete="new-password" aria-describedby="password-hint" placeholder="设置你的密码">
+                <small id="password-hint">8–128 个字符</small>
+              </div>
+              <div class="field">
+                <label for="register-confirm">确认密码</label>
+                <input id="register-confirm" name="confirm" type="password" autocomplete="new-password" placeholder="再输入一次密码">
+              </div>
+              <button class="primary" type="submit">注册并登录</button>
+            </fieldset>
+          </form>
+          <p class="switch-note">已有账号？<button id="to-login" class="text-button" type="button">去登录</button></p>
+        </section>
+      </div>
+
+      <section id="signed-in-view" class="signed-in" hidden>
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <p id="identity" class="identity"></p>
+        <p class="signed-in-note">你可以随时退出当前账号。</p>
+        <button id="logout" class="secondary" type="button">退出登录</button>
+      </section>
+      <noscript><p class="feedback">请启用 JavaScript 后使用账号登录。</p></noscript>
+    </section>
+  </main>
+  <footer>QuizForge · 在线学习，从这里开始</footer>
 </body>
 </html>
