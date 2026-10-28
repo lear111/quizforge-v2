@@ -30,7 +30,7 @@ function execute(job) {
     const operations = new Operations(read('rules'), JSON.parse(read('questionSchema')), JSON.parse(read('answerSchema')), job.spec);
     const data = operations[job.op](job.input);
     const text = JSON.stringify({ok: true, data});
-    if (Buffer.byteLength(text) > LIMITS.output - 128) return {...failure('RULE_OUTPUT_LIMIT', 'Rule output exceeds size limit'), retire: true};
+    if (Buffer.byteLength(text) > LIMITS.output) return {...failure('RULE_OUTPUT_LIMIT', 'Rule output exceeds size limit'), retire: true};
     return {ok: true, data};
   } catch (error) {
     if (error.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return {...failure('RULE_TIMEOUT', 'Rule hook exceeded its time limit'), retire: true};

@@ -82,6 +82,20 @@ test('chunked oversized request produces bounded JSON failure', async t => {
   assert.equal(response.status, 200); assert.equal(response.body.code, 'RULE_INPUT_TOO_LARGE');
 });
 
+test('output limit includes the full envelope without rejecting smaller valid replies', async t => {
+  const h = await harness(t, {limit: 1});
+  const spec = await h.pack('QF.defineType({project(d){return d.text},grade(){}})');
+  const small = await h.post(h.request(spec, 'project', {data: {text: 'x'.repeat(LIMITS.output - 100)}, state: {submitted: false}}));
+  assert.equal(small.body.ok, true);
+  assert.ok(Buffer.byteLength(JSON.stringify(small.body)) <= LIMITS.output);
+  const envelopeOnly = LIMITS.output - Buffer.byteLength(JSON.stringify({ok: true, data: {projected: ''}}));
+  for (const size of [envelopeOnly, LIMITS.output]) {
+    const large = await h.post(h.request(spec, 'project', {data: {text: 'x'.repeat(size)}, state: {submitted: false}}));
+    assert.equal(large.body.code, 'RULE_OUTPUT_LIMIT'); assert.equal(h.pool.workers.size, 0);
+  }
+  assert.equal((await h.post(h.request(spec, 'project', {data: {text: 'recovered'}, state: {submitted: false}}))).body.ok, true);
+});
+
 test('malformed JSON and wrong content type have safe errors', async t => {
   const h = await harness(t);
   for (const contentType of ['application/json', 'text/plain']) {

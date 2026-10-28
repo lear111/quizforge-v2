@@ -14,10 +14,10 @@ export class WorkerPool {
     this.queue = [];
     this.closed = false;
   }
-  execute(spec, files, op, input, deadline, priority) {
+  execute(spec, files, op, input, deadline, priority, startedAt = Date.now()) {
     if (this.closed) return Promise.reject(new RunnerError('UNAVAILABLE', 'Rule runner is shutting down', 503));
     return new Promise((resolve, reject) => {
-      const job = {key: JSON.stringify(spec), payload: {spec, files, op, input}, deadline, priority, resolve, reject};
+      const job = {key: JSON.stringify(spec), payload: {spec, files, op, input}, deadline, priority, startedAt, resolve, reject};
       job.timer = setTimeout(() => {
         const index = this.queue.indexOf(job);
         if (index >= 0) this.queue.splice(index, 1);
@@ -92,9 +92,15 @@ export class WorkerPool {
       response = JSON.parse(worker.buffer.subarray(0, newline));
       if (typeof response.ok !== 'boolean') throw new Error('invalid reply');
     } catch { this.stop(worker, failure()); this.dispatch(); return; }
-    const retire = response.retire === true;
+    let retire = response.retire === true;
     delete response.retire;
     const job = worker.job;
+    if (response.ok) {
+      response.elapsedMs = Math.max(0, Date.now() - job.startedAt);
+      if (Buffer.byteLength(JSON.stringify(response)) > LIMITS.output) {
+        response = failure('RULE_OUTPUT_LIMIT', 'Rule output exceeds size limit'); retire = true;
+      }
+    }
     worker.job = null; clearTimeout(job.timer); worker.served++; worker.lastUsed = Date.now();
     worker.buffer = Buffer.alloc(0);
     if (retire || worker.served >= this.maxRequests) this.stop(worker);

@@ -97,10 +97,9 @@ export function createRunner({token, blobDir, poolOptions, logger = record => co
           ]);
         } finally { clearTimeout(timer); }
         result = await pool.execute(request.package, files, request.op, request.input, deadline,
-          request.priority ? request.priority === 'foreground' : !background.has(request.op));
+          request.priority ? request.priority === 'foreground' : !background.has(request.op), start);
       }
       const elapsedMs = Date.now() - start;
-      if (result.ok) result.elapsedMs = elapsedMs;
       record(result.code ?? 'OK', elapsedMs);
       reply(200, result);
     } catch (error) {
