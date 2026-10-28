@@ -20,26 +20,30 @@ import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, @Value("${qf.security.allowed-origin}")String allowedOrigin, SessionMapper sessions, Clock clock) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            @Value("${qf.security.allowed-origin}") String allowedOrigin,
+            SessionMapper sessions,
+            Clock clock) throws Exception {
         http
-                // ① 不使用 Spring 的 HttpSession：会话存在我们自己的 auth_session 表里（ADR-005）
+                // 会话由 auth_session 持久化。
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // ② 关闭 Spring 自带的表单登录、HTTP Basic 登录和退出页面：我们有自己的接口
+                // 认证与退出由应用接口处理。
                 .formLogin(f -> f.disable())
                 .httpBasic(b -> b.disable())
                 .logout(l -> l.disable())
-                // ③ 关闭 Spring 自带的 CSRF Token：改用 SameSite Cookie + Origin 校验（ADR-005），
+                // 写请求通过 Origin 校验防护（ADR-005）。
                 .csrf(c -> c.disable())
-                // ④ 哪些接口不需要登录
+                // 健康检查和认证入口允许匿名访问。
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/health",
                                 "/api/auth/register", "/api/auth/login", "/api/auth/logout").permitAll()
                         .anyRequest().authenticated())
-                // ⑤ 未登录时，返回我们统一的错误格式，而不是 Spring 默认的页面
+                // 认证失败也使用统一 JSON 错误格式。
                 .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))
                 .addFilterBefore(new OriginCheckFilter(allowedOrigin), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SessionAuthenticationFilter(sessions, clock),
-                    UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

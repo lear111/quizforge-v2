@@ -1,8 +1,10 @@
 package cloud.treenewbee.quizforge.identity.security;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
+import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import jakarta.servlet.FilterChain;
@@ -23,13 +25,12 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        // 如果是安全方法（request.getMethod() 在 SAFE_METHODS 中），直接放行并 return
+        // 只对写请求检查来源。
         if (SAFE_METHODS.contains(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 读取 request.getHeader("Origin")；不等于 allowedOrigin（包括为 null 的情况）时，
         String origin = request.getHeader("Origin");
 
         // 写请求必须来自本站，替代 CSRF Token（ADR-005）
@@ -42,11 +43,9 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     }
 
     private static void reject(HttpServletResponse response) throws IOException {
-        // 参照 SecurityConfig 里的 unauthenticated()，返回 403 和
-        // {"error":{"code":"ORIGIN_REJECTED","message":"请求来源不受信任"}}
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.getWriter().write("{\"error\":{\"code\":\"ORIGIN_REJECTED\",\"message\":\"请求来源不受信任\"}}");
     }
 }

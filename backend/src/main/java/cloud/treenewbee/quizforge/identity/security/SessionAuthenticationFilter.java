@@ -42,7 +42,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private static String readCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();  
+        Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
                 if (COOKIE_NAME.equals(cookie.getName())) {
