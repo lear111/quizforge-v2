@@ -1,0 +1,430 @@
+{
+  "formatVersion": 1,
+  "id": "examples",
+  "title": "简答题（答题区）示例",
+  "description": "原简答题样例：题干和答案解析保留富文本，仅作答改用宿主答题区。",
+  "extension": {
+    "path": "extensions/基础题型/简答题（答题区）"
+  },
+  "questions": [
+    {
+      "id": "sample-text",
+      "title": "单问：普通文字",
+      "outline": {
+        "level": "question",
+        "label": "1"
+      },
+      "data": {
+        "formatVersion": 1,
+        "material": null,
+        "parts": [
+          {
+            "id": "cache",
+            "stem": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "请简要解释"
+                    },
+                    {
+                      "type": "text",
+                      "text": "缓存",
+                      "marks": [
+                        {
+                          "type": "bold"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "text": "的作用，并说明使用缓存时需要注意的一个问题。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "answerAndExplanation": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "参考答案",
+                      "marks": [
+                        {
+                          "type": "bold"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "缓存将经常使用的数据暂存起来，减少重复计算或读取，从而加快响应速度。使用时需要考虑缓存内容与原始数据的一致性，避免读取过期数据。"
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "评分参考：说明缓存的基本作用 3 分；指出一个合理的注意事项并作说明 2 分。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "maxScore": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "sample-image-math",
+      "title": "单问：图片与公式",
+      "outline": {
+        "level": "question",
+        "label": "2"
+      },
+      "data": {
+        "formatVersion": 1,
+        "material": null,
+        "parts": [
+          {
+            "id": "area",
+            "stem": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "如图，直角三角形的两条直角边分别为 "
+                    },
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "3\\,\\mathrm{cm}"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": " 和 "
+                    },
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "4\\,\\mathrm{cm}"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": "。请计算它的面积，并写出计算过程。"
+                    }
+                  ]
+                },
+                {
+                  "type": "image",
+                  "attrs": {
+                    "assetId": "96fbe7bbe9e76622b6236d0d0fbfddb92f022249ac38bdbbd908efd3bf3791a8",
+                    "alt": "直角三角形，两条直角边分别为3厘米和4厘米",
+                    "width": 360,
+                    "align": "left"
+                  }
+                }
+              ]
+            },
+            "answerAndExplanation": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "三角形面积等于底乘高的一半："
+                    }
+                  ]
+                },
+                {
+                  "type": "blockMath",
+                  "attrs": {
+                    "latex": "S=\\frac{1}{2}\\times3\\times4=6\\,\\mathrm{cm}^2"
+                  }
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "评分参考：公式与过程正确 3 分；结果及单位正确 2 分。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "maxScore": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "sample-material",
+      "title": "共享材料：两个小问",
+      "outline": {
+        "level": "question",
+        "label": "3"
+      },
+      "data": {
+        "formatVersion": 1,
+        "material": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "学校图书馆借阅记录",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "下表记录了本周前三天的图书借阅数量。请根据材料回答问题。"
+                }
+              ]
+            },
+            {
+              "type": "table",
+              "content": [
+                {
+                  "type": "tableRow",
+                  "content": [
+                    {
+                      "type": "tableHeader",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "日期"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableHeader",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "周一"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableHeader",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "周二"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableHeader",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "周三"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableRow",
+                  "content": [
+                    {
+                      "type": "tableCell",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "借阅数量（本）"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableCell",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "20"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableCell",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "30"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableCell",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "25"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "parts": [
+          {
+            "id": "average",
+            "stem": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "这三天平均每天借出多少本书？请写出计算过程。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "answerAndExplanation": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "blockMath",
+                  "attrs": {
+                    "latex": "\\frac{20+30+25}{3}=25\\text{（本）}"
+                  }
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "平均每天借出 25 本书。评分参考：计算式正确 2 分；结果正确 2 分。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "maxScore": 4
+          },
+          {
+            "id": "reasoning",
+            "stem": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "有人认为：“周二借阅数量最多，说明周二开展的阅读活动一定有效。”这份记录是否足以支持这一结论？请说明理由。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "answerAndExplanation": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "这份记录不足以证明阅读活动一定有效。周二借阅量最多只是现象，借阅数量还可能受课程安排、图书上新等因素影响。可以补充活动前后或有、无活动时的借阅记录，并尽量保持其他条件一致。"
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "评分参考：指出证据不足 2 分；说明其他可能因素 2 分；提出合理的补充证据或比较办法 2 分。"
+                    }
+                  ]
+                }
+              ]
+            },
+            "maxScore": 6
+          }
+        ]
+      }
+    }
+  ]
+}

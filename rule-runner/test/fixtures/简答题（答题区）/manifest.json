@@ -1,0 +1,46 @@
+{
+  "id": "quizforge.short-answer-area",
+  "version": "1.0.4",
+  "name": "简答题（答题区）",
+  "description": "沿用基础简答题的富文本题干、共享材料与答案解析，使用宿主答题区完成文字、手写与图片作答。",
+  "requiresApi": {
+    "major": 1,
+    "minMinor": 5,
+    "capabilities": [
+      "practice",
+      "editor",
+      "score",
+      "richtext",
+      "resources",
+      "outline-items",
+      "lifecycle",
+      "answer-state",
+      "editor-drafts",
+      "manual-review",
+      "ai-grading",
+      "appearance",
+      "answer-areas"
+    ]
+  },
+  "requiresRichText": {
+    "major": 1,
+    "minMinor": 0,
+    "documentFormat": 1,
+    "documentProfile": "advanced-v1",
+    "capabilities": [
+      "basic-formatting",
+      "images",
+      "advanced-formatting",
+      "tables",
+      "math",
+      "image-resize"
+    ]
+  },
+  "entry": "practice.html",
+  "script": "practice.js",
+  "style": "practice.css",
+  "rules": "rules.js",
+  "questionSchema": "question.schema.json",
+  "answerSchema": "answer.schema.json",
+  "examples": "examples/bank.json"
+}

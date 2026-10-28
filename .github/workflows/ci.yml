@@ -9,6 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  rule-runner:
+    name: Rule runner tests (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rule-runner/package-lock.json
+      - name: Install dependencies
+        working-directory: rule-runner
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Protocol, parity and isolation tests
+        working-directory: rule-runner
+        run: |
+          ulimit -c 0
+          npm test
+
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
@@ -30,7 +49,7 @@ jobs:
   smoke:
     name: Compose smoke test (Nginx -> Java -> MySQL)
     runs-on: ubuntu-latest
-    needs: backend
+    needs: [backend, rule-runner]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +64,14 @@ jobs:
           done
           echo "health check did not pass"
           exit 1
+
+      - name: Check rule-runner health with internal authentication
+        run: >-
+          docker compose -f deploy/docker-compose.yml exec -T rule-runner
+          node --input-type=module -e
+          "const r = await fetch('http://127.0.0.1:8090/v1/health',
+          {headers:{'X-Internal-Token':process.env.QF_RULE_RUNNER_TOKEN}});
+          if (!r.ok || !(await r.json()).ok) process.exit(1);"
 
       - name: Show logs on failure
         if: failure()

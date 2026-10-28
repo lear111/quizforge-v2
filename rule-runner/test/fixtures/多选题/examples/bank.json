@@ -1,0 +1,553 @@
+{
+  "formatVersion": 1,
+  "id": "examples",
+  "title": "多选题示例",
+  "description": "富文本多选示例：多个正确答案、表格与公式；全部选对得满分。",
+  "extension": {
+    "path": "extensions/基础题型/多选题"
+  },
+  "questions": [
+    {
+      "id": "sample-numbers",
+      "title": "多选：多个正确答案",
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "下列哪些数是"
+                },
+                {
+                  "type": "text",
+                  "text": "偶数",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "？请选择所有正确选项。"
+                }
+              ]
+            }
+          ]
+        },
+        "options": [
+          {
+            "id": "number-2",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "2"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "number-3",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "3"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "number-6",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "6"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "number-9",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "9"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "correctOptionIds": [
+          "number-2",
+          "number-6"
+        ],
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "2 和 6 是偶数。"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "偶数能被 2 整除。第一版评分方式：全部选对得满分，漏选或错选不得分。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 4
+      },
+      "outline": {
+        "level": "question",
+        "label": "1"
+      }
+    },
+    {
+      "id": "sample-tables",
+      "title": "多选：表格与公式",
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "已知 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "y=x^2"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "，下列哪些表格中的对应关系正确？"
+                }
+              ]
+            }
+          ]
+        },
+        "options": [
+          {
+            "id": "table-1",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "2"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "4"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "table-2",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "table-3",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "2"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "3"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "2"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "3"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "correctOptionIds": [
+          "table-1",
+          "table-2"
+        ],
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A、B 正确。"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "C 中 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "2^2=4"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "、"
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "3^2=9"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "，与所列值不符。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 4
+      },
+      "outline": {
+        "level": "question",
+        "label": "2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,930 @@
+{
+  "formatVersion": 1,
+  "id": "examples",
+  "title": "单选题示例",
+  "description": "富文本单选示例：普通文字、图片与公式、表格选项。",
+  "extension": {
+    "path": "extensions/基础题型/单选题"
+  },
+  "questions": [
+    {
+      "id": "sample-text",
+      "title": "普通文字与强调",
+      "outline": {
+        "level": "question",
+        "label": "1"
+      },
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "下列哪一个数是"
+                },
+                {
+                  "type": "text",
+                  "text": "偶数",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "？"
+                }
+              ]
+            }
+          ]
+        },
+        "options": [
+          {
+            "id": "choice-3",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "3"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "choice-6",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "6"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "choice-7",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "7"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "choice-9",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "9"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "correctOptionId": "choice-6",
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "6 是偶数。",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "偶数能被 2 整除。6 ÷ 2 = 3，其余三个数除以 2 都有余数。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 2
+      }
+    },
+    {
+      "id": "sample-image-math",
+      "title": "图片与公式",
+      "outline": {
+        "level": "question",
+        "label": "2"
+      },
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "如图，直角三角形的两条直角边分别为 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "3\\,\\mathrm{cm}"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": " 和 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "4\\,\\mathrm{cm}"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "，斜边的长度是多少？"
+                }
+              ]
+            },
+            {
+              "type": "image",
+              "attrs": {
+                "assetId": "96fbe7bbe9e76622b6236d0d0fbfddb92f022249ac38bdbbd908efd3bf3791a8",
+                "alt": "直角三角形，两条直角边分别长3厘米和4厘米，斜边长度未知",
+                "width": 360,
+                "align": "left"
+              }
+            }
+          ]
+        },
+        "options": [
+          {
+            "id": "length-4",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "4\\,\\mathrm{cm}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "length-5",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "5\\,\\mathrm{cm}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "length-6",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "6\\,\\mathrm{cm}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "length-7",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "inlineMath",
+                      "attrs": {
+                        "latex": "7\\,\\mathrm{cm}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "correctOptionId": "length-5",
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "斜边长为 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "5\\,\\mathrm{cm}"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "。"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "根据勾股定理："
+                }
+              ]
+            },
+            {
+              "type": "blockMath",
+              "attrs": {
+                "latex": "c=\\sqrt{3^2+4^2}=\\sqrt{25}=5"
+              }
+            }
+          ]
+        },
+        "maxScore": 2
+      }
+    },
+    {
+      "id": "sample-table-options",
+      "title": "表格选项",
+      "outline": {
+        "level": "question",
+        "label": "3"
+      },
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "已知 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "y=x^2"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "。下列哪张表中的对应关系全部正确？"
+                }
+              ]
+            }
+          ]
+        },
+        "options": [
+          {
+            "id": "table-1",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "table-2",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "table-3",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "table-4",
+            "content": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "x"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableHeader",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "y"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "0"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "tableCell",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "-1"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "correctOptionId": "table-2",
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "第二张表正确。分别代入三个值："
+                }
+              ]
+            },
+            {
+              "type": "blockMath",
+              "attrs": {
+                "latex": "(-1)^2=1,\\quad 0^2=0,\\quad 1^2=1"
+              }
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "因此对应的 y 值依次为 1、0、1。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 2
+      }
+    }
+  ]
+}

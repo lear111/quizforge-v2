@@ -1,0 +1,42 @@
+{
+  "id": "quizforge.true-false",
+  "version": "2.0.1",
+  "name": "判断题",
+  "description": "富文本判断题，支持正确或错误判断与自动评分。",
+  "requiresApi": {
+    "major": 1,
+    "minMinor": 4,
+    "capabilities": [
+      "practice",
+      "editor",
+      "score",
+      "richtext",
+      "resources",
+      "lifecycle",
+      "answer-state",
+      "editor-drafts",
+      "appearance"
+    ]
+  },
+  "requiresRichText": {
+    "major": 1,
+    "minMinor": 0,
+    "documentFormat": 1,
+    "documentProfile": "advanced-v1",
+    "capabilities": [
+      "basic-formatting",
+      "images",
+      "advanced-formatting",
+      "tables",
+      "math",
+      "image-resize"
+    ]
+  },
+  "entry": "practice.html",
+  "script": "practice.js",
+  "style": "practice.css",
+  "rules": "rules.js",
+  "questionSchema": "question.schema.json",
+  "answerSchema": "answer.schema.json",
+  "examples": "examples/bank.json"
+}

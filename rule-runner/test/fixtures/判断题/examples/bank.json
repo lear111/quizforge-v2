@@ -1,0 +1,133 @@
+{
+  "formatVersion": 1,
+  "id": "examples",
+  "title": "判断题示例",
+  "description": "富文本判断示例：文字陈述与公式陈述。",
+  "extension": {
+    "path": "extensions/基础题型/判断题"
+  },
+  "questions": [
+    {
+      "id": "sample-true",
+      "title": "判断：正确陈述",
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "一个整数若能被 2 整除，这个整数就是偶数。"
+                }
+              ]
+            }
+          ]
+        },
+        "correctAnswer": true,
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "正确。能被 2 整除是偶数的定义。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 2
+      },
+      "outline": {
+        "level": "question",
+        "label": "1"
+      }
+    },
+    {
+      "id": "sample-false",
+      "title": "判断：公式陈述",
+      "data": {
+        "formatVersion": 1,
+        "stem": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "对于所有实数 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "x"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "，都有 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "x^2=x"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "。"
+                }
+              ]
+            }
+          ]
+        },
+        "correctAnswer": false,
+        "answerAndExplanation": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "错误。取 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "x=2"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "，则 "
+                },
+                {
+                  "type": "inlineMath",
+                  "attrs": {
+                    "latex": "x^2=4\\ne2"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "。一个反例即可否定“对于所有实数”的陈述。"
+                }
+              ]
+            }
+          ]
+        },
+        "maxScore": 2
+      },
+      "outline": {
+        "level": "question",
+        "label": "2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "quizforge.short-answer",
+  "version": "2.0.2",
+  "name": "简答题",
+  "description": "富文本简答题，支持单问、共享材料、多小问、人工评分与 AI 评分。",
+  "requiresApi": {
+    "major": 1,
+    "minMinor": 4,
+    "capabilities": [
+      "practice",
+      "editor",
+      "score",
+      "richtext",
+      "resources",
+      "outline-items",
+      "lifecycle",
+      "answer-state",
+      "editor-drafts",
+      "manual-review",
+      "ai-grading",
+      "appearance"
+    ]
+  },
+  "requiresRichText": {
+    "major": 1,
+    "minMinor": 0,
+    "documentFormat": 1,
+    "documentProfile": "advanced-v1",
+    "capabilities": [
+      "basic-formatting",
+      "images",
+      "advanced-formatting",
+      "tables",
+      "math",
+      "image-resize"
+    ]
+  },
+  "entry": "practice.html",
+  "script": "practice.js",
+  "style": "practice.css",
+  "rules": "rules.js",
+  "questionSchema": "question.schema.json",
+  "answerSchema": "answer.schema.json",
+  "examples": "examples/bank.json"
+}
