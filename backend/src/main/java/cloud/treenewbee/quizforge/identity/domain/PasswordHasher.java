@@ -1,14 +1,19 @@
 package cloud.treenewbee.quizforge.identity.domain;
 
 import java.nio.charset.StandardCharsets;
-import java.security.*;
-import java.util.*;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.Objects;
 import java.util.concurrent.Semaphore;
+import java.util.regex.Pattern;
+
 import org.bouncycastle.crypto.generators.SCrypt;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+
 import cloud.treenewbee.quizforge.shared.web.ApiException;
-import java.util.regex.Pattern;
 
 @Component
 public class PasswordHasher {
@@ -20,8 +25,8 @@ public class PasswordHasher {
     // 限制同时进行的哈希计算数量，防止过载
     private final Semaphore hashing = new Semaphore(2);
 
+    // 将字符串编码为 UTF-8 字节数组，替换无法编码的字符为 U+FFFD
     private static byte[] utf8(String value) {
-        // 将字符串编码为 UTF-8 字节数组，处理无法映射的字符
         try {
             var encoded = StandardCharsets.UTF_8.newEncoder()
                     .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
@@ -50,8 +55,10 @@ public class PasswordHasher {
 
     // 计算 scrypt 哈希值，使用给定的密码和盐值
     private byte[] derive(String password, String salt) {
-        if (!hashing.tryAcquire())
+        if (!hashing.tryAcquire()){
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_BUSY", "登录服务繁忙，请稍后再试");
+        }
+        
         byte[] bytes = utf8(password);
         try {
             return SCrypt.generate(bytes, utf8(salt), 16384, 8, 1, 64);

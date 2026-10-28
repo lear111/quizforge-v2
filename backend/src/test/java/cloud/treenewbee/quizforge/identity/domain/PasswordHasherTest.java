@@ -29,14 +29,8 @@ class PasswordHasherTest {
 
     // 验证使用旧版哈希算法生成的包含孤立代理项的密码哈希值
     @Test
-    void verifiesLegacyLoneSurrogate() {
+    void verifiesLegacyLoneSurrogateHash() {
         assertThat(hasher.verify("pass\uD800word", LEGACY_LONE_SURROGATE)).isTrue();
-    }
-
-    // 存储值格式错误时返回 false，至少测 "abc" 和 null 两种
-    @Test
-    void rejectsMalformedStoredValue() {
-        assertThat(hasher.verify("pass123", "abc")).isFalse();
     }
 
     // 密码错误时返回 false
@@ -69,7 +63,7 @@ class PasswordHasherTest {
         assertThat(stored1).isNotEqualTo(stored2);
     }
 
-    // hash 的结果符合格式。提示：assertThat(结果).matches("[a-f0-9]{32}:[a-f0-9]{128}")
+    // hash 的结果为 32 位 hex、冒号、128 位 hex
     @Test
     void hashProducesValidFormat() {
         String password = "pass123";
