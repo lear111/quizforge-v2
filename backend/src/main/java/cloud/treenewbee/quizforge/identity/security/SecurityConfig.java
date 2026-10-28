@@ -1,6 +1,7 @@
 package cloud.treenewbee.quizforge.identity.security;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,12 +11,15 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 
 @Configuration
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, SessionMapper sessions, Clock clock) throws Exception {
         http
                 // ① 不使用 Spring 的 HttpSession：会话存在我们自己的 auth_session 表里（ADR-005）
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -32,7 +36,9 @@ public class SecurityConfig {
                                 "/api/auth/register", "/api/auth/login", "/api/auth/logout").permitAll()
                         .anyRequest().authenticated())
                 // ⑤ 未登录时，返回我们统一的错误格式，而不是 Spring 默认的页面
-                .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()));
+                .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))
+                .addFilterBefore(new SessionAuthenticationFilter(sessions, clock),
+                    UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

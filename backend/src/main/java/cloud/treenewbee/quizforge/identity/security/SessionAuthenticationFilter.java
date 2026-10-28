@@ -34,7 +34,6 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String token = readCookie(request);
         if (SessionToken.isWellFormed(token)) {
-            // TODO: 查询会话；查到时调用 authenticate(userId)
             sessions.findActive(SessionToken.hash(token), clock.instant())
             .ifPresent(session -> authenticate(session.userId()));
 
@@ -43,7 +42,6 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private static String readCookie(HttpServletRequest request) {
-        // TODO: request.getCookies() 可能返回 null；遍历找到名字等于 COOKIE_NAME 的 Cookie，返回它的值；找不到返回 null
         Cookie[] cookies = request.getCookies();  
         if (cookies != null) {
             for (Cookie cookie : cookies) {
