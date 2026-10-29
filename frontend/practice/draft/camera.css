@@ -1,0 +1,12 @@
+/* Fixed logical card width keeps annotations aligned across screens and zoom. */
+.question-stage{position:relative;z-index:1;width:100%;min-height:100%}
+.question-world{position:absolute;top:0;left:0;display:flow-root;width:var(--qf-draft-width,760px);transform-origin:0 0;transform:translate(var(--qf-whiteboard-x,0px),var(--qf-whiteboard-y,0px)) scale(var(--qf-whiteboard-zoom,1))}
+.question-viewport{overflow-x:hidden}
+.question-frame-wrapper,.question-pane.is-draft .question-frame-wrapper{margin:var(--qf-draft-top,34px) auto 90px;padding:0 var(--qf-draft-padding,26px);max-width:none}
+.question-pane:not(.is-draft):not(.is-edit) .question-world{position:relative;width:100%;transform:none}
+.question-pane:not(.is-draft):not(.is-edit) .question-frame-wrapper{width:100%;max-width:none;margin:0!important;padding:0!important}
+/* The stage fills the available viewport and grows with long content. Keep
+   short cards centred without changing the draft world's ink coordinates. */
+.question-pane:not(.is-draft):not(.is-edit):not(.richtext-expanded) .question-stage{display:flex;flex-direction:column;justify-content:center}
+.question-pane:not(.is-draft):not(.is-edit):not(.richtext-expanded) .question-world{flex-shrink:0}
+@media(max-width:1100px) and (min-width:801px){.app-shell{grid-template-columns:var(--sidebar) minmax(0,1fr)}.outline{position:fixed;top:0;right:0;bottom:0;z-index:30;width:235px;box-shadow:0 10px 50px #35294120;transform:translateX(110%);transition:transform .2s}.outline.open{transform:translateX(0)}#outline-toggle{display:inline-grid;align-self:center}}

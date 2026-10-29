@@ -1,0 +1,46 @@
+.exam-status{font-size:12px;color:var(--accent,#7956c8);white-space:nowrap}
+.exam-dialog,.exam-delete-dialog{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #e6dfef;border-radius:18px;padding:24px;color:#40384e;background:#fff;box-shadow:0 18px 70px #332c3926}
+.exam-dialog::backdrop,.exam-delete-dialog::backdrop{background:#29223255}
+.exam-dialog form{display:block}
+.exam-dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.exam-dialog h2,.exam-delete-dialog h2{margin:0;font-size:19px;font-weight:600;line-height:1.5}
+.exam-dialog button,.exam-delete-dialog button{font:inherit;cursor:pointer}
+.exam-dialog .exam-dialog-close{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;padding:0;background:#f8f6fb;color:#9a8eaa;font-size:22px;line-height:1}
+.exam-dialog-close:hover{background:#eee8f8;color:var(--accent,#7956c8)}
+.exam-dialog .exam-intro{margin:7px 0 22px;font-size:12px;line-height:1.7;color:#9a8eaa}
+.exam-settings{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 12px}
+.exam-dialog .exam-duration-label{grid-column:1/-1;display:block;font-size:12px;color:#6d617d}
+.exam-duration-control{display:flex;align-items:center;gap:12px;min-width:0;height:44px;padding:0 12px;border:1px solid #ded5ec;border-radius:9px;background:#fff}
+.exam-duration-control:focus-within{border-color:#ae92eb;box-shadow:0 0 0 3px #eee7ff}
+.exam-dialog .exam-duration-control input{width:100%;min-width:0;border:0;border-radius:0;padding:0;background:transparent;font:inherit;font-size:14px;color:#40384e;outline:none;box-shadow:none}
+.exam-duration-control span{flex:none;font-size:12px;color:#a294b0}
+.exam-duration-control:has(input:disabled){background:#f8f7fa;color:#aaa1b5}
+.exam-dialog .exam-unlimited{display:flex;flex-direction:row;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid #ebe6f1;border-radius:9px;background:#faf9fc;white-space:nowrap;cursor:pointer;font-size:12px;color:#6d617d}
+.exam-dialog .exam-unlimited input{flex:none;width:16px;height:16px;padding:0;margin:0;accent-color:var(--accent,#7956c8);cursor:pointer}
+.exam-dialog .exam-hint{grid-column:1/-1;margin:0;font-size:11px;line-height:1.7;color:#9a8eaa}
+.exam-resume-section{margin-top:22px;padding-top:18px;border-top:1px solid #eee9f5}
+.exam-resume-section h3{margin:0 0 10px;font-size:13px;font-weight:550;color:#6d617d}
+.exam-records{display:grid;gap:8px;max-height:192px;overflow:auto;scrollbar-width:thin;scrollbar-color:#dcd2eb transparent}
+.exam-record-row{display:flex;align-items:center;gap:8px;padding:11px 10px 11px 14px;border:1px solid #ece7f2;border-radius:10px;background:#fff}
+.exam-record-row:hover{background:#fcfaff}
+.exam-record{display:flex;flex:1;min-width:0;align-items:center;justify-content:space-between;gap:12px;border:0;padding:0;background:transparent;text-align:left;color:#554765}
+.exam-record-body{min-width:0}
+.exam-record-title{display:block;font-size:13px;font-weight:550;line-height:1.6}
+.exam-record-detail{display:block;margin-top:3px;font-size:10px;line-height:1.7;color:#a295b0;overflow-wrap:anywhere}
+.exam-record-status{flex:none;padding:3px 7px;border-radius:5px;background:#f3eefc;color:#987ab9;font-size:10px;white-space:nowrap}
+.exam-dialog .exam-record-delete{display:grid;place-items:center;flex:none;width:34px;height:38px;border:0;border-radius:7px;padding:8px;background:transparent;color:#b0a5bc}
+.exam-record-delete svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.exam-dialog .exam-record-delete:hover:not(:disabled){background:#fff0f0;color:#b96565}
+.exam-dialog .exam-error{margin:14px 0 0;font-size:12px;line-height:1.7;color:#b74545}
+.exam-resume-section[hidden],.exam-error[hidden]{display:none}
+.exam-dialog .dialog-actions,.exam-delete-dialog .dialog-actions{display:flex;gap:10px;margin-top:22px;padding-top:18px;border-top:1px solid #eee9f5}
+.exam-dialog .dialog-actions button,.exam-delete-dialog .dialog-actions button{flex:none;width:auto;min-width:80px;min-height:42px;padding:9px 18px;border:1px solid #e4dced;border-radius:9px;white-space:nowrap;font-size:13px;background:#fff;color:#6d617d}
+.exam-dialog .dialog-actions button[type=submit]{flex:1;background:var(--accent,#7956c8);border-color:var(--accent,#7956c8);color:#fff}
+.exam-delete-dialog{width:min(420px,calc(100vw - 32px))}
+.exam-delete-dialog p{font-size:12px;line-height:1.8;color:#9a8eaa}
+.exam-delete-dialog .exam-delete-detail{margin:14px 0 8px;color:#6d617d}
+.exam-delete-dialog .dialog-actions .danger-button{background:#b96565;border-color:#b96565;color:white}
+.exam-dialog button:disabled{opacity:.55;cursor:default}
+.exam-dialog button:focus-visible,.exam-delete-dialog button:focus-visible{outline:2px solid #ae92eb;outline-offset:2px}
+@media(max-width:600px){.exam-status{font-size:11px}.document-actions{flex-wrap:wrap}.exam-dialog,.exam-delete-dialog{padding:20px}.exam-record{gap:8px}}
+#exam-start,#exam-submit,#exam-return{width:auto;padding:0 10px;white-space:nowrap;font-size:12px;flex:none}
