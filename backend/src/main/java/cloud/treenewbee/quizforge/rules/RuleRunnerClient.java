@@ -62,20 +62,21 @@ public class RuleRunnerClient {
     public RuleResult execute(String op, RulePackage rulePackage, Map<String, ?> input, Duration deadline) {
         HttpRequest request = buildRequest(op, rulePackage, input, deadline);
 
-        // ===== 你来写（M2.5 核心）=====
-        // 第 1 步 限流：用 permits.tryAcquire() 尝试拿一个许可。
-        //         拿不到 → 立即 throw new RuleRunnerException("rule-runner 并发已满")。
-        //         想一想：为什么用 tryAcquire()（立即返回）而不是 acquire()（一直等）？
-        //
-        // 第 2 步 发送：在 try { … } finally { permits.release(); } 里调用 send(request)。
-        //         想一想：为什么 release() 必须放在 finally 里？如果 send 抛了异常会怎样？
-        //
-        // 第 3 步 重试：send(request) 抛出 ConnectException 时，再调用一次 send(request)；
-        //         第二次仍然失败，就让异常继续抛出。其他异常不重试。
-        //         提示：ConnectException 会被包在 RuleRunnerException 里，用 e.getCause() instanceof ConnectException 判断。
-        //
-        // 第 4 步 返回 send(...) 的结果。
-        throw new UnsupportedOperationException("M2.5：待实现");
+        if (!permits.tryAcquire()) {
+            throw new RuleRunnerException("rule-runner 并发已满");
+        }
+        try {
+            try {
+                return send(request);
+            } catch (RuleRunnerException e) {
+                if (e.getCause() instanceof ConnectException) {
+                    return send(request);   // 连接失败，重试一次
+                }
+                throw e;
+            }
+        } finally {
+            permits.release();
+        }
     }
 
     /** 发送一次请求并解析响应；网络错误和非 200 状态都转换成 RuleRunnerException。 */
