@@ -8,6 +8,11 @@ import org.apache.ibatis.annotations.Select;
 
 @Mapper
 public interface BankMapper {
+    @Select("""
+            SELECT id FROM content_bank WHERE content_sha256 = #{contentSha256} FOR SHARE
+            """)
+    Optional<String> findIdByContentSha256ForShare(@Param("contentSha256") byte[] contentSha256);
+
     @Insert("""
             INSERT INTO content_bank (id, content_sha256, source_title, description, format_version, features, listening, question_count, created_at)
             VALUES (#{id}, #{contentSha256}, #{sourceTitle}, #{description}, #{formatVersion}, #{features}, #{listening}, #{questionCount}, #{createdAt})

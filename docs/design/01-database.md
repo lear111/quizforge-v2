@@ -230,8 +230,8 @@ CREATE TABLE content_blob (                        -- 文件存储登记表（AD
 CREATE TABLE content_extension_package (
   digest         BINARY(32)    NOT NULL,           -- 审核摘要（C-04），即拓展包的身份
   extension_id   VARCHAR(120)  NOT NULL,
-  version        VARCHAR(40)   NOT NULL,
-  name           VARCHAR(200)  NOT NULL,
+  version        VARCHAR(120)  NOT NULL,           -- V3：与 manifest 旧规则一致
+  name           VARCHAR(300)  NOT NULL,           -- V3：不截断作者元数据
   manifest       JSON          NOT NULL,
   api_major      INT           NOT NULL,
   api_min_minor  INT           NOT NULL,
