@@ -26,9 +26,4 @@ public class ApiException extends RuntimeException {
     public String code() {
         return code;
     }
-
-    public static Exception conflict(String string, String string2) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'conflict'");
-    }
 }

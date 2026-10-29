@@ -11,16 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 import cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 
-// 这道题还没有作答行，第一次保存改为插入；主键冲突说明另一个请求刚好同时第一次保存
+/** 保存作答草稿：每题一行，用版本号做乐观锁，不同题目、不同用户的保存互不阻塞。 */
 @Service
 public class DraftService {
 
     private final QuestionStateMapper states;
     private final Clock clock;
-
-    private static ApiException revisionConflict() {
-        return new ApiException(HttpStatus.CONFLICT, "REVISION_CONFLICT", "内容已在别处修改，请刷新后重试");
-    }
 
     public DraftService(QuestionStateMapper states, Clock clock) {
         this.states = states;
@@ -44,6 +40,7 @@ public class DraftService {
             return clientRevision + 1;
         }
 
+        // 这道题还没有作答行，第一次保存改为插入；主键冲突说明另一个请求刚好同时第一次保存
         if (clientRevision == 0) {
             try {
                 states.insertDraft(contextId, questionId, userId, answerJson, now, contentSha256);
@@ -54,6 +51,9 @@ public class DraftService {
         }
 
         throw revisionConflict();
-        
+    }
+
+    private static ApiException revisionConflict() {
+        return new ApiException(HttpStatus.CONFLICT, "REVISION_CONFLICT", "内容已在别处修改，请刷新后重试");
     }
 }
