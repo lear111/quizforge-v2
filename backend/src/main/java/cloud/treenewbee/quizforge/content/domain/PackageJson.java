@@ -28,6 +28,8 @@ final class PackageJson {
         try {
             String input = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
+            // TextDecoder('utf-8', {fatal:true}) in the legacy host consumes one initial BOM.
+            if (input.startsWith("\ufeff")) input = input.substring(1);
             return parse(input);
         } catch (CharacterCodingException error) { throw new IllegalArgumentException("JSON 不是有效的 UTF-8", error); }
     }
@@ -52,8 +54,8 @@ final class PackageJson {
                 Object value = switch (token) {
                     case END_OBJECT, END_ARRAY -> frames.pop().freeze();
                     case VALUE_STRING -> parser.getString();
-                    case VALUE_NUMBER_INT -> parser.getBigIntegerValue();
-                    case VALUE_NUMBER_FLOAT -> parser.getDecimalValue();
+                    case VALUE_NUMBER_INT -> number(parser, true);
+                    case VALUE_NUMBER_FLOAT -> number(parser, false);
                     case VALUE_TRUE -> true;
                     case VALUE_FALSE -> false;
                     case VALUE_NULL -> null;
@@ -65,6 +67,23 @@ final class PackageJson {
             }
             if (!complete) throw new IllegalArgumentException("JSON 不完整");
             return root;
+        }
+    }
+
+    private static Number number(JsonParser parser, boolean integer) {
+        String literal = parser.getString();
+        if (literal.length() > 100) throw new IllegalArgumentException("JSON 数字字面量超过 100 字符");
+        if (integer) return new java.math.BigInteger(literal);
+        double approximate = Double.parseDouble(literal);
+        if (!Double.isFinite(approximate)) throw new IllegalArgumentException("JSON 数值超出范围");
+        try {
+            java.math.BigDecimal exact = new java.math.BigDecimal(literal);
+            if (exact.signum() == 0 && Double.doubleToRawLongBits(approximate) < 0) return -0.0d;
+            return exact;
+        } catch (RuntimeException error) {
+            // An exponent outside BigDecimal's scale range may still be a finite zero in JS.
+            if (approximate == 0) return approximate;
+            throw error;
         }
     }
 

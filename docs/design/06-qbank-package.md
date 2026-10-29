@@ -252,7 +252,7 @@ extensions/<组>/
 
 | 规则 | 限制 | 出处 |
 | --- | --- | --- |
-| JSON | 严格 UTF-8；拒绝语法错误、重复键、尾随内容、非有限数值；容器深度最多 64，字符串及对象键最多 2,000,000 个 UTF-16 单元，数字字面量最多 100 字符 | `platform/json.js:parseJson`；`platform/files.js:readJson` |
+| JSON | 严格 UTF-8，沿用 TextDecoder 消耗一个起始 BOM；拒绝语法错误、重复键、尾随内容、非有限数值；容器深度最多 64，字符串及对象键最多 2,000,000 个 UTF-16 单元，数字字面量最多 100 字符；负零和极端指数仍接受旧版有限数值语义 | `platform/json.js:parseJson`；`platform/files.js:readJson` |
 | 整数声明 | 无小数点、无指数的 JSON 整数字面量；1.0/1e0 不作为整数声明。不透明 data 保留精确十进制数值，不改写源文件 | `platform/json.js:integralField/parseJson`；正文原则 1 |
 | 非空文本 | 字符串，JavaScript trim 后非空；不自动修改返回值。本文长度均为 UTF-16 单元，不是 UTF-8 字节数 | `platform/errors.js:text` |
 | ID | `^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$`，最多 120，不要求 UUID/semver | `platform/errors.js:id/routeId` |
@@ -319,7 +319,7 @@ extensions/<组>/
 | --- | --- | --- |
 | requiresApi | 可省略按 1.0；存在时仅 major/minMinor/capabilities，前两项必填 JSON 整数，范围 1..2147483647、0..2147483647；实际支持 major=1、minMinor=0..5 | `extensions/extension-api.js:requireManifestApi/apiVersion`；`COMPATIBILITY.md:版本声明` |
 | API capabilities | 可省略/空，数组最多 100；非空、精确不重复的支持能力字符串；**旧版未限制单个 API 能力字符串长度** | `extensions/extension-api.js:requireManifestApi/CAPABILITIES` |
-| 基础能力 | practice/editor/editor-drafts/score/manual-review/ai-grading/resources/richtext/navigation/lifecycle，无另加 minor 门槛 | 同上 `CAPABILITIES/requireManifestApi` |
+| 基础能力 | practice/editor/editor-drafts/score/manual-review/ai-grading/resources/richtext/navigation/lifecycle，无另加 minor 门槛 | `extensions/extension-api.js:CAPABILITIES/requireManifestApi` |
 | 带门槛能力 | outline-items≥1、answer-state≥3、appearance≥4、answer-areas≥5；声明本身不授予业务写权限 | `extensions/extension-api.js:requireManifestApi`；`API.md:Version compatibility` |
 | requiresRichText | 与 dependencies 互斥；仅 major/minMinor/documentFormat/documentProfile/capabilities；前四项必填；前三项为 JSON 整数，支持 1、0..1、1；profile 为 basic-v1/advanced-v1 | `resources/richtext-service.js:RichTextService.resolve`；`core/shared/richtext/service.json` |
 | 富文本能力 | 可省略；数组最多 100，非空且唯一，每字符串最多 100。basic-v1 仅 basic-formatting/images；advanced-v1 支持 basic-formatting/images/advanced-formatting/tables/math/image-resize/camera-capture | `resources/richtext-service.js:capabilities/resolve`；`core/shared/richtext/service.json:profiles` |
