@@ -111,6 +111,8 @@ jobs:
         with:
           name: frontend-browser-evidence
           path: .artifacts/
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Verify shared blob writes and read-only runner access
         run: |
