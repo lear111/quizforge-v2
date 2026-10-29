@@ -181,7 +181,7 @@ rule-runner 调用在事务之外（数据库设计 5.2 节）。
 - `content_question.max_score`
 - `practice_question_state.score`、`max_score`、`outline_states`、`projection`
 
-**分数精度：** 拓展返回的分数是 JavaScript 数字（双精度浮点）。为了避免汇总时出现 `0.1 + 0.2 ≠ 0.3` 这类问题，数据库中以 `DECIMAL(12,4)` 保存，汇总用 SQL 的 `SUM` 计算。旧系统用十进制方式求和（`decimalSum`），结果一致。超过 4 位小数的分数如何处理，列为待定项 RR-3。
+**分数精度：** 拓展返回的分数是 JavaScript 数字（双精度浮点）。为了避免汇总时出现 `0.1 + 0.2 ≠ 0.3` 这类问题，数据库中以 `DECIMAL(12,4)` 保存，汇总用 SQL 的 `SUM` 计算。旧系统用十进制方式求和（`decimalSum`），结果一致。M2 已明确：导入的每题满分必须非负且能精确存入该类型，否则 422 SCORE_UNAVAILABLE，不舍入或截断；作答得分的精度处理仍留待后续流程明确（RR-3）。
 
 ---
 

@@ -25,7 +25,7 @@
 - 请求和响应均为 JSON（`Content-Type: application/json; charset=utf-8`），上传 `.qbank` 和读取文件除外。
 - 时间使用 ISO 8601 UTC 字符串，例如 `2026-10-27T09:00:00.000Z`。
 - 动态接口统一返回 `Cache-Control: no-store`；文件类响应的缓存规则见 ADR-007。
-- 请求体大小上限：普通写请求 8 MiB（与旧系统一致，作答可能包含内嵌图片），导入 `.qbank` 64 MiB。由 Nginx 和 Spring 双重限制。
+- 请求体大小上限：普通写请求 8 MiB（与旧系统一致，作答可能包含内嵌图片）；导入 multipart 的 `file` 上限 128 MiB，请求总量上限 129 MiB（含 multipart 封装）。由 Nginx 和 Spring 双重限制；应用复制上传流时也计数。
 
 ### 1.3 错误格式
 
@@ -70,7 +70,7 @@
 - **认证：** 浏览器接口从 Cookie 读取会话；设备接口从 `Authorization` 读取设备令牌；两者互不通用（ADR-005）。
 - **来源校验：** 浏览器接口的所有写请求（POST / PUT / DELETE）必须带 `Origin` 头，且等于站点来源，否则返回 403。
 - **归属校验：** 路径中的每个 ID（题库实例、考试、历史记录）都在 SQL 中与当前 `user_id` 一起查询；查不到一律返回 404。
-- **频率限制：** 沿用旧系统的分组限制（例如练习接口每用户每分钟 240 次，导入每分钟 6 次），超出返回 429。第一阶段为单实例进程内计数；以后多实例部署时再改为共享计数。
+- **频率限制：** 练习接口每用户每分钟 240 次；导入每用户滑动 60 秒最多 5 次（失败的已接纳请求也计数），超出返回 429 `RATE_LIMITED`。第一阶段为单实例进程内计数，以后多实例部署时再改为共享计数。导入全局并发默认 2，满时立即返回 503 `IMPORT_BUSY`，不等待接收并解析 multipart。
 - **不返回原始题目数据：** 前端拿到的永远是 `project` 投影后的数据。`content_question.data` 中的标准答案只在服务端使用。
 
 ### 1.6 集合标识
@@ -106,7 +106,7 @@
 | --- | --- | --- | --- |
 | `GET /api/catalog` | 我的题库列表 | `practice_collection`、`content_bank` | 只返回当前用户的实例；`extensions` 返回空列表，不列出拓展示例 |
 | `GET /api/library/index` | 题库分组视图 | 同上 | |
-| `POST /api/library/import` | 上传 `.qbank` 导入（`Content-Type: application/vnd.quizforge.qbank`） | `content_*`、`practice_collection` | 包内拓展须在审核白名单中（C-04），否则返回 422 并提示提交审核 |
+| `POST /api/library/import` | `multipart/form-data` 上传 `.qbank`，文件字段为 `file` | `content_*`、`practice_collection` | 未审核拓展不阻止导入；可用性按设计 04 第 6.2 节实时推算。M2 暂不创建私人 catalog_pack，source_pack_id 为 NULL |
 | `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 删除为软删除，不进入回收站流程 |
 | `POST /api/library/export` | 导出为 `.qbank` | `content_*`、`quota_traffic` | 计流量（沿用旧云端规则） |
 | `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；可以立即更新时先完成更新（FR-10） |
