@@ -9,6 +9,12 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface ExtensionFileMapper {
     @Insert("""
+            INSERT IGNORE INTO content_extension_file (package_digest, path, blob_sha256)
+            VALUES (#{packageDigest}, #{path}, #{blobSha256})
+            """)
+    int insertIfAbsent(ExtensionFileRow row);
+
+    @Insert("""
             INSERT INTO content_extension_file (package_digest, path, blob_sha256)
             VALUES (#{packageDigest}, #{path}, #{blobSha256})
             """)

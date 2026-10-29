@@ -1,7 +1,7 @@
 # 题库包格式 4
 
-> **文档版本：** v0.3
-> **日期：** 2026-10-28
+> **文档版本：** v0.4
+> **日期：** 2026-10-29
 > **依据：** [需求 v1.3 C-01、FR-09](../requirements/01-requirements.md)，[遗留契约 C-01～C-04](../legacy/01-contracts.md)，[数据库设计](01-database.md)，[题库共享与更新](04-bank-sharing-and-updates.md)
 > **参照：** 旧格式 3 的规则（`quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`、`LISTENING.md`，`core/server/host/library/library-archive.js`、`directories.js`、`library-package.js` @ `4522bb8`）
 
@@ -218,6 +218,20 @@ extensions/<组>/
 
 ## 9. 在 V2 中的存储
 
+### 9.1 题库内容身份
+
+`content_bank.content_sha256` 定义为以下数组经 **EcmaJson 规范序列化**后的 UTF-8 字节的 SHA-256：
+
+```text
+["qf-bank-content-v1", bank.json 解析后的对象,
+ 按路径排序的 [[assets 下相对路径, 资源 sha256]…],
+ 按题目顺序排列的每题绑定拓展审核摘要]
+```
+
+递归规范化对象键序（EcmaJson 的 canonical 模式），保留数组顺序，数值和字符串沿用 EcmaJson 的 ECMAScript 序列化。资源路径不含 `assets/` 前缀，按 UTF-16 字典序排序；哈希和审核摘要为小写十六进制字符串。调用方按题序解析逐题/默认绑定，传入每题实际使用的审核摘要，重复绑定也不能去重。不改写作者 JSON，不补默认字段，不移除作者元数据；对象键顺序和 JSON 排版不影响身份，作者值、资源路径/内容、题序或实际绑定摘要改变则影响身份。包外目录名、上传者和实例名称不参与。
+
+### 9.2 存储映射
+
 不改写任何文件（原则 1）：
 
 | 包内内容 | 存到哪里 |
@@ -331,7 +345,7 @@ extensions/<组>/
 - 包 4、题库 2、资源类型/上限、只按文件判断分组/布局、忽略空目录、允许失败留下无引用 Blob 均依正文；不沿用旧 installPackage 的补写、改名或改绑。出处：正文第 2～9 节；`library/library-package.js:installPackage`。
 - 文档 EXTENSIONS/QUESTION_BANK_FORMAT 说显示名取目录；普通 readExtension/prepareCollection 却读取 name/title，旧安装器通过覆盖字段实现。格式 4 不覆盖文件，ParsedBank.folderName 单独给出名称，JSON 和 ParsedExtension.manifest 保留原值。出处：上述函数；正文原则 1、第 4、9 节。
 - 根白名单/绑定额外键比旧源码严格，是正文已明确的格式 4 变化；样例 id=examples 只是文档约定，源码无此限制。旧版没有限制的字段不自行定数值。
-- 不按数据库列长添加隐含限制。旧 manifest.version 可达 120、name 可达 300，而现存列分别为 40/200；后续 M2.6 需协调，本次不改表、不截断。出处：`readExtension`、数据库设计 4.2 的 content_extension_package。
+- 不按数据库列长添加隐含限制。旧 manifest.version 可达 120、name 可达 300；V3 将 content_extension_package 的两列分别放宽到 120/300，不截断已有数据。出处：`readExtension`、数据库设计 4.2 的 content_extension_package。
 
 ## 变更记录
 
@@ -340,3 +354,4 @@ extensions/<组>/
 | v0.1 | 2026-10-28 | 初稿 |
 | v0.2 | 2026-10-28 | 明确：失败时不写入业务数据，资源文件可能已写入文件存储并由孤立文件清理回收；目录规则只按文件判断，空目录忽略（M2.6a 实现中提出） |
 | v0.3 | 2026-10-28 | 补充附录 A：固定旧版字段、长度、能力与源码出处，注明格式 4 覆盖及文档/源码差异 |
+| v0.4 | 2026-10-29 | 明确题库内容哈希的版本化输入与规范序列化，V3 放宽拓展元数据列长 |
