@@ -174,7 +174,7 @@ class QbankArchiveReaderTest {
     @Test
     void cumulativeLimitCountsActualBytesEvenWhenDeclaredSizesAreForged() throws Exception {
         ArchiveLimits limits = new ArchiveLimits(3, 8, 10, 32);
-        rejected(() -> QbankArchiveReader.read(raw(ZipBytes.deflatedZeros("extensions/a", 6).size(1),
+        rejected(() -> QbankArchiveReader.read(raw(ZipBytes.deflatedZeros("extensions/a", 6),
                 ZipBytes.deflatedZeros("extensions/b", 6).size(1)), limits, (name, bytes) -> {}), LIMIT);
     }
 
@@ -296,8 +296,8 @@ class QbankArchiveReaderTest {
     }
 
     @Test
-    void defaultsMatchLegacyUnzipLimits() {
-        assertThat(DEFAULT).isEqualTo(new ArchiveLimits(10_000, 8L * 1024 * 1024, 128L * 1024 * 1024, 32));
+    void defaultsMatchLegacyUnzip4Limits() {
+        assertThat(DEFAULT).isEqualTo(new ArchiveLimits(10_000, 32L * 1024 * 1024, 256L * 1024 * 1024, 32));
     }
 
     @Test
@@ -321,14 +321,12 @@ class QbankArchiveReaderTest {
 
     @ParameterizedTest
     @ValueSource(longs = {1, 128})
-    @Disabled("见报告第 3 条")
     void rejectsForgedUncompressedSizeEvenWhenActualDataFitsLimits(long declaredSize) throws Exception {
         rejected(() -> read(raw(ZipBytes.deflatedZeros("extensions/a", 64).size(declaredSize))), INVALID);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"\u00a0", "\u2007", "\u202f", "\ufeff"})
-    @Disabled("见报告第 4 条")
     void rejectsSegmentsBlankAccordingToLegacyJavascriptTrim(String blank) {
         rejected(() -> QbankArchiveReader.validatePath("extensions/" + blank + "/file", false, DEFAULT), INVALID);
     }

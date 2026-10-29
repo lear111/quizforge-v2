@@ -19,6 +19,9 @@ public final class QbankArchiveReader {
     static final String MANIFEST = "quizforge-package.json";
     private static final Pattern FORBIDDEN_CHARS = Pattern.compile("[\\\\:*?\"<>|\\x00-\\x1f\\x7f-\\x9f]");
     private static final Pattern RESERVED_NAME = Pattern.compile("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?");
+    // ECMAScript 的 WhiteSpace + LineTerminator（旧版 trim() 使用的集合）
+    private static final Pattern JS_BLANK = Pattern.compile(
+            "[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]*");
 
     private QbankArchiveReader() {
     }
@@ -36,7 +39,7 @@ public final class QbankArchiveReader {
             throw ArchiveRejectedException.invalid("题库包顶层只允许格式标识、question-banks 和 extensions");
         }
         for (String part : parts) {
-            if (part.isBlank() || part.equals(".") || part.equals("..") || 
+            if (JS_BLANK.matcher(part).matches() || part.equals(".") || part.equals("..") || 
                 part.endsWith(" ") || part.endsWith(".") || 
                 FORBIDDEN_CHARS.matcher(part).find() || RESERVED_NAME.matcher(part).matches()) {
                 throw ArchiveRejectedException.invalid("压缩包包含无效或越界路径");
@@ -47,7 +50,7 @@ public final class QbankArchiveReader {
 
     private static byte[] readEntry(ZipFile zip, ZipEntry entry, ArchiveLimits limits, long totalSoFar) throws IOException {
         if (entry.getSize() > limits.maxEntryBytes()) {
-            throw ArchiveRejectedException.limit("压缩包单个文件超过 8 MiB");   // 提前拒绝，省得白读；但不能只靠它
+            throw ArchiveRejectedException.limit("压缩包单个文件超过大小上限");   // 提前拒绝，省得白读；但不能只靠它
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         CRC32 crc = new CRC32();
@@ -69,6 +72,10 @@ public final class QbankArchiveReader {
 
         if (entry.getCrc() == -1 || crc.getValue() != entry.getCrc()) { 
             throw ArchiveRejectedException.invalid("压缩包文件校验失败");
+        }
+
+        if (entry.getSize() != -1 && read != entry.getSize()) {
+            throw ArchiveRejectedException.invalid("压缩包文件大小与记录不一致");
         }
         return out.toByteArray();
     }

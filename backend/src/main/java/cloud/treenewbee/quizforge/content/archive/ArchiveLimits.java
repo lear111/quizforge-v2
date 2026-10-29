@@ -4,5 +4,5 @@ package cloud.treenewbee.quizforge.content.archive;
 public record ArchiveLimits(int maxEntries, long maxEntryBytes, long maxTotalBytes, int maxDepth) {
 
     public static final ArchiveLimits DEFAULT =
-            new ArchiveLimits(10_000, 8L * 1024 * 1024, 128L * 1024 * 1024, 32);
+            new ArchiveLimits(10_000, 32L * 1024 * 1024, 256L * 1024 * 1024, 32);
 }
