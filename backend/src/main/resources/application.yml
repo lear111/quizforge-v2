@@ -1,6 +1,12 @@
 spring:
   application:
     name: quizforge-backend
+  servlet:
+    multipart:
+      max-file-size: 128MB
+      max-request-size: 129MB
+      file-size-threshold: 0
+      resolve-lazily: true
   datasource:
     url: ${QF_DB_URL:jdbc:mysql://localhost:3306/quizforge?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC}
     username: ${QF_DB_USER:quizforge}
@@ -33,6 +39,9 @@ logging:
     root: INFO
 
 qf:
+  import:
+    max-concurrency: ${QF_IMPORT_CONCURRENCY:2}
+    requests-per-minute: ${QF_IMPORT_REQUESTS_PER_MINUTE:5}
   storage:
     blob-dir: ${QF_BLOB_DIR:./data/blobs}
   security:

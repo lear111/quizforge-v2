@@ -9,6 +9,17 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface BankMapper {
     @Select("""
+            SELECT EXISTS (
+              SELECT 1 FROM content_bank b WHERE b.id = #{bankId} AND NOT EXISTS (
+                SELECT 1 FROM content_question q LEFT JOIN admin_extension_review r
+                  ON r.digest = q.extension_digest AND r.status = 'approved'
+                 WHERE q.bank_id = b.id AND r.digest IS NULL
+              )
+            )
+            """)
+    boolean isAvailable(@Param("bankId") String bankId);
+
+    @Select("""
             SELECT id FROM content_bank WHERE content_sha256 = #{contentSha256} FOR SHARE
             """)
     Optional<String> findIdByContentSha256ForShare(@Param("contentSha256") byte[] contentSha256);

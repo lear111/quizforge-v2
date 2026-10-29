@@ -1,6 +1,6 @@
 # 题库包格式 4
 
-> **文档版本：** v0.4
+> **文档版本：** v0.5
 > **日期：** 2026-10-29
 > **依据：** [需求 v1.3 C-01、FR-09](../requirements/01-requirements.md)，[遗留契约 C-01～C-04](../legacy/01-contracts.md)，[数据库设计](01-database.md)，[题库共享与更新](04-bank-sharing-and-updates.md)
 > **参照：** 旧格式 3 的规则（`quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`、`LISTENING.md`，`core/server/host/library/library-archive.js`、`directories.js`、`library-package.js` @ `4522bb8`）
@@ -241,6 +241,18 @@ extensions/<组>/
 | 每个拓展的全部文件 | 文件进 BlobStore；`content_extension_file` 记录“路径 → 内容哈希”，`content_extension_package` 一行 |
 | 整个 `.qbank` 原始文件 | 题库广场的版本保留原文件，供下载时逐字节返回（需求 FR-11） |
 
+### 9.3 M2 导入执行
+
+上传文件先以流计数并落临时文件，finally 删除；安全解压与结构解析、拓展摘要、题库内容哈希、capabilities/validateBank/outlineBatch/scoreBatch 全在业务事务外完成。按每本题库、拓展分组；只有缺少显式大纲、声明并实现 outline-items 的题目才生成大纲。非空派生项存为 `{level:"parts",items:[…]}`，与显式大纲形状一致；空派生项保持 NULL，显式大纲保留作者值。批量规则请求按**完整序列化 HTTP JSON 请求的 UTF-8 字节数**控制在 8 MiB 内；单题连同封装也超限时返回 413 LIBRARY_ARCHIVE_LIMIT。分批的每个请求使用独立 VM，不跨题库共享上下文。
+
+所有校验通过后，一个 TransactionTemplate 事务登记拓展与文件、题库、题目和资源引用，并为每本题库新建实例。共享键按摘要排序获取，题库唯一键冲突后用 FOR SHARE 当前读复用已有 id；此分支不重复写题目/资源。Blob 文件及其登记可以先于业务事务存在，不属于用户可见业务引用；失败后允许留下未引用 Blob。
+
+题目 content_sha256 使用 EcmaJson canonical 序列化的 `["qf-question-content-v1", 作者题目对象, 实际拓展摘要, 最终大纲或 null, 题库听力材料或 null, 按路径排序的资源清单]` 的 UTF-8 SHA-256；资源清单同 9.1。它保守地包含全部题库资源/听力，避免资源或材料改变后复用旧内容版本；不包含实例 ID 或题序。
+
+M2 的来源 JSON 为 `{"type":"upload","filename":"原文件名.qbank"}`，source_pack_id 暂为 NULL；私人题库包及版本在题库广场里程碑接入。未审核不拒绝导入，也不自动建审核记录；可用性以题库所用全部摘要实时存在 approved 白名单为准，不缓存审批结果。V4 将 admin_extension_review.version 放宽为 VARCHAR(120)。
+
+满分必须非负且能精确存入 DECIMAL(12,4)，不进行舍入或截断；否则 422 SCORE_UNAVAILABLE。拓展/资源相对路径还须能完整存入现有 VARCHAR(255) 列，超出时拒绝并回滚，避免 INSERT IGNORE 静默截断。
+
 ## 10. 对其他组件的影响
 
 | 组件 | 影响 |
@@ -355,3 +367,4 @@ extensions/<组>/
 | v0.2 | 2026-10-28 | 明确：失败时不写入业务数据，资源文件可能已写入文件存储并由孤立文件清理回收；目录规则只按文件判断，空目录忽略（M2.6a 实现中提出） |
 | v0.3 | 2026-10-28 | 补充附录 A：固定旧版字段、长度、能力与源码出处，注明格式 4 覆盖及文档/源码差异 |
 | v0.4 | 2026-10-29 | 明确题库内容哈希的版本化输入与规范序列化，V3 放宽拓展元数据列长 |
+| v0.5 | 2026-10-29 | 补充 M2 导入事务、规则分批、题目内容哈希、满分精度与 V4 审核版本列长 |
