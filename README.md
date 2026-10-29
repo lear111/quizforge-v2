@@ -45,3 +45,13 @@ mvn spring-boot:run             # 连接本机 3306 的 MySQL（需在 compose �
 - `main` 只通过 PR 合并；CI（`.github/workflows/ci.yml`）通过后才能合并。
 - 提交信息遵循 Conventional Commits，例如 `feat(practice): ...`、`docs(adr): ...`。
 - 重要设计决策先写 ADR，再实现。
+
+## 开发时查看数据库
+
+```powershell
+cd deploy
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+用图形客户端连接 `127.0.0.1:3306`，数据库 `quizforge`，用户名 `quizforge`，密码 `quizforge`（`QF_DB_PASSWORD` 的默认值）。端口只开放给本机；本机 3306 已被占用时，设置环境变量 `QF_DEV_DB_PORT` 换一个端口。该文件仅用于开发，生产环境不要使用。
+
