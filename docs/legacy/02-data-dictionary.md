@@ -5,6 +5,8 @@
 > **依据：** [需求 FR-09 旧数据迁移](../requirements/01-requirements.md)
 > **源码版本：** `quizforge_web` @ `4522bb8`，`quizforge_hub` @ `83d6dfd`
 
+> **2026-10-28 范围变更（需求 v1.3）：** 只迁移账号相关表（`users`、`user_phones`、`unverified_contacts`、`user_blocks`）与 AI 余额相关表（`ai_points`、`ai_points_ledger`、`ai_signup_bonus`，以及 `ai_redeem_codes` 待定）。下文其余各表与第 ③ 节练习工作区**均不再迁移**，保留本文作为旧系统结构的参考。
+
 本文列出旧系统中**需要迁移的数据在哪里、是什么格式**，作为 ADR-008（迁移策略）和新数据模型设计的输入。
 
 旧系统共有三处数据：
