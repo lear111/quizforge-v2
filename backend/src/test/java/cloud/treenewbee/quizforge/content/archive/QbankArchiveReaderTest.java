@@ -296,25 +296,25 @@ class QbankArchiveReaderTest {
     }
 
     @Test
-    void defaultsMatchLegacyUnzip4Limits() {
+    void defaultsMatchFormat4Limits() {
         assertThat(DEFAULT).isEqualTo(new ArchiveLimits(10_000, 32L * 1024 * 1024, 256L * 1024 * 1024, 32));
     }
 
     @Test
-    @Disabled("见报告第 1 条")
+    @Disabled("不在解压层处理：空包缺少格式标识，由包结构解析拒绝（设计 06 第 8 节）")
     void rejectsEmptyZip() throws Exception {
         rejected(() -> read(raw()), INVALID);
     }
 
     @ParameterizedTest
     @ValueSource(ints = {0120000, 0010000, 0060000, 0040000})
-    @Disabled("见报告第 2 条")
+    @Disabled("已知差异：JDK ZipFile 不提供 UNIX 文件类型；服务器不落盘，见 docs/notes/m2-import.md")
     void rejectsUnixSpecialFilesAndDirectoryModeWithoutTrailingSlash(int mode) throws Exception {
         rejected(() -> read(raw(entry("extensions/link", "target").mode(mode))), INVALID);
     }
 
     @Test
-    @Disabled("见报告第 2 条")
+    @Disabled("已知差异：JDK ZipFile 不提供 UNIX 文件类型；服务器不落盘，见 docs/notes/m2-import.md")
     void rejectsRegularFileModeWithDirectoryTrailingSlash() throws Exception {
         rejected(() -> read(raw(entry("extensions/not-a-directory/", "").mode(0100000))), INVALID);
     }
