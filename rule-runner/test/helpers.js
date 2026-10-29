@@ -19,9 +19,14 @@ export async function harness(t, poolOptions = {}) {
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await app.close(); await rm(dir, {recursive: true, force: true}); });
   const url = `http://127.0.0.1:${app.server.address().port}`;
+  const writes = new Map();
   async function blob(bytes) {
     const sha256 = digest(bytes), file = blobPath(dir, sha256);
-    await mkdir(path.dirname(file), {recursive: true}); await writeFile(file, bytes);
+    // Shared fixture blobs are immutable, including while another reader is running.
+    if (!writes.has(sha256)) writes.set(sha256, (async () => {
+      await mkdir(path.dirname(file), {recursive: true}); await writeFile(file, bytes, {flag: 'wx'});
+    })());
+    await writes.get(sha256);
     return {sha256};
   }
   async function pack(source = basicRule, question = true, answer = true, overrides = {}) {
@@ -40,6 +45,21 @@ export async function harness(t, poolOptions = {}) {
     return {status: response.status, body: await response.json()};
   }
   return {...app, dir, logs, blob, pack, request, post, get, url};
+}
+
+// Gate real workers at stdin; scheduling assertions need no CPU-burning rule or short timing window.
+export function holdWorkers(t, pool) {
+  const start = pool.start.bind(pool);
+  let released = false;
+  t.mock.method(pool, 'start', job => {
+    const worker = start(job);
+    if (!released) worker.child.stdin.cork();
+    return worker;
+  });
+  return () => {
+    released = true;
+    for (const worker of pool.workers) worker.child.stdin.uncork();
+  };
 }
 
 export async function legacy(spec, dir, op, input) {

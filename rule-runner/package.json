@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.13 <23" },
-  "scripts": { "start": "node src/main.js", "test": "node --test test/*.test.js" },
+  "scripts": { "start": "node src/main.js", "test": "node --test --test-concurrency=1 test/*.test.js" },
   "dependencies": { "ajv": "8.20.0" }
 }
