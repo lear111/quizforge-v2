@@ -14,17 +14,19 @@ import java.util.concurrent.Semaphore;
 import org.springframework.stereotype.Component;
 
 import cloud.treenewbee.quizforge.shared.id.Ids;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Java 调用 rule-runner 的唯一入口（rule-runner 协议第 3、7、8 节）。
  *
- * <p>三道防线，防止 rule-runner 变慢或故障时拖垮整个后端（级联故障）：
+ * <p>
+ * 三道防线，防止 rule-runner 变慢或故障时拖垮整个后端（级联故障）：
  * <ol>
- *   <li><b>限流（舱壁）</b>：信号量限制同时进行的调用数，满了立即失败，不排队等待；</li>
- *   <li><b>超时</b>：每次调用最多等待 deadline + 1 秒；</li>
- *   <li><b>重试</b>：只在“连接失败”时重试一次。规则拒绝是确定结果，永不重试。</li>
+ * <li><b>限流（舱壁）</b>：信号量限制同时进行的调用数，满了立即失败，不排队等待；</li>
+ * <li><b>超时</b>：每次调用最多等待 deadline + 1 秒；</li>
+ * <li><b>重试</b>：只在“连接失败”时重试一次。规则拒绝是确定结果，永不重试。</li>
  * </ol>
  */
 @Component
@@ -70,7 +72,7 @@ public class RuleRunnerClient {
                 return send(request);
             } catch (RuleRunnerException e) {
                 if (e.getCause() instanceof ConnectException) {
-                    return send(request);   // 连接失败，重试一次
+                    return send(request); // 连接失败，重试一次
                 }
                 throw e;
             }
@@ -82,7 +84,8 @@ public class RuleRunnerClient {
     /** 发送一次请求并解析响应；网络错误和非 200 状态都转换成 RuleRunnerException。 */
     private RuleResult send(HttpRequest request) {
         try {
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = http.send(request,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             return parse(response);
         } catch (IOException e) {
             // 包括 ConnectException（连不上）和 HttpTimeoutException（等太久）
@@ -98,7 +101,12 @@ public class RuleRunnerClient {
         if (response.statusCode() != 200) {
             throw new RuleRunnerException("rule-runner 返回 " + response.statusCode());
         }
-        JsonNode body = json.readTree(response.body());
+        JsonNode body;
+        try {
+            body = json.readTree(response.body());
+        } catch (JacksonException e) {
+            throw new RuleRunnerException("rule-runner 返回了无法解析的响应", e);
+        }
         if (body.path("ok").asBoolean(false)) {
             return RuleResult.success(body.path("data"));
         }

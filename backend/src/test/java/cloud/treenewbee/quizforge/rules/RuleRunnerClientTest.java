@@ -238,7 +238,6 @@ class RuleRunnerClientTest {
         }
     }
 
-    @Disabled("见报告第 1 条")
     @Test
     void malformedJsonShouldBeReportedAsRuleRunnerException() throws Exception {
         try (var peer = new FakeRuleRunner()) {
