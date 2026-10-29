@@ -1,0 +1,126 @@
+/* Appearance themes. The default look has no data-qf-theme attribute and is
+   unchanged. Themes repaint only the host shell and the space around question
+   cards: extension pages keep a transparent body and paint their own cards,
+   draft mode keeps the whiteboard paper, and dialogs stay as they are. */
+html[data-qf-theme="mist"]{
+  --qf-base:#f1eef8;
+  --qf-page:linear-gradient(140deg,#e9e7fa 0%,#f4ecf8 36%,#fbeee9 64%,#e5f2ef 100%);
+  --qf-panel-color:#fff;--qf-panel-solid:#f8f6fc;
+  --qf-bar-color:#fff;--qf-around:transparent;--qf-line:rgba(112,100,160,.14);
+}
+html[data-qf-theme="paper"]{
+  --qf-base:#f6f1e6;
+  --qf-page:radial-gradient(rgba(120,95,50,.045) 1px,transparent 1.2px) 0 0/7px 7px,#f6f1e6;
+  --qf-panel-color:#faf6ec;--qf-panel-solid:#faf6ec;
+  --qf-bar-color:#faf6ec;
+  --qf-around:repeating-linear-gradient(180deg,transparent 0 31px,rgba(150,125,80,.09) 31px 32px);
+  --qf-line:#e7dcc6;
+}
+html[data-qf-theme="sepia"]{
+  --qf-base:#f1e8d2;--qf-page:#f1e8d2;
+  --qf-panel-color:#f6efdd;--qf-panel-solid:#f6efdd;
+  --qf-bar-color:#f6efdd;--qf-around:transparent;--qf-line:#e3d6b6;
+}
+html[data-qf-theme="green"]{
+  --qf-base:#e2eddb;--qf-page:#e2eddb;
+  --qf-panel-color:#ebf3e5;--qf-panel-solid:#ebf3e5;
+  --qf-bar-color:#ebf3e5;--qf-around:transparent;--qf-line:#cfdfc4;
+}
+html[data-qf-theme="image"]{
+  --qf-base:#ece8f6;
+  --qf-page:linear-gradient(rgba(248,247,252,var(--qf-dim,.3)),rgba(248,247,252,var(--qf-dim,.3))),var(--qf-image,url("/practice/assets/backgrounds/dawn-lake.svg")) center/cover no-repeat,#ece8f6;
+  --qf-panel-color:#fff;--qf-panel-solid:#f8f6fc;
+  --qf-bar-color:#fff;--qf-around:transparent;--qf-line:rgba(255,255,255,.55);
+}
+html[data-qf-theme="coast"]{
+  --accent:#24746b;--accent-light:#e1efea;--accent-soft:#e1efea;--muted:#62776f;--line:#d3e0d8;
+  --qf-base:#edf2e9;
+  --qf-page:linear-gradient(rgba(249,250,242,var(--qf-dim,.3)),rgba(249,250,242,var(--qf-dim,.3))),url("/practice/assets/backgrounds/coast.svg") center/cover no-repeat,#edf2e9;
+  --qf-panel-color:#fcfff7;--qf-panel-solid:#f4f8ef;
+  --qf-bar-color:#fcfff7;--qf-around:transparent;--qf-line:rgba(67,109,93,.18);
+  --qf-settings-ink:#244e46;
+}
+
+/* --qf-clear (0-0.7, set per theme from the appearance settings) lets the library,
+   outline and bars show the background. Bars clear a little faster than panels. */
+html[data-qf-theme]{
+  --qf-panel:color-mix(in srgb,var(--qf-panel-color) calc(100% - var(--qf-clear,0) * 100%),transparent);
+  --qf-bar:color-mix(in srgb,var(--qf-bar-color) max(0%,calc(100% - var(--qf-clear,0) * 112%)),transparent);
+  /* White controls on those panels fade more slowly so they stay visible. */
+  --qf-control:color-mix(in srgb,#fff calc(100% - var(--qf-clear,0) * 80%),transparent);
+}
+
+html[data-qf-theme],html[data-qf-theme] body{background:var(--qf-base)}
+html[data-qf-theme] .app-shell{background:var(--qf-page)}
+html[data-qf-theme] :is(.main,.panes,.welcome){background:transparent}
+html[data-qf-theme] .library{background:var(--qf-panel);border-right-color:var(--qf-line)}
+html[data-qf-theme] .outline{background:var(--qf-panel);border-left-color:var(--qf-line)}
+html[data-qf-theme] :is(.library-footer,.outline-heading,.outline-legend){border-color:var(--qf-line)}
+html[data-qf-theme] .document-header{background:var(--qf-bar);border-bottom-color:var(--qf-line)}
+html[data-qf-theme] .practice-footer{background:var(--qf-bar);border-top-color:var(--qf-line)}
+/* The navigation layer spans the whole pane and only becomes a bottom bar on phones. */
+@media(max-width:600px){
+  html[data-qf-theme] .app-shell:not(.draft-fullscreen) .question-navigation{background:var(--qf-panel-solid);border-top-color:var(--qf-line)}
+}
+html[data-qf-theme] .question-pane:not(.is-draft) .question-viewport{background:var(--qf-around)}
+/* The loading layer hides the previous card. It repaints the page background,
+   pinned to the viewport so it lines up with the shell, instead of a white sheet. */
+html[data-qf-theme] :is(.question-loading,.collection-loading){background:var(--qf-page);background-attachment:fixed}
+@media(max-width:600px){
+  html[data-qf-theme] .app-shell:not(.draft-fullscreen) :is(.question-loading,.collection-loading){background:#fff}
+}
+html[data-qf-theme] .library-switch{background:color-mix(in srgb,#fff calc(45% - var(--qf-clear,0) * 45%),transparent)}
+html[data-qf-theme] .library-switch button[aria-selected=true]{background:var(--qf-control)}
+html[data-qf-theme] .draft-toggle:not([aria-pressed=true]):not(:hover){background:var(--qf-control)}
+html[data-qf-theme] .question-arrow:not(:hover){background:color-mix(in srgb,#fff calc(86% - var(--qf-clear,0) * 80%),transparent)}
+html[data-qf-theme] .welcome-icon{background:rgba(255,255,255,.7)}
+html[data-qf-theme] .welcome h2{color:#5d5470}
+
+/* The coastal illustration has its own shell accents. Question pages remain
+   owned by their extensions, including their answer and grading colours. */
+html[data-qf-theme="coast"] :is(.library-heading,.outline-heading,.document-group,.document-eyebrow,.outline-group-title,.brand small,.list-empty,.welcome){color:#526d61}
+html[data-qf-theme="coast"] :is(.icon-button,.library-switch button,.library-item.active,.extension-group-toggle,.library-download-link,.welcome-icon,.welcome h2){color:#285e51}
+html[data-qf-theme="coast"] .library-footer .network-settings-entry{color:var(--qf-settings-ink)}
+html[data-qf-theme="coast"] :is(.library-item:hover,.library-switch button:hover,.icon-button:hover){background:#e3eee5}
+html[data-qf-theme="coast"] .library-item.active{background:#dcece2}
+html[data-qf-theme="coast"] .outline-item.active{background:#e0efe5;border-color:#6b9b85;color:#285e51;box-shadow:0 0 0 1px #709c8244}
+html[data-qf-theme="coast"] .outline-item:is(.draft,.pending){background:#e4f0e8;border-color:#bbd5c6;color:#326956}
+html[data-qf-theme="coast"] .outline-item.active:is(.draft,.correct,.incorrect){outline-color:#6b9b85}
+html[data-qf-theme="coast"] .question-arrow{color:#326956;border-color:#c0d5c7}
+html[data-qf-theme="coast"] :is(button,input,a):focus-visible{outline-color:#79ab96}
+
+/* Drawers float over the question on narrow screens and must stay readable. */
+@media(max-width:800px){
+  html[data-qf-theme] .library,html[data-qf-theme] .outline{background:var(--qf-panel-solid)}
+}
+/* Phone cards fill the width on a white page; keep the whole question area white.
+   This must follow the general question-viewport rule above. */
+@media(max-width:600px){
+  html[data-qf-theme] .question-pane:not(.is-draft) .question-viewport{background:#fff}
+}
+
+/* Theme swatches in the appearance settings. */
+.appearance-themes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:4px 0 16px}
+.appearance-theme{display:flex;flex-direction:column;gap:6px;padding:6px;border:1px solid #e6dfef;border-radius:10px;background:#fff;color:#6f6680;font-size:12px;text-align:center}
+.appearance-theme[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 2px #d9cdf4;color:#5d42ad}
+.appearance-swatch{height:54px;border-radius:7px;border:1px solid rgba(60,50,90,.08);position:relative;overflow:hidden}
+.appearance-swatch::after{content:"";position:absolute;left:28%;right:12%;top:22%;bottom:22%;border-radius:4px;background:#fff;border:1px solid #ebe6f1}
+.appearance-swatch[data-swatch="default"]{background:#f8f9fc}
+.appearance-swatch[data-swatch="mist"]{background:linear-gradient(140deg,#e9e7fa 0%,#f4ecf8 36%,#fbeee9 64%,#e5f2ef 100%)}
+.appearance-swatch[data-swatch="paper"]{background:repeating-linear-gradient(180deg,transparent 0 7px,rgba(150,125,80,.14) 7px 8px),#f6f1e6}
+.appearance-swatch[data-swatch="sepia"]{background:#f1e8d2}
+.appearance-swatch[data-swatch="green"]{background:#e2eddb}
+.appearance-swatch[data-swatch="image"]{background:var(--qf-image,url("/practice/assets/backgrounds/dawn-lake.svg")) center/cover no-repeat,#ece8f6}
+.appearance-swatch[data-swatch="coast"]{background:url("/practice/assets/backgrounds/coast.svg") center/cover no-repeat,#edf2e9}
+html[data-qf-theme="coast"] .appearance-theme[aria-checked="true"]{color:#285e51;box-shadow:0 0 0 2px #c6ded0}
+html[data-qf-theme="coast"] .settings-tabs button[aria-selected="true"]{background:#e1efea;color:#285e51}
+html[data-qf-theme="coast"] .appearance-image{background:#f5f8f0;border-color:#d3e0d8}
+html[data-qf-theme="coast"] .appearance-dim output{color:#326956}
+html[data-qf-theme="coast"] .appearance-dim input{accent-color:var(--accent)}
+.appearance-panels{margin:0 0 14px}
+.appearance-image{display:flex;flex-direction:column;gap:10px;margin:0 0 14px;padding:12px;border:1px solid #ece6f3;border-radius:10px;background:#fbfaff}
+.appearance-image-actions{display:flex;gap:8px;flex-wrap:wrap}
+.appearance-image-actions button{padding:7px 12px;border:1px solid #e0d6ed;border-radius:7px;font-size:12px;color:#6f5a96;background:#fff}
+.appearance-dim{display:flex!important;flex-direction:row!important;align-items:center;gap:10px!important}
+.appearance-dim input{flex:1;padding:0;border:0}
+.appearance-dim output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums;color:#6f5a96}

@@ -1,0 +1,38 @@
+{
+  "id": "/practice/",
+  "name": "QuizForge 题库",
+  "short_name": "QuizForge",
+  "description": "QuizForge 在线练习空间。",
+  "lang": "zh-CN",
+  "start_url": "/practice/",
+  "scope": "/practice/",
+  "display": "standalone",
+  "theme_color": "#ffffff",
+  "background_color": "#f8f9fc",
+  "icons": [
+    {
+      "src": "/practice/assets/quizforge-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/practice/assets/quizforge-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/practice/assets/quizforge-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/practice/assets/quizforge-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

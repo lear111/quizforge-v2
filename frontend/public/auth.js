@@ -1,3 +1,8 @@
+function practiceReturn() {
+  const raw=new URLSearchParams(location.search).get('returnTo');
+  if(!raw)return null;
+  try{const target=new URL(raw,location.origin);return target.origin===location.origin&&target.pathname.startsWith('/practice/')?target.pathname+target.search+target.hash:null;}catch{return null;}
+}
 const byId = (id) => document.getElementById(id);
 const loginForm = byId('login-form');
 const registerForm = byId('register-form');
@@ -129,6 +134,7 @@ async function checkSession() {
   setBusy(true);
   try {
     showAccount(await request('/api/me'));
+    if(practiceReturn())location.replace(practiceReturn());
   } catch (error) {
     if (error.status === 401) {
       showView('forms');
@@ -164,6 +170,7 @@ async function submit(event) {
     await request(registering ? '/api/auth/register' : '/api/auth/login', 'POST', body);
     // 会话是否生效以 /api/me 为准，不从注册/登录响应推断浏览器状态。
     showAccount(await request('/api/me'));
+    location.assign(practiceReturn()||'/practice/');
     byId('page-title').focus();
   } catch (error) {
     setBusy(false);

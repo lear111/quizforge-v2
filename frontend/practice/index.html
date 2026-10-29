@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>QuizForge · 题库</title>
+  <link rel="icon" href="/practice/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/svg+xml" href="/practice/assets/quizforge-icon.svg" sizes="any">
+  <link rel="apple-touch-icon" href="/practice/assets/quizforge-touch-icon.png">
+  <link rel="manifest" href="/practice/manifest.webmanifest">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="/practice/shell/app.css">
+  <link rel="stylesheet" href="/practice/draft/whiteboard.css">
+  <link rel="stylesheet" href="/practice/draft/camera.css">
+  <link rel="stylesheet" href="/practice/shell/refinements.css">
+  <link rel="stylesheet" href="/practice/practice/practice-summary.css">
+  <link rel="stylesheet" href="/practice/library/library-management.css">
+  <link rel="stylesheet" href="/practice/exam/exam-mode.css">
+  <link rel="stylesheet" href="/practice/shell/themes.css">
+  <link rel="stylesheet" href="/practice/listening/audio-player.css">
+  <link rel="stylesheet" href="/practice/listening/listening.css">
+  <link rel="stylesheet" href="/practice/shell/online.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="library" aria-label="我的题库">
+      <div id="library-resize" class="library-resize-handle" role="separator" tabindex="0" aria-label="调整题库列表宽度"
+        aria-orientation="vertical" aria-controls="library-list" title="拖动调整宽度，双击恢复默认；方向键也可调整" hidden></div>
+      <div class="brand"><img class="brand-mark" src="/practice/assets/quizforge-icon.svg" width="36" height="36" alt=""
+          aria-hidden="true"><span>QuizForge<small>你的练习空间</small></span></div>
+            <div class="library-heading"><span id="library-label">我的题库</span>
+        <div class="sidebar-actions"><button id="library-import" class="icon-button" title="导入题库分组" aria-label="导入题库分组"
+            hidden><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" />
+            </svg></button><input id="library-import-file" type="file" accept=".qbank,application/vnd.quizforge.qbank"
+            hidden><button id="library-new-group" class="icon-button" title="新建分组" aria-label="新建分组"
+            hidden>+</button><button id="refresh" class="icon-button" title="刷新目录" aria-label="刷新目录">↻</button></div>
+      </div>
+      <div id="library-list" class="library-list"></div>
+      <nav class="library-footer online-navigation" aria-label="账号与外观">
+        <button id="appearance-open" type="button">外观</button><a href="/">账号</a><button id="online-logout" type="button">退出登录</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <section class="document-header"><button id="library-toggle" class="icon-button sidebar-toggle"
+          aria-label="隐藏文件列表" title="隐藏文件列表" aria-controls="library-list" aria-expanded="true"><svg viewBox="0 0 24 24"
+            aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg></button>
+        <div class="document-identity"><span id="document-group" class="document-group" hidden></span>
+          <h1 id="document-title">选择一本题库</h1>
+        </div>
+        <div class="document-actions"><span id="save-state" class="save-state" role="status"
+            aria-live="polite"></span><button id="history-open" class="header-action" hidden title="历史记录"
+            aria-label="历史记录"><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 11a9 9 0 1 1 3 7M3 4v7h7M12 7v5l3 2" />
+            </svg></button><button id="draft-toggle" class="draft-toggle" hidden
+            aria-pressed="false"><span>✎</span> 草稿</button></div><button id="outline-toggle"
+          class="icon-button sidebar-toggle" aria-label="隐藏题目大纲" title="隐藏题目大纲" aria-controls="outline-list"
+          aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M15 4v16" />
+          </svg></button>
+      </section>
+      <div id="mode-bar" class="mode-bar" hidden><span id="mode-label"></span>
+        <div><button id="history-choose" hidden>选择记录</button><button id="return-practice" hidden>返回作答</button></div>
+      </div>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <div id="save-recovery" class="save-recovery" hidden><span id="recovery-message"></span>
+        <div><button id="retry-save">重试保存</button><button id="load-saved">读取已保存内容</button></div>
+      </div>
+      <div id="panes" class="panes">
+        <div id="collection-loading" class="collection-loading" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <span class="collection-loading-spinner" aria-hidden="true"></span>
+          <strong>加载中…</strong>
+          <span class="collection-loading-title"></span>
+          <small class="collection-loading-detail"></small>
+        </div>
+        <div id="welcome" class="welcome"><span class="welcome-icon">▤</span>
+          <h2>从一道题开始</h2>
+          <p>选择左侧题库，开始练习。</p>
+        </div>
+        <nav class="question-navigation" aria-label="切换题目"><button id="previous" class="question-arrow previous"
+            title="上一题" aria-label="上一题" disabled><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m14 5-7 7 7 7" />
+            </svg></button><button id="next" class="question-arrow next" title="下一题" aria-label="下一题" disabled><svg
+              viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m10 5 7 7-7 7" />
+            </svg></button></nav>
+      </div>
+      <span id="progress-text" class="visually-hidden" aria-live="polite"></span>
+    </main>
+    <aside class="outline" aria-label="题目大纲">
+      <div class="outline-heading"><span>题目大纲</span></div>
+      <nav id="outline-list" class="outline-list"></nav>
+      <div class="outline-legend"><span><i class="legend-dot draft"></i>已作答</span><span><i
+            class="legend-dot correct"></i>答对</span><span><i class="legend-dot incorrect"></i>待巩固</span></div>
+    </aside>
+  </div>
+  <div id="scrim" class="scrim" hidden></div>
+  <dialog id="library-import-dialog" class="library-manage-dialog" aria-labelledby="library-import-title">
+    <form id="library-import-form">
+      <div class="dialog-heading">
+        <h2 id="library-import-title">导入题库分组</h2><button id="library-import-close" class="icon-button" type="button"
+          aria-label="关闭导入">×</button>
+      </div>
+      <p id="library-import-name" class="library-manage-hint"></p>
+      <p class="library-manage-hint">导入格式 4 的 .qbank 题库包及配套拓展，每本题库创建独立练习实例。已有题库、作答和历史保留。未审核拓展的题库暂不可用。</p>
+      <p id="library-import-error" class="library-manage-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="library-import-cancel" type="button">取消</button><button
+          id="library-import-confirm" type="submit">导入</button></div>
+    </form>
+  </dialog>
+  <dialog id="library-manage-dialog" class="library-manage-dialog" aria-labelledby="library-manage-title">
+    <form id="library-manage-form">
+      <div class="dialog-heading">
+        <h2 id="library-manage-title">编辑目录</h2><button id="library-manage-close" class="icon-button" type="button"
+          aria-label="关闭目录编辑">×</button>
+      </div>
+      <p id="library-manage-hint" class="library-manage-hint"></p>
+      <div id="library-manage-fields"><label>名称<input id="library-manage-name" maxlength="300"
+            autocomplete="off"></label><label>所属分组<select id="library-manage-group"></select></label></div>
+      <p id="library-manage-status" class="library-manage-hint" role="status" hidden></p>
+      <p id="library-manage-error" class="library-manage-error" role="alert" hidden></p>
+      <div class="library-manage-footer">
+        <div id="library-manage-more" class="library-manage-more" hidden><button id="library-manage-export" type="button">导出题库</button><button id="library-manage-delete" type="button">删除</button></div>
+        <div class="dialog-actions"><button id="library-manage-cancel" type="button">取消</button><button
+            id="library-manage-confirm" type="submit">保存</button></div>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="history-dialog" class="history-dialog" aria-labelledby="history-title">
+    <div class="dialog-heading">
+      <h2 id="history-title">历史记录</h2><button id="history-close" class="icon-button" aria-label="关闭历史记录">×</button>
+    </div>
+    <p class="history-hint">练习和已完成的考试在这里统一管理，考试记录带有“考试”标记。打开后可逐题查看作答与保存的草稿。</p>
+    <p id="history-error" class="history-error" role="alert" hidden></p>
+    <div id="history-list" class="history-list" aria-busy="false"></div>
+  </dialog>
+  <dialog id="history-delete-dialog" class="history-delete-dialog" aria-labelledby="history-delete-title">
+    <h2 id="history-delete-title">删除这轮历史记录？</h2>
+    <p id="history-delete-detail"></p>
+    <p>删除后无法恢复，当前作答和草稿会保留。</p>
+    <div class="dialog-actions"><button id="history-delete-cancel" autofocus>取消</button><button
+        id="history-delete-confirm" class="danger-button">删除记录</button></div>
+  </dialog>
+  <dialog id="appearance-dialog" aria-label="外观设置">
+    <h2>外观设置</h2>
+    <section id="appearance-settings-panel" class="appearance-settings">
+      <div id="appearance-themes" class="appearance-themes" role="radiogroup" aria-label="主题"></div>
+      <div id="appearance-image" class="appearance-image" hidden>
+        <div id="appearance-image-actions" class="appearance-image-actions"><button id="appearance-image-choose" type="button">选择图片</button><button
+            id="appearance-image-reset" type="button" hidden>恢复默认图片</button></div>
+        <input id="appearance-image-file" type="file" accept="image/*" hidden>
+        <label class="appearance-dim">遮罩<input id="appearance-dim" type="range" min="0" max="80" step="5"
+            aria-label="背景遮罩强度"><output id="appearance-dim-value" for="appearance-dim"></output></label>
+        <small id="appearance-image-hint" class="network-settings-hint">图片只保存在这台设备的浏览器中，不会上传。遮罩越高，文字越清楚。</small>
+      </div>
+      <div id="appearance-panels" class="appearance-panels" hidden>
+        <label class="appearance-dim">面板透明度<input id="appearance-clear" type="range" min="0" max="70" step="5"
+            aria-label="题库列表、目录大纲和顶栏的透明度"><output id="appearance-clear-value" for="appearance-clear"></output></label>
+        <small class="network-settings-hint">调节题库列表、目录大纲、顶栏和底栏透出背景的程度，每个主题分别记住。窄屏上弹出的侧栏保持不透明。</small>
+      </div>
+      <p class="network-settings-hint">外观只影响这台设备。主题改变侧栏、顶栏和题卡周围的底色；题卡由题型拓展绘制，草稿模式保持白板纸张，手机上的题目区域保持白底。</p>
+      <p id="appearance-error" class="network-settings-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="appearance-close" type="button">关闭</button></div>
+    </section></dialog>
+  <script src="/practice/listening/audio-player.js"></script>
+  <script type="module" src="/practice/app.js"></script>
+</body>
+
+</html>

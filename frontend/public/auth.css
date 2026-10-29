@@ -61,6 +61,7 @@ small { font-size: 12px; color: var(--muted); }
 .checking .secondary { margin-top: 12px; }
 .spinner { width: 17px; height: 17px; border: 2px solid #e2d9fa; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 .signed-in { text-align: center; }
+.signed-in .primary { text-decoration: none; margin-bottom: 12px; }
 .success-mark { display: grid; place-items: center; width: 56px; height: 56px; margin: 25px auto 20px; border-radius: 50%; background: #eaf5ee; color: #2e7a57; font-size: 26px; }
 .identity { margin: 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
 .signed-in-note { margin: 14px 0 27px; color: var(--muted); font-size: 13px; line-height: 1.7; }

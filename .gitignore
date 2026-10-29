@@ -1,6 +1,11 @@
 # Build output
 backend/target/
 **/node_modules/
+frontend/shared/richtext/*/richtext.js
+frontend/shared/richtext/*/richtext-editor.js
+frontend/shared/richtext/*/THIRD_PARTY_NOTICES.md
+frontend/practice/assets/html2canvas-1.4.1.min.js
+.artifacts/
 
 # IDE
 .idea/
