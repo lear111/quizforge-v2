@@ -47,16 +47,37 @@ test('deadline includes waiting, kills active worker, then service recovers', as
 });
 
 test('workers are grouped by package; at most two per package', async t => {
-  const h = await harness(t, {limit: 3}), spec = await h.pack(slowRule);
-  const input = {data: {delay: 250}, state: {submitted: false}};
-  const requests = [h.post(h.request(spec, 'project', input)), h.post(h.request(spec, 'project', input)), h.post(h.request(spec, 'project', input))];
+  const h = await harness(t, {limit: 3});
+  // Finish fixture writes before readers start: the packages share schema blobs.
+  const spec = await h.pack(basicRule), other = await h.pack(`${basicRule}\n// Second package`);
+  const start = h.pool.start.bind(h.pool);
+  let released = false;
+  t.mock.method(h.pool, 'start', job => {
+    const worker = start(job);
+    // Hold real worker input until the queue/group assertions finish, without a busy loop.
+    if (!released) worker.child.stdin.cork();
+    return worker;
+  });
+  const inputs = Array.from({length: 3}, (_, index) => ({data: {package: 'first', index}, state: {submitted: false}}));
+  const requests = inputs.map((input, index) => h.post(h.request(spec, 'project', input, {requestId: `first-${index}`})));
   await until(() => h.pool.queue.length === 1);
   assert.equal(h.pool.workers.size, 2);
-  const other = await h.pack(basicRule);
-  const second = h.post(h.request(other));
+  assert.ok([...h.pool.workers].every(worker => JSON.parse(worker.key).digest === spec.digest));
+  const otherInput = {data: {package: 'second'}, state: {submitted: false}};
+  const second = h.post(h.request(other, 'project', otherInput, {requestId: 'second'}));
   await until(() => h.pool.workers.size === 3);
-  assert.equal(new Set([...h.pool.workers].map(worker => worker.key)).size, 2);
-  for (const result of await Promise.all([...requests, second])) assert.equal(result.body.ok, true);
+  assert.deepEqual([...h.pool.workers].map(worker => JSON.parse(worker.key).digest).sort(), [spec.digest, spec.digest, other.digest].sort());
+  assert.equal(h.pool.queue.length, 1);
+  assert.equal(h.pool.queue[0].payload.spec.digest, spec.digest);
+  released = true;
+  for (const worker of h.pool.workers) worker.child.stdin.uncork();
+  const results = await Promise.all([...requests, second]);
+  const diagnostic = JSON.stringify({results, logs: h.logs});
+  for (const [index, result] of results.entries()) {
+    assert.equal(result.status, 200, diagnostic);
+    assert.equal(result.body.ok, true, diagnostic);
+    assert.deepEqual(result.body.data.projected, [...inputs, otherInput][index].data, diagnostic);
+  }
 });
 
 test('worker recycles after request count or idle timeout', async t => {
