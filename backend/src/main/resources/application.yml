@@ -37,3 +37,8 @@ qf:
     blob-dir: ${QF_BLOB_DIR:./data/blobs}
   security:
     allowed-origin: ${QF_PUBLIC_ORIGIN:http://localhost:8088}
+  rule-runner:
+    base-url: ${QF_RULE_RUNNER_URL:http://rule-runner:8090}
+    token: ${QF_RULE_RUNNER_TOKEN:quizforge-local-rule-token}
+    max-concurrency: ${QF_RULE_RUNNER_CONCURRENCY:8}
+    default-deadline: 8s
