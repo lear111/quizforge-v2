@@ -1,6 +1,6 @@
 # 题库包格式 4
 
-> **文档版本：** v0.2
+> **文档版本：** v0.3
 > **日期：** 2026-10-28
 > **依据：** [需求 v1.3 C-01、FR-09](../requirements/01-requirements.md)，[遗留契约 C-01～C-04](../legacy/01-contracts.md)，[数据库设计](01-database.md)，[题库共享与更新](04-bank-sharing-and-updates.md)
 > **参照：** 旧格式 3 的规则（`quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`、`LISTENING.md`，`core/server/host/library/library-archive.js`、`directories.js`、`library-package.js` @ `4522bb8`）
@@ -244,9 +244,99 @@ extensions/<组>/
 | PK-1 | 视频资源的上限、引用方式与播放（第 6.2 节） |
 | PK-2 | `assets/` 中未被引用的资源：目前照样存储（与“直接拷贝”一致），是否需要提示制作者 |
 
+## 附录 A：沿用的旧版规则
+
+固定参照 `quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161`，不读取其工作区变更。以下源码路径以 `core/server/host/` 为基准，文档以 `core/docs/reference/` 为基准；每行注明文件与函数名。正文明确改变的规则优先。本次只做结构解析，不执行 AJV、规则、页面挂载或 SDK 文件服务。
+
+### A.1 JSON 与基础字段
+
+| 规则 | 限制 | 出处 |
+| --- | --- | --- |
+| JSON | 严格 UTF-8；拒绝语法错误、重复键、尾随内容、非有限数值；容器深度最多 64，字符串及对象键最多 2,000,000 个 UTF-16 单元，数字字面量最多 100 字符 | `platform/json.js:parseJson`；`platform/files.js:readJson` |
+| 整数声明 | 无小数点、无指数的 JSON 整数字面量；1.0/1e0 不作为整数声明。不透明 data 保留精确十进制数值，不改写源文件 | `platform/json.js:integralField/parseJson`；正文原则 1 |
+| 非空文本 | 字符串，JavaScript trim 后非空；不自动修改返回值。本文长度均为 UTF-16 单元，不是 UTF-8 字节数 | `platform/errors.js:text` |
+| ID | `^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$`，最多 120，不要求 UUID/semver | `platform/errors.js:id/routeId` |
+| 可选说明 | 出现时必须为字符串，允许空串，最多 4000 | `library/collections.js:optional`；`extensions/extension-packages.js:readExtension` |
+| 分组名 | 非空，最多 120；不以 . 开头或以空格/点结尾；禁止路径、控制、Windows 禁用字符/设备名；不能为 bank.json、manifest.json、development.json（忽略大小写） | `library/library-management.js:folderName`；`library/library-package.js:incomingGroup` |
+
+### A.2 题库与绑定
+
+| 对象/字段 | 白名单、必填与限制 | 出处 |
+| --- | --- | --- |
+| 题库根 | 仅 formatVersion/id/version/title/description/extension/features/listening/questions；formatVersion/questions 必填。旧加载器没有总白名单；**格式 4 已改**，按正文严格原则拒绝其他字段 | `QUESTION_BANK_FORMAT.md:基本结构`；`library/collections.js:prepareCollection`；正文第 1、4 节 |
+| formatVersion | **格式 4 已改**：题库及示例都必须显式为整数 2，不继承旧版省略按 1 的分支 | `extensions/extension-api.js:requireBankFormat`；正文第 4、5 节 |
+| id/version/title | 作者元数据，可省略；不作为身份/去重键/显示名称。id 出现时按 A.1，title 出现时为非空文本最多 300；version 未被旧加载器校验，**旧版未限制**其类型/长度，不自设上限。旧安装器会补 id/覆盖 title；**格式 4 已改**为允许省略且不改写，显示名称单独取 folderName | `library/collections.js:prepareCollection`；`library/library-package.js:installPackage/exportPackage`；`QUESTION_BANK_FORMAT.md:基本结构`；正文第 4、9 节 |
+| description | 可选字符串，允许空串，最多 4000 | `library/collections.js:optional/prepareCollection` |
+| features | 仅 editing/whiteboard/history/exam 四个 boolean；对象或字段省略默认 true，禁止题目级覆盖。解析器保留显式 false，在线版对 editing/history 的使用策略留给业务层 | `library/features.js:BankFeatures.read`；`library/collections.js:prepareCollection`；正文第 4 节 |
+| questions | 数组 1～10000，保持题序 | `library/collections.js:prepareCollection` |
+| 每题 | 仅 id/title/extension/outline/listening/data；id/title/data 必填。id 按 A.1，同库区分大小写且唯一；title 非空最多 300；data 必须存在，内部类型/字段不额外加宿主约束。根字段白名单同样是**格式 4 已改** | `library/collections.js:prepareCollection`；正文第 1、4 节 |
+| extension | 根默认或逐题绑定，逐题优先；存在的根默认也须有效。每题最终必须有有效绑定；仅 `{path,id?}` | `library/collections.js:prepareCollection`；`library/identity.js:referenceIdentity/findExtension`；正文第 4.1 节 |
+| path | 非空字符串，最多 1000，精确指向本包 `extensions/<组>/<拓展>`；不按 ID/名称/大小写猜测 | `library/identity.js:extensionPath/findExtension` |
+| 可选 id | 按 A.1 的 ID 规则，与目标 manifest.id 精确一致 | `library/identity.js:referenceIdentity/findExtension` |
+| 旧绑定 | **格式 4 已改**：不接受 `{id,version}`、development、typeId 或其他键，没有旧绑定兼容分支 | `library/identity.js:referenceIdentity`；`EXTENSIONS.md:绑定、样例与旧数据`；正文第 2、4.1 节 |
+
+### A.3 显式大纲
+
+| 规则 | 限制 | 出处 |
+| --- | --- | --- |
+| question | 恰好 `{level:"question",label}`；label 为 1～80 纯文本 | `practice/outline.js:readOutlineConfiguration`；`SUBQUESTION_OUTLINE.md:大纲与稳定 ID` |
+| parts | 恰好 `{level:"parts",items}`；items 为 1～100 项，两种形式不可混合 | `practice/outline.js:readOutlineConfiguration` |
+| item | 恰好 `{id,label}`；id 1～128、label 1～80；id 在父题内精确唯一，不额外套题目 ID 的 ASCII 正则 | `practice/outline.js:readOutlineItems` |
+| 纯文本 | 非空，不含首尾 JavaScript 空白、U+0000..001F/U+007F..009F 或 `<`/`>`，不自动修正 | `practice/outline.js:plain` |
+| 能力 | parts 要求有效绑定拓展声明 major=1、minMinor≥1 和 outline-items；question 不要求 | `practice/outline.js:readOutlineConfiguration`；`extensions/extension-api.js:outlineItemsDeclared` |
+| 派生目录 | 旧版全库派生目录元数据有 8 MiB 限制；本次不执行 outlineBatch/派生目录，原始 bank.json 仍受正文 8 MiB 限制 | `practice/outline.js:addOutlineBytes/outlineQuestions`；正文第 8 步 9 |
+
+### A.4 听力与图片
+
+| 规则 | 限制 | 出处 |
+| --- | --- | --- |
+| listening 根 | 仅 materials/examMaterialId，materials 必填；**格式 4 已改**为 1～50（旧版 32） | `resources/listening.js:readListening`；正文第 4.2 节 |
+| material | 仅且必须有 id/title/file；id 为 `[A-Za-z0-9_-]{1,80}`，同库唯一；title 非空最多 160 | `resources/listening.js:readListening` |
+| file | **格式 4 已改**：本题库直接 assets/<文件名> 且为表中音频；不沿用 media/、WAV/OGG、单文件 8 MiB/全库音频 32 MiB，按正文资源表和全包上限。自由名称不额外套旧 media 的 includes('..') 禁止子串规则 | `resources/listening.js:readListening/audioMime/bindListening`；正文第 2、6、7 节 |
+| examMaterialId | 可选，必须为已声明材料 ID | `resources/listening.js:readListening` |
+| 每题 listening | 恰好 `{materialId}`，指向本题库声明的材料 | `resources/listening.js:readQuestionListening` |
+| 图片引用 | 在题目 data 中递归查 type=image 且 attrs 拥有 assetId 的节点；assetId 为 64 位小写十六进制，必须在本题库的图片哈希索引中；音频哈希、别库图片不能满足 | `resources/resources.js:imageReferences`；正文第 6.3 节 |
+| 图片识别 | **格式 4 已改**：自由名称，按正文签名与扩展名配对，不继承旧 SHA 文件名和 detectImageMime 的额外 IHDR/尾标记判断；只识别文件头，不完整解码媒体或推断编解码器 | `resources/resources.js:detectImageMime`；正文第 2、6 节 |
+
+### A.5 manifest、文件和编辑器
+
+| 规则 | 白名单、必填与限制 | 出处 |
+| --- | --- | --- |
+| manifest 根 | 仅 id/version/name/description/entry/script/style/rules/questionSchema/answerSchema/examples/requiresApi/requiresRichText/dependencies/assets。旧源码显式禁 types/packageFormatVersion，但无总白名单；**格式 4 已改**：按正文严格原则对实际消费字段列白名单 | `extensions/extension-packages.js:readExtension`；正文第 1、5 节 |
+| id/version/name | 普通加载要求 id/version 按 A.1（各最多 120），name 非空最多 300；description 可选最多 4000。旧安装器会补 id/version、用文件夹覆盖 name；**格式 4 已改**：不执行文件改写，直接校验完整普通拓展，manifest 保留作者名称 | `extensions/extension-packages.js:readExtension`；`library/library-package.js:installPackage`；正文第 1、5、9 节 |
+| 七个文件字段 | entry/script/style/rules/questionSchema/answerSchema/examples 在包中均必填，非空文本最多 240，叶目录内文件必须存在；entry 在普通加载必填，其余六项在旧导入 declaredPaths 也无条件读取 | `extensions/extension-packages.js:FIELDS/readExtension`；`library/library-archive.js:declaredPaths` |
+| 文件引用 | 禁绝对路径、反斜杠、冒号、NUL、逃出叶目录；保留 safeFile 对叶内 ./ 和可消去的 .. 的解析语义，不改写 manifest 原值；entry/script/style 必须有效 UTF-8 | `platform/files.js:safeFile/within`；`extensions/extension-packages.js:assetText/pageAssets` |
+| examples | 必须为 examples/ 下安全 ASCII JSON 路径（`examples/[A-Za-z0-9._/-]+\.json`，无 .. 段），符合现有 C-04 摘要入口。**格式 4 已改**：内容格式 2，每个根/逐题绑定都须指向所属拓展自己。旧文档建议 id=examples，源码未限制该作者元数据，不增加此限制 | `EXTENSIONS.md:绑定、样例与旧数据`；`library/collections.js:prepareCollection`；C-04/`ExtensionDigest.inspect`；正文第 5 节 |
+| 私有文件 | 任一段以 . 开头或为 node_modules/target 时，必须是七字段、assets 或 editor 三字段实际声明的文件；普通非私有额外文件允许，旧版未限制其后缀 | `library/library-archive.js:privatePath/declaredPaths/validatePrivatePaths` |
+| 宿主文件 | **格式 4 已改**：.instance.json/.bundle.json/development.json 一律拒绝，声明也不豁免 | 正文第 3.2 节 |
+| assets | 可选字符串数组，原字符串去重后最多 100 路径；非空且路径最多 240、存在且叶内。后缀 png/jpg/jpeg/webp/gif/svg/woff/woff2/ttf/otf，忽略大小写；不按题库 ResourceType 解码。去重后内联总字节最多 8 MiB。旧版未限制重复项数量或原数组的独立长度 | `extensions/extension-packages.js:staticAssets/pageAssets/MEDIA` |
+| editor.json | 可选；仅 entry/script/style，三项非空路径最多 240、叶内文件存在且 UTF-8。完整白名单是**格式 4 已改**，不继承旧实现忽略其他键 | `library/library-archive.js:declaredPaths`；`extensions/extension-packages.js:editorPage/pageAssets`；正文第 1 节 |
+| 文件大小 | **格式 4 已改**：普通拓展文件 8 MiB，manifest/editor 256 KiB，不沿用旧页面单文件 1 MiB；保留内联静态总量规则。C-04 单拓展 2000 文件/64 MiB 仍是现有摘要入口要求，超过返回 LIBRARY_ARCHIVE_LIMIT | `extensions/extension-packages.js:readExtension/assetText`；C-04/`ExtensionDigest.inspect`；正文第 7 节 |
+
+### A.6 API 与富文本
+
+| 对象/规则 | 限制 | 出处 |
+| --- | --- | --- |
+| requiresApi | 可省略按 1.0；存在时仅 major/minMinor/capabilities，前两项必填 JSON 整数，范围 1..2147483647、0..2147483647；实际支持 major=1、minMinor=0..5 | `extensions/extension-api.js:requireManifestApi/apiVersion`；`COMPATIBILITY.md:版本声明` |
+| API capabilities | 可省略/空，数组最多 100；非空、精确不重复的支持能力字符串；**旧版未限制单个 API 能力字符串长度** | `extensions/extension-api.js:requireManifestApi/CAPABILITIES` |
+| 基础能力 | practice/editor/editor-drafts/score/manual-review/ai-grading/resources/richtext/navigation/lifecycle，无另加 minor 门槛 | 同上 `CAPABILITIES/requireManifestApi` |
+| 带门槛能力 | outline-items≥1、answer-state≥3、appearance≥4、answer-areas≥5；声明本身不授予业务写权限 | `extensions/extension-api.js:requireManifestApi`；`API.md:Version compatibility` |
+| requiresRichText | 与 dependencies 互斥；仅 major/minMinor/documentFormat/documentProfile/capabilities；前四项必填；前三项为 JSON 整数，支持 1、0..1、1；profile 为 basic-v1/advanced-v1 | `resources/richtext-service.js:RichTextService.resolve`；`core/shared/richtext/service.json` |
+| 富文本能力 | 可省略；数组最多 100，非空且唯一，每字符串最多 100。basic-v1 仅 basic-formatting/images；advanced-v1 支持 basic-formatting/images/advanced-formatting/tables/math/image-resize/camera-capture | `resources/richtext-service.js:capabilities/resolve`；`core/shared/richtext/service.json:profiles` |
+| dependencies | 可选数组最多 4；每项恰好 id/version，只支持 quizforge.richtext；version 为三段 1～4 位十进制数字，按依赖 id 去重 | `resources/richtext-service.js:resolve/validateSdk/version` |
+| 边界 | 本次校验声明及固定旧版协议清单，不访问本机 SDK 安装目录/注册表，不执行钩子/AJV。实际 SDK/provider 可用性、派生目录及 Schema/规则语义留给后续集成 | `extensions/extension-packages.js:readExtension` 中 sdk 调用；`RichTextService.resolve`；正文第 8 步 9 与 M2.6a 范围 |
+
+### A.7 覆盖和已知差异
+
+- 包 4、题库 2、资源类型/上限、只按文件判断分组/布局、忽略空目录、允许失败留下无引用 Blob 均依正文；不沿用旧 installPackage 的补写、改名或改绑。出处：正文第 2～9 节；`library/library-package.js:installPackage`。
+- 文档 EXTENSIONS/QUESTION_BANK_FORMAT 说显示名取目录；普通 readExtension/prepareCollection 却读取 name/title，旧安装器通过覆盖字段实现。格式 4 不覆盖文件，ParsedBank.folderName 单独给出名称，JSON 和 ParsedExtension.manifest 保留原值。出处：上述函数；正文原则 1、第 4、9 节。
+- 根白名单/绑定额外键比旧源码严格，是正文已明确的格式 4 变化；样例 id=examples 只是文档约定，源码无此限制。旧版没有限制的字段不自行定数值。
+- 不按数据库列长添加隐含限制。旧 manifest.version 可达 120、name 可达 300，而现存列分别为 40/200；后续 M2.6 需协调，本次不改表、不截断。出处：`readExtension`、数据库设计 4.2 的 content_extension_package。
+
 ## 变更记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-28 | 初稿 |
 | v0.2 | 2026-10-28 | 明确：失败时不写入业务数据，资源文件可能已写入文件存储并由孤立文件清理回收；目录规则只按文件判断，空目录忽略（M2.6a 实现中提出） |
+| v0.3 | 2026-10-28 | 补充附录 A：固定旧版字段、长度、能力与源码出处，注明格式 4 覆盖及文档/源码差异 |
