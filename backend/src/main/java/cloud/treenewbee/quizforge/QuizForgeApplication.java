@@ -2,6 +2,7 @@ package cloud.treenewbee.quizforge;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * QuizForge V2 backend entry point.
@@ -11,6 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * for cross-cutting utilities without business logic.
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class QuizForgeApplication {
 
     public static void main(String[] args) {
