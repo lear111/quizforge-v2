@@ -15,6 +15,8 @@
 
 ## C-01 题库包与题库格式
 
+> **2026-10-28（需求 v1.3）：** V2 不再兼容本节描述的格式 3，改用重新定义的新格式（详细设计 06）。本节保留为旧格式参考，拓展接口（C-02、C-03）不受影响。
+
 **出处：** `quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`
 
 ### `.qbank` 包（格式 3）
