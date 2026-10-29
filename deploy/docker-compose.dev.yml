@@ -1,0 +1,11 @@
+# Development-only override: expose MySQL to this computer so a GUI client
+# (VS Code Database Client, DBeaver, MySQL Workbench) can browse tables.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Bound to 127.0.0.1 only: other machines on the network cannot connect.
+# Never use this file in production.
+services:
+  mysql:
+    ports:
+      - "127.0.0.1:${QF_DEV_DB_PORT:-3306}:3306"
