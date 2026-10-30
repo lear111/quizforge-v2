@@ -119,7 +119,6 @@ class DraftServiceTest extends MySqlTestBase {
     }
 
     @Test
-    @Disabled("见报告第 1 条")
     void simultaneousFirstSavesAfterBothUpdatesMissHaveOneSuccessAndOne409() throws Exception {
         Fixture fixture = fixture();
         var scenario = gate.arm(DraftSqlGate.Mode.AFTER_MISS, fixture.context());
@@ -154,7 +153,6 @@ class DraftServiceTest extends MySqlTestBase {
     }
 
     @Test
-    @Disabled("见报告第 2 条")
     void otherUserCannotInsertFirstDraftIntoOwnersEmptyContext() {
         Fixture owner = fixture(), other = fixture();
         assertConflict(() -> drafts.saveDraft(other.user(), owner.context(), "q1", 0, "{\"intruder\":true}", owner.content()));

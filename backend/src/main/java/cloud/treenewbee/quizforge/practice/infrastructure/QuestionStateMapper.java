@@ -30,12 +30,15 @@ public interface QuestionStateMapper {
                     @Param("answer") String answerJson,
                     @Param("updatedAt") Instant updatedAt);
 
-    // 第一次保存这道题：插入新行，revision = 1
+        // 第一次保存：插入新行，revision = 1。
+    // 用 INSERT … SELECT 在同一条 SQL 里检查存档归属：存档不属于该用户时插入 0 行（防 IDOR）。
     @Insert("""
             INSERT INTO practice_question_state (context_id, question_id, user_id, answer, revision, updated_at, status, content_sha256)
-            VALUES (#{contextId}, #{questionId}, #{userId}, #{answer}, 1, #{updatedAt}, 'draft', #{contentSha256})
+                SELECT #{contextId}, #{questionId}, #{userId}, #{answer}, 1, #{updatedAt}, 'draft', #{contentSha256}
+                FROM practice_context
+                WHERE id = #{contextId} AND user_id = #{userId}
             """)
-    void insertDraft(@Param("contextId") String contextId,
+    int insertDraft(@Param("contextId") String contextId,
                      @Param("questionId") String questionId,
                      @Param("userId") String userId,
                      @Param("answer") String answerJson,

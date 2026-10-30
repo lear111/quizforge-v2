@@ -35,22 +35,24 @@ public class DraftService {
                           long clientRevision, String answerJson, byte[] contentSha256) {
         Instant now = clock.instant();
 
-        int updated = states.updateDraft(contextId, questionId, userId, clientRevision, answerJson, now);
-        if (updated == 1) {
-            return clientRevision + 1;
-        }
-
-        // 这道题还没有作答行，第一次保存改为插入；主键冲突说明另一个请求刚好同时第一次保存
         if (clientRevision == 0) {
+            // 第一次保存：只 INSERT，不先 UPDATE（对不存在的行 UPDATE 会加间隙锁，并发时死锁）
             try {
-                states.insertDraft(contextId, questionId, userId, answerJson, now, contentSha256);
-                return 1;
+                int inserted = states.insertDraft(contextId, questionId, userId, answerJson, now, contentSha256);
+                if (inserted == 1) {
+                    return 1;
+                }
+                throw revisionConflict();   // 插入 0 行：存档不属于该用户（INSERT … SELECT 的归属检查）
             } catch (DuplicateKeyException e) {
-                throw revisionConflict();
+                throw revisionConflict();   // 主键冲突：另一个请求先保存了这道题
             }
         }
 
-        throw revisionConflict();
+        // 之后的保存：乐观锁更新
+        if (states.updateDraft(contextId, questionId, userId, clientRevision, answerJson, now) == 1) {
+            return clientRevision + 1;
+        }
+        throw revisionConflict();           // 版本号已过期，或这道题已提交
     }
 
     private static ApiException revisionConflict() {
