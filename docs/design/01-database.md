@@ -442,7 +442,10 @@ CREATE TABLE exam_exam (
 | catalog | `catalog_pack_bank` | 某版本中的一本题库：pack_id, revision, bank_key, bank_id（共享内容）, title；DDL 见[题库共享与版本更新](04-bank-sharing-and-updates.md)第 4 节 |
 | catalog | `catalog_pack_revision` | 每个已提交版本的 `.qbank`：pack_id, revision, blob_sha256, size, submitted_at（对应旧 `pack_admin_reviews`，不可变） |
 | catalog | `catalog_pack_file` | 截图等附件：id, pack_id, kind, name, mime, size, blob_sha256 |
-| catalog | `catalog_pack_review`、`catalog_cloud_approval` | 审核记录；云端许可（含该版本所用拓展摘要列表） |
+| catalog | `catalog_pack_revision` 的审核列 | 每个版本只审核一次（需求 FR-10 v1.5），审核状态、审核人、意见、时间作为版本表的列，不另设审核记录表；云端许可（含该版本所用拓展摘要列表）同样记在版本上 |
+| catalog | `catalog_favorite`、`catalog_like` | 收藏、点赞：PK(user_id, pack_id)，防止重复；点赞只后台记录 |
+| notify | `notification` | id, kind（system / announcement / bank_update）, title, body, sender_kind（system / admin）, sender_id（管理员发送时填写）, pack_id（题库更新通知关联的题库包）, created_at；全站一条，不为每个用户复制（需求 FR-12） |
+| practice | `practice_history_annotation` | 历史批注：history_id, question_id, user_id, strokes(JSON), created_at；只追加不修改（需求 FR-03 v1.5） |
 | catalog | `catalog_comment`、`catalog_report` | 评论、举报 |
 | admin | `admin_extension_review` | 拓展审核白名单（C-04）：digest PK, extension_id, version, inventory(JSON), status(approved/revoked), reviewer_id, reviewed_at, reason |
 | admin | `admin_setting` | 键值配置：注册与登录策略、管理员联系方式、AI 注册赠送等，`value JSON` + `version` |
@@ -468,16 +471,19 @@ SELECT request_sha256, response FROM practice_request_receipt
  WHERE user_id = ? AND request_id = ?;
 --   存在且摘要相同 → 直接返回 response；摘要不同 → 400
 
--- ② 条件更新（乐观锁）
+-- ② 写入作答（按客户端版本号分两种情况，2026-10-29 修订）
+-- 客户端版本号 = 0（读题时这道题还没有作答）：直接插入，并在同一条 SQL 中检查存档归属
+INSERT INTO practice_question_state (context_id, question_id, user_id, status, answer, revision, content_sha256, updated_at)
+SELECT ?, ?, ?, 'draft', ?, 1, ?, ? FROM practice_context WHERE id = ? AND user_id = ?;
+--   插入 1 行 → 成功；插入 0 行 → 存档不属于该用户 → 409；主键冲突 → 别人先保存了 → 409
+-- 客户端版本号 > 0：条件更新（乐观锁）
 UPDATE practice_question_state
    SET status = 'draft', answer = ?, answer_state = ?,
        revision = revision + 1, updated_at = ?
  WHERE context_id = ? AND question_id = ? AND user_id = ?
    AND revision = ?                      -- 客户端带来的版本号
    AND status <> 'submitted';
---   影响 1 行 → 成功
---   影响 0 行 → 若该行不存在且客户端版本号为 0：INSERT 新行（主键冲突同样视为冲突）
---               否则 → 409 CONFLICT
+--   影响 1 行 → 成功；影响 0 行 → 409 CONFLICT
 
 -- ③ 写回执
 INSERT INTO practice_request_receipt (...) VALUES (...);
@@ -485,6 +491,8 @@ INSERT INTO practice_request_receipt (...) VALUES (...);
 ```
 
 - 只锁一行，不同题目、不同用户的保存互不阻塞。
+- **为什么第一次保存不“先 UPDATE、0 行再 INSERT”：** 在 REPEATABLE READ 下，对不存在的行执行 UPDATE 会在索引间隙上加间隙锁；两个并发请求都拿到间隙锁（彼此兼容）后，各自的 INSERT 需要插入意向锁，被对方的间隙锁阻塞，形成死锁（M3 并发测试发现，PR #46）。按版本号分支后，第一次保存只有 INSERT，并发时后者等待前者提交后得到主键冲突，返回 409。
+- **为什么 INSERT 要带 `SELECT … FROM practice_context`：** 存档 ID 由客户端提交，必须校验它属于当前用户，否则其他用户可以往别人的存档里插入作答行，占住主键（IDOR）。UPDATE 已由 `user_id` 条件保护，INSERT 没有 WHERE，所以用 INSERT … SELECT 在同一条 SQL 里完成归属检查。
 - 草稿不影响得分汇总，所以**不修改** `practice_context.progress_version`，避免同一用户的连续保存都去更新同一行。
 
 ### 5.2 正式提交（涉及评分和轮次）
@@ -627,3 +635,4 @@ SELECT 1
 | v0.2 | 2026-10-27 | 取消临时练习（在线版统一保存历史）；拓展示例不作为可练习题库 |
 | v0.4 | 2026-10-27 | 题库共享与版本更新：`practice_collection` 增加来源与更新状态，新增 `catalog_pack_bank`，轮次增加 `interrupted` |
 | v0.3 | 2026-10-27 | 写时计算分数与投影：新增 `content_question.max_score`，`practice_question_state.score / max_score / outline_states / projection`（[rule-runner 协议第 6 节](03-rule-runner-protocol.md)） |
+| v0.5 | 2026-10-29 | 5.1 第一次保存改为直接 INSERT … SELECT（避免间隙锁死锁、检查存档归属）；4.5 补充版本审核列、收藏点赞、通知、历史批注 |
