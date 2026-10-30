@@ -155,7 +155,7 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
             assertNoAnswers(response.body());
             JsonNode question = body(response);
             assertThat(question.path("question").path("data").isObject()).isTrue();
-            assertThat(question.path("capabilities").path("canSave").asBoolean()).isFalse();
+            assertThat(question.path("capabilities").path("canSave").asBoolean()).isTrue();
             assertThat(question.path("capabilities").path("canSubmit").asBoolean()).isFalse();
             String page = "/api/extensions/" + question.path("extension").path("pageId").asString()
                     + "/" + question.path("extension").path("version").asString() + "/page";

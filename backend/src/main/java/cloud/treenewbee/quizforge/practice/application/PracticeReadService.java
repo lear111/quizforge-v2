@@ -17,6 +17,7 @@ import cloud.treenewbee.quizforge.content.application.BankAvailability;
 import cloud.treenewbee.quizforge.content.application.ContentPages;
 import cloud.treenewbee.quizforge.content.infrastructure.ExtensionPackageRow;
 import cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper;
+import cloud.treenewbee.quizforge.content.infrastructure.QuestionRow;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeReadMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeReadRows;
 import cloud.treenewbee.quizforge.practice.projection.ProjectionCache;
@@ -76,7 +77,7 @@ public class PracticeReadService {
         String revision = stamps.stamp(context, "bank", 0, collection.contentSha256(), collection.contentSha256()).contentVersion();
         return new Overview(id, "bank", collection.title(), revision, collection.description(), features(collection),
                 listeningMetadata(collection), List.copyOf(questions), java.util.Collections.unmodifiableMap(states),
-                new Availability(true, null, null), true);
+                new Availability(true, null, null), states.values().stream().allMatch(state -> "submitted".equals(state.status())));
     }
 
     public Object question(String userId, String id, String qid, String knownStamp) {
@@ -86,6 +87,23 @@ public class PracticeReadService {
         var row = reads.state(context, qid, userId).orElse(null);
         var stamp = stamps.stamp(context, qid, row == null ? 0 : row.revision(), question.contentSha256(), question.extensionDigest());
         if (matches(knownStamp, stamp)) return new Unchanged(true, stamp);
+        return renderQuestion(userId, qid, collection, question, context, row, stamp);
+    }
+
+    public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template) {}
+
+    /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
+    public PreparedDraft prepareDraft(String userId, String id, String qid) {
+        var collection = collection(userId, id);
+        var question = questions.findById(collection.bankId(), qid).orElseThrow(() -> notFound());
+        String context = context(userId, id);
+        var template = renderQuestion(userId, qid, collection, question, context, null,
+                stamps.stamp(context, qid, 0, question.contentSha256(), question.extensionDigest()));
+        return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template);
+    }
+
+    private QuestionResponse renderQuestion(String userId, String qid, PracticeReadRows.Collection collection,
+            QuestionRow question, String context, PracticeReadRows.State row, QuestionStamps.Stamp stamp) {
         boolean submitted = row != null && row.status().equals("submitted");
         JsonNode projected;
         ExtensionPackageRow extension = pages.extension(question.extensionDigest());
@@ -103,7 +121,7 @@ public class PracticeReadService {
         return new QuestionResponse(new Question(qid, question.title(), projected), state,
                 reads.whiteboard(context, qid, userId).map(json::readTree).orElse(null), stamp,
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
-                features(collection), new Capabilities(false, false, false, false, false, false), null);
+                features(collection), new Capabilities(!submitted, false, false, false, false, false), null);
     }
 
     private String project(ExtensionPackageRow extension, String data) {
