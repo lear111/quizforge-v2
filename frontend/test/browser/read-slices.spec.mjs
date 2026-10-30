@@ -18,6 +18,7 @@ test('real sample import, approval fixture, open and render all five types',asyn
   await expect(page).toHaveURL(/\/practice\/$/);
   const library=async()=>{if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();await expect(page.locator('#library-list')).toBeVisible();};
   await library();
+  await expect(page.locator('#library-import')).toBeVisible();
   await page.locator('#library-import-file').setInputFiles(resolve('../samples/basic-types.qbank'));
   const importedResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/library/import'&&response.request().method()==='POST');
   await page.locator('#library-import-confirm').click();

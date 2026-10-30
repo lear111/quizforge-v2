@@ -11,6 +11,20 @@ COMMIT = '4522bb81c2126a699fcf72ce61d074dbc1264161'
 TYPES = ['单选题', '多选题', '判断题', '简答题', '简答题（答题区）']
 GROUP = '基础题型'
 OUTPUT = Path(__file__).resolve().parent
+BANK_IDS = {
+    '单选题': '60000000-0000-4000-8000-000000000001',
+    '多选题': '60000000-0000-4000-8000-000000000002',
+    '判断题': '60000000-0000-4000-8000-000000000003',
+    '简答题': '60000000-0000-4000-8000-000000000004',
+    '简答题（答题区）': '60000000-0000-4000-8000-000000000005',
+}
+EXAMPLE_IDS = {
+    '单选题': '60000000-0000-4000-8000-000000000101',
+    '多选题': '60000000-0000-4000-8000-000000000102',
+    '判断题': '60000000-0000-4000-8000-000000000103',
+    '简答题': '60000000-0000-4000-8000-000000000104',
+    '简答题（答题区）': '60000000-0000-4000-8000-000000000105',
+}
 
 def git(*args):
     return subprocess.check_output(['git', '-C', str(UPSTREAM), *args])
@@ -31,6 +45,7 @@ def files(types, scope):
         content = {path[len(prefix)+1:]: git('show', f'{COMMIT}:{path}') for path in paths if path}
         example = json.loads(content['examples/bank.json'])
         example['formatVersion'] = 2
+        example['id'] = EXAMPLE_IDS[name]
         example['extension'] = {'path': prefix}
         for question in example['questions']:
             if 'extension' in question:
@@ -40,7 +55,7 @@ def files(types, scope):
         chosen = next((q for q in example['questions'] if name == '单选题' and image(q['data'])), example['questions'][0])
         question = copy.deepcopy(chosen)
         question.pop('extension', None)
-        bank = dict(formatVersion=2, title=name, extension={'path': prefix}, questions=[question])
+        bank = dict(formatVersion=2, id=BANK_IDS[name], title=name, extension={'path': prefix}, questions=[question])
         result[f'question-banks/{GROUP}/{name}/bank.json'] = encode(bank)
         for path, value in content.items():
             if path.startswith('examples/assets/'):

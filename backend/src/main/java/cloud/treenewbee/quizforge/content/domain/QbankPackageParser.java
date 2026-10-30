@@ -17,12 +17,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Single-use, file-event parser. No business writes or rule execution; unreferenced blobs may remain on failure. */
 public final class QbankPackageParser implements QbankArchiveReader.EntryHandler {
     private static final String MARKER = "quizforge-package.json";
     private static final int JSON_LIMIT = 256 * 1024;
     private static final int FILE_LIMIT = 8 * 1024 * 1024;
+    private static final Pattern BANK_UUID = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     @FunctionalInterface
     public interface AssetSink {
@@ -127,12 +129,14 @@ public final class QbankPackageParser implements QbankArchiveReader.EntryHandler
         // Asset failures are deferred so marker/layout rejection precedes resource rejection.
         for (Resource resource : resources.values()) if (resource.failure() != null) throw resource.failure();
         List<ParsedBank> banks = new ArrayList<>();
+        Set<String> bankIds = new HashSet<>();
         Set<String> used = new HashSet<>();
         for (String path : bankFiles.keySet()) {
             String name = path.substring(path.lastIndexOf('/') + 1);
             Map<String, Asset> assets = new LinkedHashMap<>();
             for (String file : bankFiles.get(path)) if (resources.containsKey(file)) assets.put(file.substring(path.length() + 1), resources.get(file).asset());
             Map<String, Object> bank = json(path + "/bank.json", INVALID_QUESTION_BANK, "题库「" + name + "」");
+            validateBankId(path + "/bank.json", bank, bankIds);
             used.addAll(BankStructureRules.validate(name, bank, assets, manifests, null));
             banks.add(new ParsedBank(path + "/", name, bank, assets));
         }
@@ -153,6 +157,7 @@ public final class QbankPackageParser implements QbankArchiveReader.EntryHandler
                 } catch (PackageRejectedException rejected) { if (rejected.code() == LIBRARY_ARCHIVE_LIMIT) throw rejected; }
             }
             Map<String, Object> exampleBank = json(path + "/" + LegacyExtensionRules.relative(example), INVALID_EXTENSION, "拓展「" + path + "」示例");
+            validateBankId(path + "/" + example, exampleBank, bankIds);
             try { BankStructureRules.validate(path + "/" + example, exampleBank, exampleAssets, manifests, path); }
             catch (PackageRejectedException rejected) { throw new PackageRejectedException(INVALID_EXTENSION, rejected.getMessage()); }
             if (content.size() > 2000 || content.values().stream().mapToLong(bytes -> bytes.length).sum() > 64L * 1024 * 1024) reject(LIBRARY_ARCHIVE_LIMIT, "拓展超过审核摘要的文件数量或总大小上限：" + path);
@@ -164,6 +169,15 @@ public final class QbankPackageParser implements QbankArchiveReader.EntryHandler
             extensions.add(new ParsedExtension(path, manifest, hashes, digest));
         }
         return new ParsedPackage(new PackageManifest(group, scope), banks, extensions);
+    }
+
+    private static void validateBankId(String path, Map<String, Object> bank, Set<String> ids) {
+        if (!(bank.get("id") instanceof String id) || !BANK_UUID.matcher(id).matches()) {
+            throw new PackageRejectedException(INVALID_QUESTION_BANK, "题库「" + path + "」：id 必填且必须为小写 UUID");
+        }
+        if (!ids.add(id)) {
+            reject(INVALID_QUESTION_BANK, "题库「" + path + "」：包内题库 id 重复：" + id);
+        }
     }
 
     private void layout(String group, Map<String, List<String>> banks, Map<String, List<String>> extensions) {

@@ -28,7 +28,7 @@ final class PackageFixture {
         put("quizforge-package.json", Map.of("format", "quizforge-bank-group", "formatVersion", 4, "group", GROUP));
         Map<String, Object> examples = document(files.get(extension + "/examples/bank.json"));
         Map<String, Object> first = object(((List<?>) examples.get("questions")).get(0));
-        put(BANK + "/bank.json", Map.of("formatVersion", 2, "title", "作者元数据名称", "extension", Map.of("path", extension),
+        put(BANK + "/bank.json", Map.of("formatVersion", 2, "id", ImportArchives.BANK_IDS.get(type), "title", "作者元数据名称", "extension", Map.of("path", extension),
                 "questions", List.of(Map.of("id", "q1", "title", "第 1 题", "data", first.get("data")))));
         files.put(BANK + "/assets/自由图.PNG", PNG.clone());
     }
@@ -46,6 +46,7 @@ final class PackageFixture {
         files.put(owner + "/practice.css", "body{}".getBytes(StandardCharsets.UTF_8));
         Map<String, Object> example = document(files.get(owner + "/examples/bank.json"));
         example.put("formatVersion", 2);
+        example.put("id", ImportArchives.exampleId(name));
         bind(example, owner);
         for (Object question : (List<?>) example.get("questions")) bind(object(question), owner);
         ArrayDeque<Object> pending = new ArrayDeque<>(); pending.push(example);
