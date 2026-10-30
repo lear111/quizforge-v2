@@ -9,7 +9,6 @@ import org.apache.ibatis.annotations.Select;
 public interface ReceiptMapper {
 
 
-    // 查回执。要加 FOR SHARE，原因见下面的问题 ①
     // 不加 FOR SHARE：对不存在的行加锁读会持有间隙锁，并发 INSERT 回执时会死锁。
     // 漏读的情况由乐观锁兜底（409 → 在新事务里重查）。
     @Select("""
