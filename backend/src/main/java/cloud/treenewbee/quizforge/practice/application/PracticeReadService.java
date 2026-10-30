@@ -24,6 +24,7 @@ import cloud.treenewbee.quizforge.practice.projection.ProjectionCache;
 import cloud.treenewbee.quizforge.practice.projection.ProjectionKey;
 import cloud.treenewbee.quizforge.practice.application.PracticeViews.*;
 import cloud.treenewbee.quizforge.rules.RuleRunnerClient;
+import cloud.treenewbee.quizforge.rules.RulePackage;
 import cloud.treenewbee.quizforge.rules.RuleRunnerException;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
@@ -81,8 +82,9 @@ public class PracticeReadService {
     }
 
     public Object question(String userId, String id, String qid, String knownStamp) {
-        var collection = collection(userId, id);
-        var question = questions.findById(collection.bankId(), qid).orElseThrow(() -> notFound());
+        var source = source(userId, id, qid);
+        var collection = source.collection();
+        var question = source.question();
         String context = context(userId, id);
         var row = reads.state(context, qid, userId).orElse(null);
         var stamp = stamps.stamp(context, qid, row == null ? 0 : row.revision(), question.contentSha256(), question.extensionDigest());
@@ -94,12 +96,28 @@ public class PracticeReadService {
 
     /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
     public PreparedDraft prepareDraft(String userId, String id, String qid) {
-        var collection = collection(userId, id);
-        var question = questions.findById(collection.bankId(), qid).orElseThrow(() -> notFound());
+        var source = source(userId, id, qid);
+        var collection = source.collection();
+        var question = source.question();
         String context = context(userId, id);
         var template = renderQuestion(userId, qid, collection, question, context, null,
                 stamps.stamp(context, qid, 0, question.contentSha256(), question.extensionDigest()));
         return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template);
+    }
+
+    /** Internal rule input; ownership, availability and exact question lookup match the read path. */
+    public record RuleQuestion(JsonNode data, RulePackage rulePackage) {}
+
+    public RuleQuestion ruleQuestion(String userId, String collectionId, String questionId) {
+        var source = source(userId, collectionId, questionId);
+        return new RuleQuestion(json.readTree(source.question().data()),
+                pages.rulePackage(pages.extension(source.question().extensionDigest())));
+    }
+
+    private record QuestionSource(PracticeReadRows.Collection collection, QuestionRow question) {}
+    private QuestionSource source(String userId, String collectionId, String questionId) {
+        var collection = collection(userId, collectionId);
+        return new QuestionSource(collection, questions.findById(collection.bankId(), questionId).orElseThrow(() -> notFound()));
     }
 
     private QuestionResponse renderQuestion(String userId, String qid, PracticeReadRows.Collection collection,
