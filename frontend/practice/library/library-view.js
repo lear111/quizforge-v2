@@ -21,7 +21,7 @@ export function renderLibraryView({document,catalog,listMode,activeKey,collapsed
     }return tools;
   };
   const appendItem=(container,row)=>{const kind=row.kind?.startsWith('development')?row.kind:listMode,key=`${kind}:${row.id}`,button=el('button',`library-item${key===activeKey?' active':''}`);button.dataset.itemId=row.id;
-    const body=el('span','item-body'),title=el('span','item-title');button.title=row.title||row.name;title.append(el('span','item-name',row.title||row.name));if(row.development)title.append(el('span','development-badge','开发版'));body.append(title);body.append(el('span',`item-meta${row.error?' item-error':''}`,row.error?(typeof row.error==='string'?row.error:row.error.message):`${row.questionCount??0} ${listMode==='bank'?'道题目':'道样例'}${row.version&&!row.development?' · v'+row.version:''}`));
+    const body=el('span','item-body'),title=el('span','item-title');button.title=row.title||row.name;title.append(el('span','item-name',row.title||row.name));if(row.development)title.append(el('span','development-badge','开发版'));body.append(title);body.append(el('span',`item-meta${row.error?' item-error':''}`,row.error?(typeof row.error==='string'?row.error:row.error.message):row.availability?.available===false?'审核中':`${row.questionCount??0} ${listMode==='bank'?'道题目':'道样例'}${row.version&&!row.development?' · v'+row.version:''}`));
     button.append(el('span','item-icon',listMode==='bank'?'▤':row.development?'⌘':'◇'),body);button.addEventListener('click',()=>{if(row.error){onNotice(typeof row.error==='string'?row.error:row.error.message);return;}onOpen(kind,row.id);});const item=el('div','library-row');item.append(button,actions('item',row));container.append(item);
   };
   const appendGroups=(container,nodes)=>{for(const group of nodes){

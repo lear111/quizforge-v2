@@ -1,7 +1,7 @@
 # 练习空间接口映射
 
-> 版本：v0.1；日期：2026-10-29；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
-> 后端盘点基线：main@f22e247。以当前 Controller 为准，不把尚未合并的 PR 算作已实现。
+> 版本：v0.2；日期：2026-10-30；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
+> 后端盘点基线：main@039a8a3，加本次切片 2、3。以当前 Controller 为准，不把尚未合并的 PR 算作已实现。
 
 本次是 ADR-006 方案 C 的源码分叉。切片顺序：**1 导入与题库列表；2 打开题库；3 读题与渲染；4 保存草稿；5 提交；其余功能后续接入。** 一个页面可能跨多个切片；接口出现并不代表对应业务已经可用。
 
@@ -14,15 +14,15 @@
 | 登录页注册 / 登录 | POST /api/auth/register、/api/auth/login | 已实现 | 1（前置认证） | public/auth.js；同源 HttpOnly Cookie |
 | 进入练习空间 / 刷新 | GET /api/me | 已实现 | 1（前置认证） | app.js:start；先确认会话，再加载目录 |
 | 账号页 / 退出 | GET /api/me；POST /api/auth/logout | 已实现 | 1（前置认证） | public/auth.js、app.js；退出后回到 / |
-| 我的题库 / 刷新目录 | GET /api/library/index；缺失时 GET /api/catalog | 未实现 | 1 | shared/online.js、library-index-client.js；两者都缺失时显示明确空状态，不造题库数据 |
-| 导入题库包 | POST /api/library/import，multipart 字段 file | 未实现（PR #43 待合并） | 1 | library-transfer.js；128 MiB、成功后重新读目录；响应 collections 用于导入数量提示 |
-| 选择题库 / 从历史返回 | GET C | 未实现 | 2 | app.js:openCollection / returnToPractice / activateReady；首次打开还会继续请求首题和拓展页面 |
-| 首题 / 切题 / 邻题预取 / 冲突后重读 | GET Q | 未实现 | 3 | app.js:loadQuestion / prefetchAdjacent；命中缓存时带 stamp 条件头 |
-| 题目拓展页面 | GET /api/extensions/{pageId 或 id}/{version}/page | 未实现 | 3 | bridge/extension-pages.js；摘要如何填充 pageId 由后端响应契约确定，前端不猜测绑定 |
-| 富文本静态依赖 | GET /api/sdk/{id}/{version} | 未实现 | 3 | app.js:prepareAssets、bridge/page-assets.js；固定组件的源码与构建产物位于 /shared/ |
-| 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 未实现 | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
-| 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 未实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
-| 听力材料 | HEAD / GET C/listening/{materialId} | 未实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
+| 我的题库 / 刷新目录 | GET /api/library/index；缺失时 GET /api/catalog | 已实现（本次只读入口） | 1 | shared/online.js、library-index-client.js；两者都缺失时显示明确空状态，不造题库数据 |
+| 导入题库包 | POST /api/library/import，multipart 字段 file | 已实现（PR #43） | 1 | library-transfer.js；128 MiB、成功后重新读目录；响应 collections 用于导入数量提示 |
+| 选择题库 / 从历史返回 | GET C | 已实现 | 2 | app.js:openCollection / returnToPractice / activateReady；首次打开还会继续请求首题和拓展页面 |
+| 首题 / 切题 / 邻题预取 / 冲突后重读 | GET Q | 已实现 | 3 | app.js:loadQuestion / prefetchAdjacent；命中缓存时带 stamp 条件头 |
+| 题目拓展页面 | GET /api/extensions/{pageId 或 id}/{version}/page | 已实现 | 3 | bridge/extension-pages.js；pageId 为所绑定拓展的审核摘要；同 ID/版本不同摘要分开路由与缓存 |
+| 富文本静态依赖 | GET /api/sdk/{id}/{version} | 已实现 | 3 | app.js:prepareAssets、bridge/page-assets.js；固定组件的源码与构建产物位于 /shared/ |
+| 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 已实现（仅组件读取） | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
+| 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
+| 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
 | 答案草稿 / 白板墨迹 | POST Q/actions，action=draft / whiteboard | 未实现 | 4 | app.js:mutate、shared/write-queue.js；原请求回执 ID、revision、失败输入保留与重试行为 |
 | 上传答题资源 / 截图 | POST /api/resources | 未实现 | 4 | app.js:pageRequest；无历史场景仍带 X-QuizForge-Transient-Resource |
 | 提交 / 人工评分 / 重做本题 | POST Q/actions，action=submit / review / retry | 未实现 | 5（submit），其余 | app.js / Bridge；不改写动作负载 |
@@ -49,6 +49,18 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - 将来任一目录接口实现后，正常数据自动进入上游列表组件；用户能点击题库，后续切片缺失仍停留在原界面并显示提示。不会用前端模拟数据作为“后端已接通”的证据。
 - 删除网络设置、开发者/本机 AI 设置、本机访问密码与 Hub 设备登录、题目作者编辑器、拓展示例入口；启动不再调用这些配置 API。外观保留在独立本地对话框，仅存设备偏好，不存认证状态。
 
+## 切片 2、3 的响应与边界
+
+- 目录 `/api/catalog`、`/api/library/index` 返回当前用户未软删除的实例；`banks[].availability` 包含 available/code/message。未审核或已撤销的题库显示“审核中”，不会自动打开；点击后仍由后端实时复核，返回 422 CLOUD_EXTENSION_REVIEW_REQUIRED。
+- 概览返回 id/kind/title/revision/description/features/listening/questions/states/availability/readOnly。questions 按 position 排序，包含 id/title/type、可选 outlineLabel/outlineItems/listening；state 用 user_id 限定的 LEFT JOIN 读取，缺失行默认为 unanswered/revision=0。概览不查询题目 data。
+- 首次打开创建 kind=practice、scope_key=default 的 context。并发直接 INSERT，由 uk_context_scope 去重后读取胜方；不在未命中的 UPDATE 上升级间隙锁。
+- 读题返回 question:{id,title,data:投影}、state:{status,answer,result,revision,answerState,outlineStates}、draft、stamp、extension、features、capabilities、aiTask:null。已提交仅取持久化 projection；未提交通过 practice/projection 的 `ProjectionCache.get(ProjectionKey,Supplier<String>)`。默认 NoopProjectionCache 只调用 loader，使用 ConditionalOnMissingBean 注册，可由后续缓存实现替换。
+- stamp 的 contentVersion/packageVersion 是进程私钥 HMAC 版本戳，不暴露含答案的原始内容摘要；重启后自动失配重读。合法匹配头返回 unchanged/stamp，跳过投影；缺少/非法字段返回 400 VALIDATION_FAILED。可用性先于短响应校验，撤销审核后不能通过旧 stamp 绕过。
+- extension/type 包含 id/version/name/pageId；pageId 使用确切审核摘要。页面响应兼容旧 apiVersion/html/script/style/dependencies/contentApi/assets。答题区组件通过共同的 page-assets 适配加载受保护的 quizforge.answer-area/1.4.1 SDK；旧冻结页面自带组件时保持原样。
+- SDK JSON 在 frontend 构建时由固定的组件源码生成，不提交构建产物；后端复核用户的可用题库引用，Nginx internal 路径发送。题库图片、听力同样先鉴权再 X-Accel-Redirect，blobs 在 Nginx 只读挂载；所有响应 private/no-store，以便下一次请求重新检查撤销状态。公开路径不能绕过 internal 限制。
+- 题库听力材料只公开 id/title/revision，隐藏存储路径；GET/HEAD 发送音频，Range 由 Nginx 处理。
+- 本次返回 canSave/canSubmit/canRetry/canReview/canAiGrade/canWhiteboard=false、readOnly=true。前端保留题卡显示，并提示写入功能尚未开放。现有 DraftService 持久化不等于已经提供 actions HTTP 接口；提交、历史、汇总、考试、资源上传、审核流程、完整练习限流与真正的投影缓存仍待后续切片。
+
 ## 当前验证边界
 
-Compose 真后端验证账号、会话刷新、目录缺失、导入缺失与退出；Playwright 另以**显式模拟的目录响应**验证“切片 1 返回列表、切片 2 返回 404”时保留列表与友好提示。此模拟不代表题库列表已经在 V2 实现。上游 Bridge/白板/历史/考试保留源码，作答、保存、提交的端到端验收须等相应后端切片完成。
+MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 context 去重、归属与软删除、投影防答案泄露、草稿/提交状态、版本戳、审核撤销、页面/SDK/图片权限与故障响应。Playwright 在独立 Compose 环境用 samples/basic-types.qbank 走注册 → 导入 → 审核中 → 测试白名单 → 打开五本题库 → 实际 iframe 渲染（含富文本、图片、答题区），桌面及 375px 宽度均截图。截图与报告位于 docs/reports/m3-read-slices/；测试夹具不代表审核业务已实现。原有“目录有数据、缺失接口友好降级”的显式模拟测试继续保留。

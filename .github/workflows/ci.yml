@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  COMPOSE_PROJECT_NAME: qf-ci-${{ github.run_id }}
+
 jobs:
   frontend:
     name: Frontend fork build and tests
@@ -104,7 +107,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps --no-shell chromium
-          npx playwright test
+          QF_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME" QF_READ_BROWSER_TESTS=1 npx playwright test
       - name: Browser evidence
         if: always()
         uses: actions/upload-artifact@v4

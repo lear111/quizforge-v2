@@ -1,4 +1,5 @@
 node_modules
+.generated-sdk
 test
 shared/richtext/*/richtext.js
 shared/richtext/*/richtext-editor.js

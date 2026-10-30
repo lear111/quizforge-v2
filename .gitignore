@@ -17,3 +17,6 @@ frontend/practice/assets/html2canvas-1.4.1.min.js
 deploy/.env
 data/
 *.sqlite
+
+# Generated authenticated SDK payloads.
+frontend/.generated-sdk/

@@ -60,3 +60,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 ## 后续同步
 
 上游新功能按 ADR-006：记录新提交、人工移植、回归测试、更新本清单。禁止重新引入宿主运行时替换，也不直接覆盖整个分叉目录。
+
+## 2026-10-30：切片 2、3
+
+- page-assets.js 集中加载受鉴权的答题区 SDK；冻结页面已有组件时不重复加载。scripts/build-sdk.mjs 按 4522bb8 的 answer-area-component.js 组装器生成 JSON，并打包富文本静态/编辑组件；生成物仍不提交。
+- practice-context.js 遵守服务端 canSave/canSubmit/canRetry/canWhiteboard=false；app.js 显示只读阶段提示，自动打开时跳过审核中的题库；library-view.js 显示 availability。Bridge 沙箱和题型页面不改。
+- Nginx SDK 文件移到 internal 目录，API 鉴权后发送；公开 richtext bundle 路径关闭。宿主共用源码仍保留在 shared/。

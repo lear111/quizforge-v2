@@ -7,6 +7,9 @@ export async function prepareExtensionAssets(assets,loadLibrary) {
   if(Object.hasOwn(assets,'contentApi'))validateContentApi(assets.contentApi);
   const libraries=[];
   for(const dependency of assets.dependencies||[])libraries.push(await loadLibrary(dependency));
+  if(assets.answerAreasDeclared&&!assets.answerAreaComponent){
+    assets={...assets,answerAreaComponent:await loadLibrary({id:'quizforge.answer-area',version:assets.answerAreaVersion})};
+  }
   return {...assets,libraries};
 }
 

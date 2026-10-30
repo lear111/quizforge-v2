@@ -90,6 +90,14 @@
 
   <build>
     <finalName>quizforge-backend</finalName>
+    <resources>
+      <resource><directory>src/main/resources</directory></resource>
+      <resource>
+        <directory>../frontend/shared</directory>
+        <targetPath>frontend</targetPath>
+        <includes><include>richtext/service.json</include></includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>
