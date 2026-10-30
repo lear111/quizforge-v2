@@ -130,23 +130,18 @@ CREATE TABLE catalog_pack_bank (                   -- 某个版本中的一本�
 
 ## 6. 我的题库与私人题库（需求 FR-11）
 
-### 6.1 私人上传与分享走同一流程
+### 6.1 私人导入与公开分享（2026-10-30 修订，需求 FR-11 v1.7）
 
-用户上传 `.qbank`，平台创建一个**私人题库包**：与题库广场的题库包使用同一套表（`catalog_pack` 增加 `visibility`），区别只是不公开、只属于上传者。
+**私人导入只是导入**：用户在练习空间上传 `.qbank`，平台解析、校验、存储内容（与题库广场共用同一条导入代码），为上传者创建题库实例。**不创建题库包、不填写广场信息**，`practice_collection.source_pack_id` 为 NULL，来源文件名记录在 `source` 中。每次导入都是独立实例（C-01），不参与自动更新。
 
-```text
-上传 .qbank → 解析与校验（M2 导入流程）→ 共享内容 content_bank（相同内容只存一份）
-           → catalog_pack(visibility=private, owner=上传者) 与第 1 个版本
-           → 为上传者创建题库实例 practice_collection（source_pack_id 指向该私人包）
-```
+**公开分享**有两个入口，结果相同：创建一个 `catalog_pack`（公开）及其第 1 个版本，填写标题、简介、截图、标签，提交人工审核。
 
-这样设计的好处：
+| 入口 | 内容从哪里来 |
+| --- | --- |
+| 从本地上传 `.qbank` 到题库广场 | 走导入流程解析、存储（相同内容只存一份） |
+| 从“我的题库”选择题库分享 | **直接复用**这些实例已引用的题库内容与拓展，不重新上传；只能选择 `source_pack_id` 为 NULL（自己上传）的实例，从题库广场加入的他人题库不能分享 |
 
-- 只有**一条**导入、存储、审核的代码路径，不需要为私人题库再写一套；
-- 私人题库也能“上传新版本”，并按第 3 节自动更新（作者就是用户自己）；
-- **私人转公开**只需把 `visibility` 改为 `public` 并提交公开审核，内容直接复用，不用重新上传。
-
-直接导入（“导入题库”按钮）**每次都创建新的私人包和新实例**，仍符合 C-01“每次导入都是独立副本”；只有在已有私人包上明确选择“上传新版本”，才会更新原有实例。
+分享后，上传者原有的私人实例保持不变，不自动关联到新的题库包。
 
 ### 6.2 审核与可用性
 
@@ -177,20 +172,19 @@ WHERE r.digest IS NULL;
 | 来源 | 数据 | 说明 |
 | --- | --- | --- |
 | 从题库广场加入 | `practice_collection`，`source_pack_id` 指向公开包 | 自动更新（第 3 节） |
-| 自己上传 | `practice_collection`，`source_pack_id` 指向私人包 | 可用性见 6.2 |
+| 自己上传（私人导入） | `practice_collection`，`source_pack_id` 为 NULL | 可用性见 6.2；不参与自动更新 |
 | 收藏 | `catalog_favorite(user_id, pack_id, created_at)` | 只是书签，不是题库实例；点击后选择加入哪几本 |
 
 ### 6.4 下载与导出
 
-- **题库广场下载**：返回作者上传的原始 `.qbank` 文件（`catalog_pack_revision` 记录其 `blob_sha256`），由 Nginx `X-Accel-Redirect` 发送。必须逐字节一致：Windows 客户端会校验 `sha256`（C-05）。
+- **题库广场下载**：返回该版本的 `.qbank` 文件（`catalog_pack_revision` 记录其 `blob_sha256`），由 Nginx `X-Accel-Redirect` 发送，必须逐字节一致：Windows 客户端会校验 `sha256`（C-05）。从本地上传的版本保存作者上传的原文件；从“我的题库”分享的版本在发布时由已存储内容打包一次并保存，之后每次下载都返回这一份。
 - **导出我的题库**：从共享内容重新打包，不含作答、草稿和历史。
 
 ### 6.5 数据库变更
 
 ```sql
--- catalog_pack 增加
-  visibility  ENUM('private','public') NOT NULL,
-  owner_id    CHAR(36) NOT NULL,                   -- 私人包只有 owner 可见
+-- catalog_pack 增加（题库包只用于公开分享；私人导入不创建题库包，需求 FR-11 v1.7）
+  owner_id    CHAR(36) NOT NULL,                   -- 发布者
 
 CREATE TABLE catalog_favorite (
   user_id     CHAR(36)     NOT NULL,
@@ -200,7 +194,7 @@ CREATE TABLE catalog_favorite (
 );
 ```
 
-`practice_collection.source_pack_id` 对私人上传同样填写（原设计为 NULL，已更正）。
+`practice_collection.source_pack_id` 只对从题库广场加入的实例填写；私人导入为 NULL（2026-10-30 修订）。
 
 ## 7. 测试要点
 
@@ -227,3 +221,4 @@ CREATE TABLE catalog_favorite (
 | v0.2 | 2026-10-28 | 第 6 节改写：私人上传与分享走同一流程（私人题库包）、按拓展白名单推算可用性、“我的题库”三种来源、下载与导出 |
 | v0.3 | 2026-10-29 | 题库身份由包内路径改为 `bank.json` 中的 UUID |
 | v0.4 | 2026-10-29 | 简化更新：只在没有进行中的作答时整本切换版本，删除逐题合并与“立即更新”；更新时发送通知 |
+| v0.5 | 2026-10-30 | 6.1 修订：私人导入不创建题库包、不填写广场信息；公开分享可从本地上传或从“我的题库”复用自己上传的题库 |
