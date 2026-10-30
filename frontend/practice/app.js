@@ -176,7 +176,7 @@ async function showQuestion(pane,qid,{payload:prepared,collection:descriptor=pan
     syncPracticeCamera(pane);
     pane.plugin=candidatePlugin;
     await pane.plugin.ready;
-    pane.keepRuntime=false;clearPageFailure(pane);
+    pane.keepRuntime=false;clearPageFailure(pane);if(descriptor.readOnly)notice('保存草稿、提交等写入功能尚未开放。');
     syncPracticeCamera(pane);
     pane.viewport.scrollTop=0;if(active()===pane){renderOutline();updateChrome();saveStatus(pane.payload.state.status==='unanswered'?'':practiceSaveLabel(pane));}
     if(pane.restartApplied){pane.scoreSummary=null;pane.restartRequest=null;pane.restartApplied=false;}
@@ -454,7 +454,7 @@ async function openCollection(kind,id){
     if(pendingLibraryKey===key){pendingLibraryKey=null;renderLibrary();}
   }
 }
-function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice('');for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
+function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice(selected?.collection.readOnly?'保存草稿、提交等写入功能尚未开放。':'');for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
 function attachRuntime(pane){if(pane.whiteboard)return;pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);}
 async function suspendPane(pane){
   if(!pane||pane.closed||!pane.whiteboard)return;
@@ -591,7 +591,7 @@ const libraryManager=bindLibraryManagement({request,getContext:()=>({kind:listMo
 const libraryTransfer=bindLibraryTransfer({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,onMessage:notice,
   onImported:result=>transitionTo(async()=>{
     await refreshCatalog();questionsCache.clear();pagesCache.clear();
-    if(!activeKey){const first=catalog.banks.find(row=>!row.error);if(first)await openCollection(first.kind||'bank',first.id);}
+    if(!activeKey){const first=catalog.banks.find(row=>!row.error&&row.availability?.available!==false);if(first)await openCollection(first.kind||'bank',first.id);}
     notice(`已导入 ${result.collections?.length??result.importedBanks??0} 本题库。已有题库与进度保留。`);
   })});
 $('#library-new-group').addEventListener('click',()=>libraryManager.open('group',null,'create'));
@@ -639,7 +639,7 @@ document.addEventListener('visibilitychange',()=>{refreshCatalog.client?.visibil
 async function start(){
   await request('/api/me');
   await refreshCatalog();
-  const first=catalog.banks.find(row=>!row.error);
+  const first=catalog.banks.find(row=>!row.error&&row.availability?.available!==false);
   if(first)await transitionTo(()=>openCollection(first.kind||'bank',first.id));
 }
 start().catch(failure);

@@ -13,3 +13,4 @@ for(const [version,script] of [['1.0.0','build-richtext.mjs'],['1.1.3','build-ri
   execFileSync(process.execPath,[resolve(root,'scripts/build',script),'--version',version],{cwd:root,stdio:'inherit'});
 }
 await copyFile(resolve(root,'node_modules/html2canvas/dist/html2canvas.min.js'),resolve(root,'practice/assets/html2canvas-1.4.1.min.js'));
+await import('./build-sdk.mjs');

@@ -1,9 +1,11 @@
-# Build stage: compile and package the Spring Boot jar.
+# Build from the repository root: docker build -f backend/Dockerfile .
+# Build stage: compile and package the Spring Boot jar plus the shared SDK registry.
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
-COPY pom.xml .
+COPY backend/pom.xml .
 RUN mvn -B -ntp dependency:go-offline
-COPY src ./src
+COPY backend/src ./src
+COPY frontend/shared/richtext/service.json /frontend/shared/richtext/service.json
 RUN mvn -B -ntp -DskipTests package
 
 # Runtime stage: JRE only, non-root user.
