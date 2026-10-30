@@ -24,4 +24,6 @@ public final class PracticeViews {
     public record QuestionResponse(Question question, State state, JsonNode draft, Stamp stamp,
             Extension extension, JsonNode features, Capabilities capabilities, Object aiTask) {}
     public record Unchanged(boolean unchanged, Stamp stamp) {}
+    public record DraftResponse(long revision, Question question, State state, JsonNode draft, Stamp stamp,
+            Extension extension, JsonNode features, Capabilities capabilities, Object aiTask) {}
 }

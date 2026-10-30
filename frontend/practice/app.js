@@ -44,6 +44,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
+const practiceNotice=collection=>collection?.kind==='bank'?(collection.readOnly?'当前题库没有可保存的未提交题目。':'草稿会自动保存；提交和白板功能尚未开放。'):'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -176,7 +177,7 @@ async function showQuestion(pane,qid,{payload:prepared,collection:descriptor=pan
     syncPracticeCamera(pane);
     pane.plugin=candidatePlugin;
     await pane.plugin.ready;
-    pane.keepRuntime=false;clearPageFailure(pane);if(descriptor.readOnly)notice('保存草稿、提交等写入功能尚未开放。');
+    pane.keepRuntime=false;clearPageFailure(pane);notice(practiceNotice(descriptor));
     syncPracticeCamera(pane);
     pane.viewport.scrollTop=0;if(active()===pane){renderOutline();updateChrome();saveStatus(pane.payload.state.status==='unanswered'?'':practiceSaveLabel(pane));}
     if(pane.restartApplied){pane.scoreSummary=null;pane.restartRequest=null;pane.restartApplied=false;}
@@ -454,7 +455,7 @@ async function openCollection(kind,id){
     if(pendingLibraryKey===key){pendingLibraryKey=null;renderLibrary();}
   }
 }
-function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice(selected?.collection.readOnly?'保存草稿、提交等写入功能尚未开放。':'');for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
+function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice(practiceNotice(selected?.collection));for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
 function attachRuntime(pane){if(pane.whiteboard)return;pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);}
 async function suspendPane(pane){
   if(!pane||pane.closed||!pane.whiteboard)return;

@@ -1,7 +1,7 @@
 # 练习空间接口映射
 
-> 版本：v0.2；日期：2026-10-30；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
-> 后端盘点基线：main@039a8a3，加本次切片 2、3。以当前 Controller 为准，不把尚未合并的 PR 算作已实现。
+> 版本：v0.3；日期：2026-10-30；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
+> 后端盘点基线：main@55132d7，加本次切片 4 的草稿 HTTP 接线。以当前 Controller 为准。
 
 本次是 ADR-006 方案 C 的源码分叉。切片顺序：**1 导入与题库列表；2 打开题库；3 读题与渲染；4 保存草稿；5 提交；其余功能后续接入。** 一个页面可能跨多个切片；接口出现并不代表对应业务已经可用。
 
@@ -23,7 +23,8 @@
 | 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 已实现（仅组件读取） | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
 | 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
-| 答案草稿 / 白板墨迹 | POST Q/actions，action=draft / whiteboard | 未实现 | 4 | app.js:mutate、shared/write-queue.js；原请求回执 ID、revision、失败输入保留与重试行为 |
+| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；保留失败输入与 409 恢复 |
+| 白板墨迹 | POST Q/actions，action=whiteboard | 501 FEATURE_NOT_AVAILABLE | 后续 | capabilities.canWhiteboard=false；不把墨迹写入作答草稿 |
 | 上传答题资源 / 截图 | POST /api/resources | 未实现 | 4 | app.js:pageRequest；无历史场景仍带 X-QuizForge-Transient-Resource |
 | 提交 / 人工评分 / 重做本题 | POST Q/actions，action=submit / review / retry | 未实现 | 5（submit），其余 | app.js / Bridge；不改写动作负载 |
 | 本轮分值汇总 | GET C/summary | 未实现 | 5 | app.js:showScoreSummary、practice-summary.js |
@@ -59,7 +60,15 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - extension/type 包含 id/version/name/pageId；pageId 使用确切审核摘要。页面响应兼容旧 apiVersion/html/script/style/dependencies/contentApi/assets。答题区组件通过共同的 page-assets 适配加载受保护的 quizforge.answer-area/1.4.1 SDK；旧冻结页面自带组件时保持原样。
 - SDK JSON 在 frontend 构建时由固定的组件源码生成，不提交构建产物；后端复核用户的可用题库引用，Nginx internal 路径发送。题库图片、听力同样先鉴权再 X-Accel-Redirect，blobs 在 Nginx 只读挂载；所有响应 private/no-store，以便下一次请求重新检查撤销状态。公开路径不能绕过 internal 限制。
 - 题库听力材料只公开 id/title/revision，隐藏存储路径；GET/HEAD 发送音频，Range 由 Nginx 处理。
-- 本次返回 canSave/canSubmit/canRetry/canReview/canAiGrade/canWhiteboard=false、readOnly=true。前端保留题卡显示，并提示写入功能尚未开放。现有 DraftService 持久化不等于已经提供 actions HTTP 接口；提交、历史、汇总、考试、资源上传、审核流程、完整练习限流与真正的投影缓存仍待后续切片。
+- 未提交题目 canSave=true，已提交题目 canSave=false；其余写能力仍为 false。概览含有未提交题目时 readOnly=false，全部已提交时为 true。前端提示草稿自动保存，提交/白板尚未开放。生产投影缓存已由 Caffeine 提供（PR #54）；提交、历史、汇总、考试、资源上传、审核流程与完整练习限流仍待后续切片。
+
+## 切片 4：草稿 HTTP 与回执
+
+- POST Q/actions 接收 `{requestId,revision,action:"draft",data:{answer},contentVersion?}`；requestId 非空且最多 64，revision 为可保存的非负整数。answer 可为 JSON null（清空），但不能省略 data.answer。前端额外携带的 answerState 当前没有持久化通路；本切片只保存 answer，不伪造已保存的 answerState。
+- userId 来自会话；实例归属、题目精确 ID、contextId、内容哈希、审核可用性由服务端解析。客户端 contextId/userId/contentSha256 不参与定位或入库。可选 contentVersion 校验使用服务端不透明版本戳，不作为客户端提供的内容哈希。
+- IdempotentDraftService 在同一事务中保存草稿和 `{revision:N}` 回执。HTTP 适配按回执的 revision 与通过幂等检查的请求答案构造完整读题响应（另带顶层 revision），满足 onSaved 对 question/state/stamp/extension/features/capabilities 的需要；不重新读取可能已前进到 N+1 的作答状态。投影在事务前加载，仍然只使用未提交投影缓存；提交态答案不会进入草稿响应。
+- 不同 requestId 的旧 revision 返回 409 REVISION_CONFLICT。前端保留 iframe 内输入，并重读最新版本，显示重试/读取已保存内容的恢复入口。相同 ID 不同答案返回 400 REQUEST_ID_REUSED；作者在 ac90283 修复状态码，契约测试已启用，见 [本切片报告](../reports/m3-draft-actions.md)。
+- 白板、提交、重做等操作返回明确的 501 FEATURE_NOT_AVAILABLE，不产生回执或草稿。请求和响应仍经同源 Cookie、Origin 检查和 no-store 传输。
 
 ## 当前验证边界
 

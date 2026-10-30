@@ -62,6 +62,40 @@ test('real sample import, approval fixture, open and render all five types',asyn
   expect((await page.request.get('/_qf_sdk/quizforge.richtext/1.1.3.json')).status()).toBe(404);
   expect((await page.request.get('/_qf_blobs/96/fb/96fbe7bbe9e76622b6236d0d0fbfddb92f022249ac38bdbbd908efd3bf3791a8')).status()).toBe(404);
   expect((await page.request.get('/shared/richtext/1.1.3/richtext.js')).status()).toBe(404);
-  await page.reload();await expect(page.locator('.question-frame')).toHaveCount(1);await expect(page.locator('.question-error')).toHaveCount(0);
+  // Both tabs read revision 0 before either writes. Use actual extension controls and
+  // the production write queue, including its 409 recovery UI; no mocked HTTP writes.
+  const single=collections.find(item=>item.title==='单选题');
+  const openSingle=async tab=>{
+    // start() automatically opens the first bank and closes mobile drawers when
+    // it finishes. Wait for that transition before opening the drawer ourselves.
+    await expect(tab.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
+    await expect(tab.locator('#collection-loading')).toBeHidden();
+    await expect(tab.locator('#library-list')).toHaveText(/\S/);
+    if(await tab.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await tab.locator('#library-toggle').click();
+    await expect(tab.locator('.library')).toHaveAttribute('aria-hidden','false');
+    await tab.locator(`.library-item[data-item-id="${single.id}"]`).click();
+    await expect(tab.locator('#collection-loading')).toBeHidden();
+    await expect(tab.locator('#document-title')).toHaveText('单选题');
+    const frame=tab.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
+    await expect(frame.getByRole('radio',{name:'选项 A',exact:true})).toBeEnabled();
+    return frame;
+  };
+  const firstFrame=await openSingle(page);
+  const other=await page.context().newPage();await other.goto('/practice/');const otherFrame=await openSingle(other);
+  const action=response=>new URL(response.url()).pathname.endsWith('/actions')&&response.request().method()==='POST';
+  const savedResponse=page.waitForResponse(action);
+  await firstFrame.locator('label.choice').nth(0).click();
+  const saved=await savedResponse;expect(saved.status()).toBe(200);
+  const savedBody=await saved.json();expect(savedBody.revision).toBe(1);expect(savedBody.state.revision).toBe(1);
+  expect(saved.request().postDataJSON()).toMatchObject({action:'draft',revision:0,data:{answer:{selectedOptionId:savedBody.state.answer.selectedOptionId}}});
+  const conflictResponse=other.waitForResponse(action);await otherFrame.locator('label.choice').nth(1).click();
+  const conflict=await conflictResponse;expect(conflict.status()).toBe(409);expect((await conflict.json()).error.code).toBe('REVISION_CONFLICT');
+  await expect(other.locator('#save-recovery')).toBeVisible();await expect(other.locator('#recovery-message')).toContainText('冲突');
+  await expect(otherFrame.getByRole('radio',{name:'选项 B',exact:true})).toBeChecked();
+  const path=new URL(saved.url()).pathname.replace(/\/actions$/,'');
+  const persisted=await page.request.get(path);expect((await persisted.json()).state).toMatchObject({revision:1,answer:savedBody.state.answer});
+  await other.screenshot({path:resolve(screenshots,`draft-${info.project.name}-conflict.png`),fullPage:true});
+  await page.reload();const restored=await openSingle(page);await expect(restored.getByRole('radio',{name:'选项 A',exact:true})).toBeChecked();
+  await page.screenshot({path:resolve(screenshots,`draft-${info.project.name}-restored.png`),fullPage:true});await other.close();
   expect(errors).toEqual([]);
 });
