@@ -119,9 +119,10 @@ class DraftServiceTest extends MySqlTestBase {
     }
 
     @Test
-    void simultaneousFirstSavesAfterBothUpdatesMissHaveOneSuccessAndOne409() throws Exception {
+    void simultaneousFirstSavesHaveOneSuccessAndOne409WithoutDeadlock() throws Exception {
+        // Both first saves reach their INSERT together. Previously UPDATE-then-INSERT deadlocked here (gap locks).
         Fixture fixture = fixture();
-        var scenario = gate.arm(DraftSqlGate.Mode.AFTER_MISS, fixture.context());
+        var scenario = gate.arm(DraftSqlGate.Mode.BEFORE_WRITE, fixture.context());
         var attempts = race(fixture, "q1", fixture, "q1", 0, scenario);
         assertOneWinner(fixture, "q1", 1, attempts);
     }
@@ -129,7 +130,7 @@ class DraftServiceTest extends MySqlTestBase {
     @Test
     void simultaneousUpdatesOfSameRevisionHaveOneSuccessAndOne409() throws Exception {
         Fixture fixture = fixture(); save(fixture, "q1", 0, "{}");
-        var scenario = gate.arm(DraftSqlGate.Mode.BEFORE_UPDATE, fixture.context());
+        var scenario = gate.arm(DraftSqlGate.Mode.BEFORE_WRITE, fixture.context());
         var attempts = race(fixture, "q1", fixture, "q1", 1, scenario);
         assertOneWinner(fixture, "q1", 2, attempts);
     }

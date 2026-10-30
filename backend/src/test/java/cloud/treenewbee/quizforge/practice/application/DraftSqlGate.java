@@ -18,7 +18,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /** Test-only gates around real SQL; no result, transaction isolation or production code is replaced. */
 @Intercepts(@Signature(type = Executor.class, method = "update", args = {MappedStatement.class, Object.class}))
 final class DraftSqlGate implements Interceptor {
-    enum Mode { BEFORE_UPDATE, AFTER_MISS, AFTER_UPDATE, AFTER_WINNER_COMMIT }
+    private static final String MAPPER = "cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper.";
+    /** BEFORE_WRITE: both writers meet just before their UPDATE or INSERT; AFTER_UPDATE: both UPDATEs hit before either commits;
+     *  AFTER_WINNER_COMMIT: the loser runs its write only after the winner has committed. */
+    enum Mode { BEFORE_WRITE, AFTER_UPDATE, AFTER_WINNER_COMMIT }
 
     static final class Scenario {
         final Mode mode;
@@ -45,7 +48,10 @@ final class DraftSqlGate implements Interceptor {
     public Object intercept(Invocation invocation) throws Throwable {
         Scenario current = scenario;
         MappedStatement statement = (MappedStatement) invocation.getArgs()[0];
-        if (current == null || !statement.getId().equals("cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper.updateDraft")) {
+        // First saves only INSERT (no UPDATE, to avoid gap-lock deadlocks); later saves only UPDATE. Gate both writes.
+        boolean update = statement.getId().equals(MAPPER + "updateDraft");
+        boolean insert = statement.getId().equals(MAPPER + "insertDraft");
+        if (current == null || !(update || insert)) {
             return invocation.proceed();
         }
         Map<?, ?> parameters = (Map<?, ?>) invocation.getArgs()[1];
@@ -60,14 +66,13 @@ final class DraftSqlGate implements Interceptor {
         try (var sql = connection.createStatement(); var rows = sql.executeQuery("SELECT CONNECTION_ID()")) {
             rows.next(); current.connections.add(rows.getLong(1));
         }
-        if (current.mode == Mode.BEFORE_UPDATE || current.mode == Mode.AFTER_WINNER_COMMIT) current.meet();
+        if (current.mode == Mode.BEFORE_WRITE || current.mode == Mode.AFTER_WINNER_COMMIT) current.meet();
         if (current.mode == Mode.AFTER_WINNER_COMMIT && ((String) parameters.get("answer")).contains("\"loser\"")) {
             if (!current.committed.await(10, TimeUnit.SECONDS)) throw new AssertionError("winner did not commit");
         }
         Object result = invocation.proceed();
-        if (current.mode == Mode.AFTER_MISS || current.mode == Mode.AFTER_UPDATE) {
-            int expected = current.mode == Mode.AFTER_MISS ? 0 : 1;
-            if (!Integer.valueOf(expected).equals(result)) throw new AssertionError("unexpected UPDATE row count: " + result);
+        if (current.mode == Mode.AFTER_UPDATE) {
+            if (!update || !Integer.valueOf(1).equals(result)) throw new AssertionError("expected a successful UPDATE, got: " + result);
             current.meet();
         }
         return result;
