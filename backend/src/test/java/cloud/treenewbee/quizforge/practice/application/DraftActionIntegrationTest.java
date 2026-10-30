@@ -129,7 +129,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertState(owner, 1, "first"); assertThat(receipts(owner)).isEqualTo(1);
     }
 
-    @Test @Disabled("见报告第 1 条")
+    @Test
     void reusedRequestMustReturn400AsRequiredByTheHttpContract() throws Exception {
         post(owner, draft("reused-contract", 0, "first"));
         var response = post(owner, draft("reused-contract", 0, "second"));

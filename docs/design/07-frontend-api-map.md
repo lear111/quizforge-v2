@@ -67,7 +67,7 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - POST Q/actions 接收 `{requestId,revision,action:"draft",data:{answer},contentVersion?}`；requestId 非空且最多 64，revision 为可保存的非负整数。answer 可为 JSON null（清空），但不能省略 data.answer。前端额外携带的 answerState 当前没有持久化通路；本切片只保存 answer，不伪造已保存的 answerState。
 - userId 来自会话；实例归属、题目精确 ID、contextId、内容哈希、审核可用性由服务端解析。客户端 contextId/userId/contentSha256 不参与定位或入库。可选 contentVersion 校验使用服务端不透明版本戳，不作为客户端提供的内容哈希。
 - IdempotentDraftService 在同一事务中保存草稿和 `{revision:N}` 回执。HTTP 适配按回执的 revision 与通过幂等检查的请求答案构造完整读题响应（另带顶层 revision），满足 onSaved 对 question/state/stamp/extension/features/capabilities 的需要；不重新读取可能已前进到 N+1 的作答状态。投影在事务前加载，仍然只使用未提交投影缓存；提交态答案不会进入草稿响应。
-- 不同 requestId 的旧 revision 返回 409 REVISION_CONFLICT。前端保留 iframe 内输入，并重读最新版本，显示重试/读取已保存内容的恢复入口。相同 ID 不同答案应返回 400 REQUEST_ID_REUSED；现有服务实际为 422 的已知差异及禁用复现见 [本切片报告](../reports/m3-draft-actions.md)。
+- 不同 requestId 的旧 revision 返回 409 REVISION_CONFLICT。前端保留 iframe 内输入，并重读最新版本，显示重试/读取已保存内容的恢复入口。相同 ID 不同答案返回 400 REQUEST_ID_REUSED；作者在 ac90283 修复状态码，契约测试已启用，见 [本切片报告](../reports/m3-draft-actions.md)。
 - 白板、提交、重做等操作返回明确的 501 FEATURE_NOT_AVAILABLE，不产生回执或草稿。请求和响应仍经同源 Cookie、Origin 检查和 no-store 传输。
 
 ## 当前验证边界

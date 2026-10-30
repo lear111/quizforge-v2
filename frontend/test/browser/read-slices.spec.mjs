@@ -62,14 +62,19 @@ test('real sample import, approval fixture, open and render all five types',asyn
   expect((await page.request.get('/_qf_sdk/quizforge.richtext/1.1.3.json')).status()).toBe(404);
   expect((await page.request.get('/_qf_blobs/96/fb/96fbe7bbe9e76622b6236d0d0fbfddb92f022249ac38bdbbd908efd3bf3791a8')).status()).toBe(404);
   expect((await page.request.get('/shared/richtext/1.1.3/richtext.js')).status()).toBe(404);
-  await page.reload();await expect(page.locator('.question-frame')).toHaveCount(1);await expect(page.locator('.question-error')).toHaveCount(0);
   // Both tabs read revision 0 before either writes. Use actual extension controls and
   // the production write queue, including its 409 recovery UI; no mocked HTTP writes.
   const single=collections.find(item=>item.title==='单选题');
   const openSingle=async tab=>{
+    // start() automatically opens the first bank and closes mobile drawers when
+    // it finishes. Wait for that transition before opening the drawer ourselves.
+    await expect(tab.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
+    await expect(tab.locator('#collection-loading')).toBeHidden();
     await expect(tab.locator('#library-list')).toHaveText(/\S/);
     if(await tab.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await tab.locator('#library-toggle').click();
+    await expect(tab.locator('.library')).toHaveAttribute('aria-hidden','false');
     await tab.locator(`.library-item[data-item-id="${single.id}"]`).click();
+    await expect(tab.locator('#collection-loading')).toBeHidden();
     await expect(tab.locator('#document-title')).toHaveText('单选题');
     const frame=tab.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
     await expect(frame.getByRole('radio',{name:'选项 A',exact:true})).toBeEnabled();

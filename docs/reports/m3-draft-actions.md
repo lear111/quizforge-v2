@@ -1,6 +1,6 @@
 # M3 切片 4：草稿 HTTP 与幂等验证
 
-分支 `feat/m3-draft-idempotency`，基于 `main@55132d7`；用户原有幂等服务提交 rebase 后为 `69d1a0b`。`IdempotentDraftService`、`ReceiptMapper`、`ReceiptRow` 原样保留。
+分支 `feat/m3-draft-idempotency`，基于 `main@55132d7`；用户原有幂等服务提交 rebase 后为 `69d1a0b`。作者随后在 `d4ee0e9` 上提交 `ac90283`，已按要求先 `git pull --ff-only` 纳入。没有自行修改 `IdempotentDraftService`、`ReceiptMapper`、`ReceiptRow` 的逻辑。
 
 ## 实现与范围
 
@@ -9,6 +9,22 @@
 - `PracticeReadService` / `PracticeViews`：复用唯一投影通路，事务前准备未提交投影；开放未提交题目的 canSave，所有题目已提交时概览仍只读。提交、白板等能力仍关闭。草稿响应绝不复用提交态投影。
 - 前端只调整状态提示；原始 write-queue 的 requestId、网络重试、冲突恢复和输入保留行为不改。API 映射同步更新。
 - 前端附带的 answerState 当前未持久化，响应保持 null；白板、提交、answerState/outlineStates 的业务处理和 validateAnswer 并非本次幂等持久化服务所提供的逻辑。本次未在指定三个文件外另建写库通路来绕过该限制。
+
+## 文件清单
+
+| 文件（省略公共 Java 包前缀） | 来源 / 目的 |
+| --- | --- |
+| practice/application/IdempotentDraftService.java | 作者已有事务服务及 ac90283 的 400 修复 |
+| practice/infrastructure/ReceiptMapper.java、ReceiptRow.java | 作者已有回执访问层；未自行修改 |
+| practice/application/DraftActionService.java | HTTP 与原有事务服务之间的适配 |
+| practice/web/PracticeActionController.java | draft 请求校验、会话身份与响应 |
+| practice/application/PracticeReadService.java、PracticeViews.java | 服务端上下文解析、复用安全投影、可保存能力及响应结构 |
+| practice/application/DraftActionIntegrationTest.java（测试） | 26 项 HTTP / MySQL / rule-runner 集成验证 |
+| practice/web/PracticeReadIntegrationTest.java（测试） | 更新未提交题 canSave 断言 |
+| frontend/practice/app.js | 更新已实现草稿保存的界面提示 |
+| frontend/test/browser/read-slices.spec.mjs | 双标签页真实保存、409 和刷新恢复；等待启动切换结束后操作侧栏 |
+| docs/design/07-frontend-api-map.md | 同步切片 4 接口状态与契约 |
+| docs/reports/m3-draft-actions.md | 本报告 |
 
 ## 新增集成测试
 
@@ -20,7 +36,7 @@
 | 保存 N+1 后重放 N，不读最新状态伪装原结果 | replayAfterAnotherSaveReturnsOriginalAnswerAndRevision |
 | 同 ID 两线程并发首次 / 后续保存 | simultaneousSameRequestFirstAndLaterSavesBothReturnOneRevision（revision=0 / 1） |
 | 不同答案不能覆盖首次保存 | reusedRequestCannotOverwriteTheFirstAnswer |
-| 不同答案应返回 400 | reusedRequestMustReturn400AsRequiredByTheHttpContract（缺陷 1 禁用复现） |
+| 不同答案应返回 400 | reusedRequestMustReturn400AsRequiredByTheHttpContract（作者修复后重新启用） |
 | 不同 ID 旧版本冲突 | differentRequestIdsWithStaleRevisionReturn409WithoutReceipt |
 | 写回执失败时首次插入 / 后续更新都回滚 | failingReceiptInsertRollsBackTheDraftInTheSameTransaction（revision=0 / 1） |
 | 会话用户隔离与伪造字段忽略 | sessionOwnerCannotSaveAnotherUsersCollectionAndForgedContextIsIgnored |
@@ -36,20 +52,25 @@
 
 ## 发现的缺陷
 
-### 1. REQUEST_ID_REUSED 的 HTTP 状态码与契约不符（未修复）
+### 1. REQUEST_ID_REUSED 的 HTTP 状态码与契约不符（已由作者修复）
 
 复现：同一用户先以 requestId=R、revision=0、答案 A 保存，再以相同 R/revision、答案 B 保存。
 
 - 预期：400 REQUEST_ID_REUSED。
-- 实际：422 REQUEST_ID_REUSED，消息“请求 ID 已被重复使用”。A 保持不变，revision=1，只有一份回执。
+- 初始实际：422 REQUEST_ID_REUSED，消息“请求 ID 已被重复使用”。A 保持不变，revision=1，只有一份回执。
 - 失败测试：`DraftActionIntegrationTest.reusedRequestMustReturn400AsRequiredByTheHttpContract`，初轮实际执行失败于 expected 400 / actual 422。该轮 26 项中只有此项失败，0 errors。
 - 原因：用户已有 `IdempotentDraftService.replay` 使用 UNPROCESSABLE_ENTITY。
-- 处理：未修改指定服务，未在 Controller/异常处理层把 422 偷换为 400。以 `@Disabled("见报告第 1 条")` 保留契约复现；“不同答案不覆盖”的检查继续启用。
-- 建议：由作者将该分支改为 BAD_REQUEST，随后启用复现测试。
+- 处理：初轮遵守约束，以 `@Disabled("见报告第 1 条")` 保留契约复现。作者在 `ac90283` 将该分支改为 BAD_REQUEST；快进拉取后移除 Disabled，重新执行完整验证。没有在 Controller/异常处理层改写服务错误码。
+
+指定 Mapper 中关于 FOR SHARE 的原有注释与实际无锁 SELECT 相互矛盾；实际 SQL 保持不变，并发正确性由上述真实事务测试覆盖。该注释问题留给作者整理。
 
 ## 验证结果
 
-待最终 mvn verify、前端及 CI 结果补入。
+- JDK 21，`mvn -B -ntp -f backend/pom.xml clean verify`：BUILD SUCCESS，2864 项，0 failures、0 errors、3 skipped（均为仓库原有 ArchiveReader 禁用复现）；新增 DraftActionIntegrationTest 26/26 通过，PracticeReadIntegrationTest 28/28 通过。耗时 5 分 30 秒。
+- `cd frontend && npm run build && npm test`：构建通过，26/26 测试通过。
+- 真实 Compose 浏览器（1440×960 / 375×812）：6/6 通过；含五题型、真实图片、双标签页保存 / 409 / 输入保留，以及刷新后恢复已保存选项。桌面与手机截图在 `.artifacts/screenshots/`，不放入 frontend。四个 CI job 的最终状态及证据链接记录在 PR 报告中。
+- 本机 Maven 在独立工作树执行，避免主工作目录编辑器覆盖 target/test-classes。Compose 使用独立项目 `qf-draft-actions` 和新建测试卷；本地后端以已验证 JAR 挂载到 Java 21 运行镜像，其余为本分支构建镜像。正常 Dockerfile 的完整构建由 CI Compose job 再验证。
+- 初轮本机浏览器曾有一次桌面图片显示占位失败（资源 HTTP 200），尚未确定原因；没有删除或放宽图片断言，也没有修改图片生产代码。新建测试环境后，最终桌面和手机五题型图片检查均通过，仍由 CI 保留该检查。
 
 ## 网页手动验证步骤
 
