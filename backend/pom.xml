@@ -86,6 +86,12 @@
       <artifactId>testcontainers-mysql</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- 本地缓存：投影结果（rule-runner 协议 5.1 节） -->
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

@@ -3,6 +3,7 @@ package cloud.treenewbee.quizforge.practice.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static cloud.treenewbee.quizforge.practice.projection.ProjectionCacheTestSupport.backing;
 
 import java.io.ByteArrayInputStream;
 import java.net.URI;
@@ -19,6 +20,7 @@ import cloud.treenewbee.quizforge.practice.application.PracticeReadService;
 import cloud.treenewbee.quizforge.practice.projection.*;
 import cloud.treenewbee.quizforge.rules.*;
 import cloud.treenewbee.quizforge.shared.id.Ids;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -67,6 +70,7 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
     @Autowired PracticeReadService reads;
     @Autowired JdbcTemplate jdbc;
     @Autowired ContextInsertGate insertGate;
+    @Autowired ApplicationContext application;
     @Autowired cloud.treenewbee.quizforge.content.infrastructure.BlobStore blobs;
     @MockitoSpyBean RuleRunnerClient runner;
     @MockitoSpyBean ProjectionCache cache;
@@ -74,6 +78,7 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     final List<String> users = new ArrayList<>();
     String user, cookie, collection, bank;
+    CacheStats statsBefore;
 
     @BeforeEach void fixture() throws Exception {
         reset(runner, cache);
@@ -84,11 +89,14 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         collection = imported.getFirst().id(); bank = imported.getFirst().bankId();
         approve();
         clearInvocations(runner, cache);
+        backing(cache).invalidateAll(); backing(cache).cleanUp();
+        statsBefore = backing(cache).stats();
     }
 
     @AfterEach void cleanup() {
         insertGate.collection = null;
         reset(runner, cache);
+        backing(cache).invalidateAll(); backing(cache).cleanUp();
         approve();
         for (String owner : users) {
             jdbc.update("DELETE w FROM practice_whiteboard w JOIN practice_context c ON c.id=w.context_id WHERE c.user_id=?", owner);
@@ -124,6 +132,17 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         verifyNoInteractions(runner);
     }
 
+    @Test void fullApplicationContextSelectsProductionCaffeineAndHasNoNoopBean() {
+        // Component scanning can also discover @Component classes under test-classes.
+        // Require the implementation to ship from the same production output as its API.
+        assertThat(CaffeineProjectionCache.class.getProtectionDomain().getCodeSource().getLocation())
+                .isEqualTo(ProjectionCache.class.getProtectionDomain().getCodeSource().getLocation());
+        assertThat(application.getBeansOfType(ProjectionCache.class).values()).containsExactly(cache);
+        assertThat(application.getBean(ProjectionCache.class)).isInstanceOf(CaffeineProjectionCache.class);
+        assertThat(application.getBeansOfType(NoopProjectionCache.class)).isEmpty();
+        assertThat(application.getBean(CaffeineProjectionCache.class)).isSameAs(cache);
+    }
+
     @Test void fiveRealTypesImportOpenAndProjectThroughTheOnlyCacheBoundary() throws Exception {
         var imported = imports.importArchive(user, "basic-types.qbank", new ByteArrayInputStream(Files.readAllBytes(sample("basic-types.qbank"))));
         approve(); clearInvocations(runner, cache);
@@ -146,10 +165,11 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         verify(runner, times(5)).execute(eq("project"), any(), anyMap());
     }
 
-    @Test void noopProjectsOnEveryUnconditionalReadButMatchingStampSkipsRunnerAndCache() throws Exception {
+    @Test void repeatedUnconditionalReadsHitCaffeineButMatchingStampSkipsRunnerAndCache() throws Exception {
         JsonNode first = body(get(questionPath(), cookie));
-        get(questionPath(), cookie);
-        verify(runner, times(2)).execute(eq("project"), any(), anyMap());
+        JsonNode second = body(get(questionPath(), cookie));
+        assertThat(second.path("question").path("data")).isEqualTo(first.path("question").path("data"));
+        verify(runner, times(1)).execute(eq("project"), any(), anyMap());
         String rawHash = jdbc.queryForObject("SELECT LOWER(HEX(content_sha256)) FROM content_question WHERE bank_id=? LIMIT 1", String.class, bank);
         verify(cache, times(2)).get(eq(new ProjectionKey(rawHash, digest())), any());
         clearInvocations(runner, cache);
@@ -159,6 +179,7 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         verifyNoInteractions(runner, cache);
         // The validator cannot be used as an oracle for raw answer-dependent content hashes.
         assertThat(first.path("stamp").path("contentVersion").asString()).isNotEqualTo(rawHash);
+        assertCacheStats("same-user-two-reads", 1, 1, 1);
     }
 
     @ParameterizedTest @ValueSource(strings = {"garbage", "null", "{}", "{\"revision\":-1,\"contentVersion\":\"x\",\"packageVersion\":\"y\"}"})
@@ -197,6 +218,71 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         assertThat(value.path("question").path("data").path("frozen").asString()).isEqualTo("stored-projection");
         assertThat(value.path("state").path("revision").asLong()).isEqualTo(9);
         verifyNoInteractions(runner, cache);
+        assertThat(backing(cache).asMap()).isEmpty();
+        assertCacheStats("submitted-bypass", 0, 0, 0);
+    }
+
+    @Test void differentUsersShareOneCachedProjectionButKeepTheirOwnState() throws Exception {
+        Viewer other = otherViewer();
+        get(base(), cookie);
+        jdbc.update("""
+                INSERT INTO practice_question_state (context_id,question_id,user_id,status,answer,revision,content_sha256,updated_at)
+                SELECT ?,question_id,?,'draft','{"selectedOptionId":"private-to-first-user"}',3,content_sha256,NOW(3)
+                FROM content_question WHERE bank_id=?
+                """, context(), user, bank);
+        JsonNode first = body(get(questionPath(), cookie));
+        JsonNode second = body(get(other.questionPath(qid()), other.cookie()));
+        JsonNode again = body(get(questionPath(), cookie));
+        assertThat(first.path("question").path("data")).isEqualTo(second.path("question").path("data"))
+                .isEqualTo(again.path("question").path("data"));
+        assertThat(first.path("state").path("answer").path("selectedOptionId").asString()).isEqualTo("private-to-first-user");
+        assertThat(second.path("state").path("status").asString()).isEqualTo("unanswered");
+        assertThat(second.path("state").path("revision").asLong()).isZero();
+        assertThat(second.toString()).doesNotContain("private-to-first-user");
+        verify(runner, times(1)).execute(eq("project"), any(), anyMap());
+        verify(cache, times(3)).get(eq(cacheKey()), any());
+        assertThat(backing(cache).asMap()).hasSize(1).containsKey(cacheKey());
+        assertThat(backing(cache).asMap().get(cacheKey())).doesNotContain("private-to-first-user");
+        assertNoAnswers(backing(cache).asMap().get(cacheKey()));
+        assertCacheStats("two-users-three-reads", 2, 1, 1);
+    }
+
+    @Test void readingSubmittedAnswersCannotPoisonAnotherUsersUnsubmittedProjection() throws Exception {
+        Viewer other = otherViewer();
+        get(base(), cookie);
+        assertThat(jdbc.queryForObject("SELECT data FROM content_question WHERE bank_id=? LIMIT 1", String.class, bank))
+                .contains("correctOptionId");
+        jdbc.update("""
+                INSERT INTO practice_question_state (context_id,question_id,user_id,status,answer,result,projection,revision,content_sha256,updated_at)
+                SELECT ?,question_id,?,'submitted','{"selectedOptionId":"mine"}','{"score":1}',
+                       '{"correctOptionId":"submitted-only-secret","explanation":"submission-private"}',9,content_sha256,NOW(3)
+                FROM content_question WHERE bank_id=?
+                """, context(), user, bank);
+        JsonNode submitted = body(get(questionPath(), cookie));
+        assertThat(submitted.path("question").path("data").path("correctOptionId").asString()).isEqualTo("submitted-only-secret");
+        assertThat(backing(cache).asMap()).isEmpty();
+        verifyNoInteractions(runner, cache);
+        var first = get(other.questionPath(qid()), other.cookie());
+        var second = get(other.questionPath(qid()), other.cookie());
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
+        assertNoAnswers(first.body()); assertNoAnswers(second.body());
+        assertThat(first.body()).doesNotContain("submitted-only-secret", "submission-private");
+        assertThat(second.body()).doesNotContain("submitted-only-secret", "submission-private");
+        assertThat(body(first).path("question").path("data")).isEqualTo(body(second).path("question").path("data"));
+        assertThat(body(first).path("state").path("status").asString()).isEqualTo("unanswered");
+        String cached = backing(cache).asMap().get(cacheKey());
+        assertThat(cached).isNotNull().doesNotContain("submitted-only-secret", "submission-private");
+        assertNoAnswers(cached);
+        // A submitted read must still bypass an already warm unsubmitted cache.
+        assertThat(body(get(questionPath(), cookie)).path("question").path("data")).isEqualTo(submitted.path("question").path("data"));
+        verify(cache, times(2)).get(eq(cacheKey()), any());
+        verify(runner, times(1)).execute(eq("project"), any(), argThat(input -> {
+            Object state = input.get("state");
+            return state instanceof Map<?, ?> map && Boolean.FALSE.equals(map.get("submitted"))
+                    && JSON.nullNode().equals(map.get("result"));
+        }));
+        assertCacheStats("submitted-then-other-user-unsubmitted", 1, 1, 1);
     }
 
     @Test void leftJoinKeepsQuestionsInPositionOrderAndNeverAttachesAnotherUsersState() throws Exception {
@@ -364,6 +450,34 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
                 JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.user_id=?
                 ON DUPLICATE KEY UPDATE status='approved'
                 """, user);
+    }
+    private void assertCacheStats(String scenario, long hits, long misses, long loads) {
+        CacheStats stats = backing(cache).stats().minus(statsBefore);
+        assertThat(stats.hitCount()).isEqualTo(hits);
+        assertThat(stats.missCount()).isEqualTo(misses);
+        assertThat(stats.loadSuccessCount()).isEqualTo(loads);
+        assertThat(stats.loadFailureCount()).isZero();
+        assertThat(stats.evictionCount()).isZero();
+        System.out.printf(Locale.ROOT,
+                "CACHE_STATS scenario=%s hitCount=%d missCount=%d loadSuccessCount=%d loadFailureCount=%d evictionCount=%d hitRate=%.6f%n",
+                scenario, stats.hitCount(), stats.missCount(), stats.loadSuccessCount(), stats.loadFailureCount(), stats.evictionCount(), stats.hitRate());
+    }
+    private ProjectionKey cacheKey() {
+        String hash = jdbc.queryForObject("SELECT LOWER(HEX(content_sha256)) FROM content_question WHERE bank_id=? LIMIT 1", String.class, bank);
+        return new ProjectionKey(hash, digest());
+    }
+    private Viewer otherViewer() {
+        var other = auth.register(Ids.uuidV7() + "@example.test", "缓存共享用户", "password-123", "cache-test");
+        users.add(other.userId());
+        String id = Ids.uuidV7();
+        jdbc.update("""
+                INSERT INTO practice_collection (id,user_id,bank_id,title,group_name,source,created_at)
+                SELECT ?,?,bank_id,title,group_name,source,NOW(3) FROM practice_collection WHERE id=?
+                """, id, other.userId(), collection);
+        return new Viewer("__Host-qf_session=" + other.token(), id);
+    }
+    private record Viewer(String cookie, String collection) {
+        String questionPath(String qid) { return "/api/collections/bank/" + collection + "/questions/" + qid; }
     }
     private String context() { return jdbc.queryForObject("SELECT id FROM practice_context WHERE collection_id=? AND kind='practice' AND scope_key='default'", String.class, collection); }
     private String qid() { return jdbc.queryForObject("SELECT question_id FROM content_question WHERE bank_id=? ORDER BY position LIMIT 1", String.class, bank); }
