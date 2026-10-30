@@ -109,7 +109,7 @@
 | `POST /api/library/import` | `multipart/form-data` 上传 `.qbank`，文件字段为 `file` | `content_*`、`practice_collection` | 未审核拓展不阻止导入；可用性按设计 04 第 6.2 节实时推算。M2 暂不创建私人 catalog_pack，source_pack_id 为 NULL |
 | `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 删除为软删除，不进入回收站流程 |
 | `POST /api/library/export` | 导出为 `.qbank` | `content_*`、`quota_traffic` | 计流量（沿用旧云端规则） |
-| `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；可以立即更新时先完成更新（FR-10） |
+| `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；没有进行中的作答时先切换到新版本（FR-10 v1.6） |
 | `GET /api/collections/{kind}/{id}/questions/{qid}` | 读题（投影 + 状态 + 白板 + 版本戳） | `content_question`、`practice_question_state`、`practice_whiteboard` | 投影走缓存（数据库设计 4.2 节） |
 | `GET .../questions/{qid}/stamp` | 只读版本戳 | `practice_question_state` | |
 | `POST .../questions/{qid}/actions` | `draft` / `submit` / `review` / `retry` / `whiteboard` | `practice_question_state`、`practice_whiteboard`、`practice_round*`、`practice_request_receipt` | 流程见数据库设计 5.1、5.2 节 |
@@ -118,7 +118,6 @@
 | `POST .../restart` | 再练一次 | 同上 | |
 | `GET .../history`、`GET .../history/{historyId}` | 历史列表与快照 | `practice_round`、`practice_round_question` | 冻结页面通过拓展摘要取回，不再读取复制的页面文件 |
 | `DELETE .../history/{historyId}` | 删除历史记录 | `practice_round` | 软删除 |
-| `POST /api/collections/bank/{id}/update` | **新增**：“立即更新”到作者的新版本 `{requestId}` | `practice_*` | 见[题库共享与版本更新](04-bank-sharing-and-updates.md) |
 
 ### 2.3 考试（exam）
 
