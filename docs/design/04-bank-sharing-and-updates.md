@@ -37,110 +37,96 @@
 
 **共享内容不会因作者删除而丢失：** 内容只有在**没有任何用户实例、历史记录、考试和题库包版本引用**时，才会被后台垃圾回收删除（ADR-007）。
 
-## 3. 自动更新规则
+## 3. 自动更新规则（2026-10-29 简化）
 
-### 3.1 何时更新
+**原则：只在一本题库“没有进行中的作答”时切换版本，切换时整本替换，不做逐题合并。** 作答与题目永远来自同一个版本，不会出现“新题配旧作答”。代价是用户正在做的这一轮，要等到下一轮才用上新版本；题库更新不频繁，这个代价可以接受（需求 FR-10 v1.6）。
+
+### 3.1 何时切换
+
+“有进行中的作答”指：该题库的普通练习存档中存在状态为 `draft` 或 `submitted` 的作答行，或者该题库有进行中 / 评分中的考试。
 
 | 用户题库的状态 | 处理 |
 | --- | --- |
-| 没有进行中的练习轮次，也没有进行中的考试 | **立即更新** |
-| 本轮已提交至少一题但未点“完成”，或有进行中 / 评分中的考试 | **暂缓**，显示“有新版本，完成本轮后自动更新”，并提供“立即更新”按钮 |
-| 暂缓中，用户完成本轮或考试结束 | 在“完成”的同一事务中更新 |
-| 暂缓中，用户点击“立即更新” | 当前进行中的轮次封存为“因题库更新而中断”（已提交的结果保留在历史中），然后更新 |
+| 没有进行中的作答（从没开始，或“再练一次”后尚未作答） | 下次打开时**直接切换**到最新的已审核版本 |
+| 有进行中的作答（含已点“完成”、但还没点“再练一次”） | **不切换**，继续使用当前版本；概览中提示“有新版本，再练一次时使用” |
+| 用户点击“再练一次” | 在同一个事务中：清空作答（与原有“再练一次”相同）→ 切换到最新的已审核版本 |
 
-“只保存了草稿、还没提交任何题”不算正在练习，直接更新。
+不提供“立即更新”。考试引用开考时的 `bank_id`，本身就是冻结的；新开的考试使用题库实例当前的版本。
 
 ### 3.2 何时检查
 
 **懒更新：不在作者发布时批量修改所有用户的数据，而是在用户打开题库时检查。**
 
-- 用户请求题库概览（`GET /api/collections/bank/{id}`）时，比较 `practice_collection.source_revision` 与该题库包最新的**已审核**版本。
-- 有新版本且可以立即更新 → 在本次请求中完成更新，再返回新版本的概览。
-- 有新版本但需暂缓 → 返回旧版本概览，附带 `update:{status:"pending", revision}`，前端显示提示。
+- 用户请求题库概览（`GET /api/collections/bank/{id}`）或“再练一次”时，比较 `practice_collection.source_revision` 与该题库包最新的**已审核**版本。
+- 可以切换 → 在本次请求中完成切换，再返回新版本的概览。
+- 暂不能切换 → 返回当前版本概览，附带 `update:{status:"pending", revision}`。
 
 为什么不在发布时批量更新：
 
 1. 批量修改几百个用户的数据是一个耗时的大事务，容易和用户正在进行的保存冲突；
 2. 很多用户可能很久都不会再打开这本题库，提前更新没有意义；
-3. 懒更新让每个用户的更新都是一个独立的小事务，失败只影响这一个人，下次打开时重试即可。
+3. 懒更新让每个用户的切换都是一个独立的小事务，失败只影响这一个人，下次打开时重试即可。
 
-### 3.3 逐题合并算法
+### 3.3 通知
 
-新旧版本按题目 ID 对应，按题目内容哈希（`content_question.content_sha256`）判断是否改变：
-
-| 情况 | 当前作答（`practice_question_state`） | 白板 |
-| --- | --- | --- |
-| 题目 ID 相同、内容哈希相同 | **保留**作答、评分、分数与投影 | 保留 |
-| 题目 ID 相同、内容哈希不同 | 重置为 `unanswered`，清空作答与结果，`revision + 1`，标记“本题已更新” | 清空 |
-| 旧版有、新版没有 | 删除该题的当前作答 | 删除 |
-| 旧版没有、新版有 | 无记录，显示为未作答 | — |
-| 题目使用的拓展包换了版本（摘要不同） | 视同内容改变，重置 | 清空 |
-
-其他规则：
-
-- **冻结历史永不改变**：`practice_round` 与 `practice_round_question` 保存的是当时的快照，并引用当时的拓展包摘要，不受更新影响。
-- **重置用更新而不是删除**，`revision + 1`，与“再练一次”相同的原因：防止版本号回到初始值，导致前端缓存的旧版本号误判为有效（数据库设计 5.5 节）。
-- 分组名、用户自定义的标题**保留**，不被作者的新标题覆盖。
-- **考试**引用的是开考时的 `bank_id`，本身就是冻结的；考试结束后才轮到所属题库的更新。
+版本审核通过时，系统自动发送一条题库更新通知（需求 FR-12，`notification.kind = 'bank_update'`，`pack_id` 关联该题库包），内容包含作者填写的更新说明。拥有该题库的用户在通知列表中看到它，不为每个用户复制。
 
 ### 3.4 事务与并发
 
-一次更新在**一个事务**中完成：
+切换只修改题库实例指向的内容，不碰作答行（切换时本来就没有进行中的作答）：
 
 ```text
 BEGIN
   SELECT ... FROM practice_collection WHERE id = ? AND user_id = ? FOR UPDATE
-      —— 锁住题库实例：防止同一用户两个页面同时触发更新
-  再次确认：source_revision 仍是旧值（已被另一个请求更新则直接结束）
+      —— 锁住题库实例：防止同一用户两个页面同时触发切换
+  再次确认：source_revision 仍是旧值（已被另一个请求切换则直接结束）
   SELECT ... FROM practice_context WHERE collection_id = ? AND kind = 'practice' FOR UPDATE
-      —— 锁住练习上下文：与提交、完成本轮互斥（加锁顺序：collection → context → state）
-  再次确认可以更新（没有进行中的轮次，或是“立即更新”请求）
-  按 3.3 节逐题更新 practice_question_state、practice_whiteboard
+      —— 锁住普通练习存档：与保存、提交、完成本轮互斥（加锁顺序：collection → context → state）
+  再次确认没有进行中的作答（第 3.1 节的条件），否则结束
   practice_collection.bank_id = 新内容，source_revision = 新版本，update_status = 'current'
   practice_context.progress_version + 1
 COMMIT
 ```
 
-- 更新只涉及数据库，不需要调用 rule-runner：新版本每题的满分已在导入时算好（rule-runner 协议第 6 节），未改变的题的分数和投影直接沿用。
-- 更新与保存草稿并发时：保存草稿的条件更新带 `revision`，如果这道题刚好被更新重置，保存会得到 409，前端刷新后看到“本题已更新”。不会出现旧作答写进新题目的情况。
+- 切换不需要调用 rule-runner：新版本每题的满分已在导入时算好。
+- 切换与第一次保存并发时：两者都要锁住普通练习存档，后者等待前者提交后再执行；如果切换先完成，前端拿着旧版本读到的题目保存，会因题目内容版本不一致被拒绝并刷新。
+- 冻结历史永不改变：`practice_round` 与 `practice_round_question` 保存当时的快照，并引用当时的拓展包摘要。
+- 分组名、用户自定义的标题保留，不被作者的新标题覆盖。
 
-## 4. 数据库变更（数据库设计 v0.4）
+## 4. 数据库变更
 
 ```sql
 CREATE TABLE catalog_pack_bank (                   -- 某个版本中的一本题库
   pack_id    CHAR(36)      NOT NULL,
   revision   INT           NOT NULL,
-  bank_key   VARCHAR(255)  NOT NULL,               -- question-banks/<组>/<题库>/
+  bank_uuid  CHAR(36)      NOT NULL,               -- bank.json 中的 UUID：题库身份（设计 06 第 4 节）
   bank_id    CHAR(36)      NOT NULL,               -- 共享内容 content_bank.id
   title      VARCHAR(300)  NOT NULL,
-  PRIMARY KEY (pack_id, revision, bank_key),
+  PRIMARY KEY (pack_id, revision, bank_uuid),
   KEY idx_pack_bank_content (bank_id)
 );
 ```
 
-`practice_collection` 增加来源与更新状态字段：
+`practice_collection` 的来源与更新状态字段（V1 中的 `source_bank_key` 在实现题库广场时改为 `source_bank_uuid CHAR(36)`）：
 
 ```sql
-  source_pack_id   CHAR(36)      NULL,             -- 指向公开包或私人包（第 6 节）；迁移来的旧数据可能为 NULL
-  source_bank_key  VARCHAR(255)  NULL,
-  source_revision  INT           NULL,             -- 当前使用的版本
-  update_status    ENUM('current','pending','removed') NOT NULL DEFAULT 'current',
-      -- pending：有新版本但暂缓；removed：作者已移除，不再更新
-  KEY idx_collection_source (source_pack_id, source_bank_key)
+  source_pack_id    CHAR(36)  NULL,                -- 指向公开包或私人包（第 6 节）
+  source_bank_uuid  CHAR(36)  NULL,
+  source_revision   INT       NULL,                -- 当前使用的版本
+  update_status     ENUM('current','pending','removed') NOT NULL DEFAULT 'current',
+      -- pending：有新版本，等待没有进行中的作答时切换；removed：作者已移除，不再更新
+  KEY idx_collection_source (source_pack_id, source_bank_uuid)
 ```
 
 `catalog_pack` 增加 `approved_revision`（最新的已审核版本），审核通过时更新；用户打开题库时与 `source_revision` 比较。
 
-`practice_round.status` 增加取值 `interrupted`（因“立即更新”而封存的轮次）。
-
-## 5. 接口变更（API 设计 v0.2）
+## 5. 接口变更
 
 | 接口 | 变更 |
 | --- | --- |
-| `GET /api/collections/bank/{id}` | 响应增加 `update:{status, revision?, removed?}`；可以立即更新时，在返回前完成更新 |
-| `POST /api/collections/bank/{id}/update` | **新增**：“立即更新” `{requestId}`；进行中的轮次被封存为 `interrupted` |
-| `GET /api/collections/bank/{id}/questions/{qid}` | 被更新重置的题目带 `updatedByAuthor:true`，前端提示“本题已更新” |
-| `POST /api/packs/{id}/practice` | 加入“我的题库” `{banks:[bank_key…]}`，按本选择；同一用户重复加入同一本时，打开已有的实例（与旧系统“重复的 Hub 版本打开已有内容”一致） |
+| `GET /api/collections/bank/{id}` | 响应增加 `update:{status, revision?, removed?}`；可以切换时，在返回前完成切换 |
+| `POST .../restart`（再练一次） | 若有更新的已审核版本，清空作答后切换到新版本 |
+| `POST /api/packs/{id}/practice` | 加入“我的题库” `{banks:[bank_uuid…]}`，按本选择；同一用户重复加入同一本时，打开已有的实例 |
 
 ## 6. 我的题库与私人题库（需求 FR-11）
 
@@ -218,20 +204,20 @@ CREATE TABLE catalog_favorite (
 
 ## 7. 测试要点
 
-1. 未在练习的用户打开题库：已是新版本，未变的题作答保留，变了的题显示“本题已更新”。
-2. 正在练习的用户：看到提示，继续练习不受影响；点“完成”后自动更新；历史记录内容不变。
-3. “立即更新”：进行中的轮次在历史中显示为“中断”，已提交的结果仍可查看。
-4. 作者删除题库包：用户的题库仍能正常练习，显示“作者已移除”。
-5. 并发：同一用户两个页面同时打开题库，只更新一次；更新与保存草稿并发时，没有旧作答写入新题目。
-6. 新版本审核期间，用户和广场看到的都是上一个已审核版本。
+1. 没有作答的用户打开题库：直接是新版本。
+2. 有作答（草稿、已提交或已完成本轮）的用户：继续使用当前版本，看到提示；点“再练一次”后作答清空并切换到新版本。
+3. 作者删除题库包：用户的题库仍能正常练习，显示“作者已移除”。
+4. 并发：同一用户两个页面同时打开题库，只切换一次；切换与第一次保存并发时，不会出现旧版本题目的作答写入新版本。
+5. 新版本审核期间，用户和广场看到的都是上一个已审核版本。
+6. 审核通过后生成一条题库更新通知，只对拥有该题库的用户可见。
 
 ## 8. 待定事项
 
 | 编号 | 事项 |
 | --- | --- |
 | UP-1 | 存储配额：建议从题库广场加入的公开题库不计入个人配额；用户自己上传的 `.qbank` 按大小计入上传者配额；作答图片等个人数据照常计入（待确认） |
-| UP-2 | 是否需要告诉用户“新版本改了什么”（作者填写更新说明，在提示中显示） |
-| UP-3 | 迁移：旧系统中从 Hub 导入的题库，能否根据 `cloud_imports.source` 关联回题库包，以便迁移后也能自动更新 |
+| ~~UP-2~~ | ~~是否告诉用户新版本改了什么~~ **已决定：** 更新说明随题库更新通知发送（第 3.3 节） |
+| ~~UP-3~~ | ~~迁移旧导入记录~~ **不再需要：** 需求 v1.3 不迁移题库 |
 
 ## 变更记录
 
@@ -240,3 +226,4 @@ CREATE TABLE catalog_favorite (
 | v0.1 | 2026-10-27 | 初稿 |
 | v0.2 | 2026-10-28 | 第 6 节改写：私人上传与分享走同一流程（私人题库包）、按拓展白名单推算可用性、“我的题库”三种来源、下载与导出 |
 | v0.3 | 2026-10-29 | 题库身份由包内路径改为 `bank.json` 中的 UUID |
+| v0.4 | 2026-10-29 | 简化更新：只在没有进行中的作答时整本切换版本，删除逐题合并与“立即更新”；更新时发送通知 |

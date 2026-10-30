@@ -366,7 +366,7 @@ CREATE TABLE practice_round (                      -- 练习轮次 / 历史记�
   collection_id        CHAR(36)     NOT NULL,
   context_id           CHAR(36)     NOT NULL,
   mode                 ENUM('practice','exam') NOT NULL,
-  status               ENUM('in_progress','completed','interrupted') NOT NULL,   -- interrupted：因“立即更新”封存
+  status               ENUM('in_progress','completed') NOT NULL,   -- 需求 v1.6 取消“立即更新”，不再需要 interrupted
   collection_snapshot  JSON         NOT NULL,      -- 冻结的标题、题序、大纲、题目指纹
   summary              JSON         NULL,          -- 完成时冻结的得分汇总
   created_at           DATETIME(3)  NOT NULL,
