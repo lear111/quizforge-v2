@@ -202,9 +202,8 @@ class PackageInheritedRulesTest {
     }
 
     @Test
-    void questionAndBindingLengthBoundariesAndUnrestrictedExampleAuthorId() throws Exception {
+    void questionAndBindingLengthBoundariesWithExampleUuid() throws Exception {
         PackageFixture f = fixture(); f.question(q -> { q.put("id", "q".repeat(120)); q.put("title", "题".repeat(300)); });
-        f.edit(f.extension + "/examples/bank.json", b -> b.put("id", "any-author-metadata"));
         assertThat(f.parse().banks()).hasSize(1);
         f.question(q -> q.put("title", "x".repeat(299) + "😀")); rejected(f, INVALID_QUESTION_BANK);
         f = fixture(); f.bank(b -> b.put("extension", Map.of("path", "x".repeat(1001)))); rejected(f, INVALID_QUESTION_BANK);
@@ -238,7 +237,11 @@ class PackageInheritedRulesTest {
     @Test
     void bankAndExtensionCountBoundariesFollowPhysicalFoldersNotAuthorIdentity() throws Exception {
         PackageFixture f = fixture(); byte[] bank = f.files.get(BANK + "/bank.json");
-        for (int i = 1; i < 1000; i++) f.files.put("question-banks/" + GROUP + "/b" + i + "/bank.json", bank);
+        for (int i = 1; i < 1000; i++) {
+            var copy = document(bank);
+            copy.put("id", "70000000-0000-4000-8000-%012d".formatted(i));
+            f.put("question-banks/" + GROUP + "/b" + i + "/bank.json", copy);
+        }
         assertThat(f.parse().banks()).hasSize(1000);
         f.files.put("question-banks/" + GROUP + "/extra/bank.json", bank); rejected(f, INVALID_LIBRARY_ARCHIVE);
         f = fixture();

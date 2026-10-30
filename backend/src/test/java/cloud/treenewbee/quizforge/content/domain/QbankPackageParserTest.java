@@ -205,7 +205,7 @@ class QbankPackageParserTest {
     @Test
     void omittedAuthorMetadataAndOptionalTitleArePreservedWithoutInventedLimits() throws Exception {
         PackageFixture f = fixture();
-        f.bank(b -> { b.remove("title"); b.put("id", "author.old-id"); b.put("version", "v".repeat(5000)); b.put("description", ""); b.put("features", Map.of("history", false)); });
+        f.bank(b -> { b.remove("title"); b.put("version", "v".repeat(5000)); b.put("description", ""); b.put("features", Map.of("history", false)); });
         var bank = f.parse().banks().getFirst();
         assertThat(bank.bank()).doesNotContainKey("title");
         assertThat(bank.bank().get("version")).isEqualTo("v".repeat(5000));
@@ -231,7 +231,7 @@ class QbankPackageParserTest {
         assertThat(f.parse().banks()).hasSize(1);
         f.files.remove(BANK + "/assets/自由图.PNG");
         f.files.put("question-banks/" + GROUP + "/另一本/assets/图.png", PNG.clone());
-        f.put("question-banks/" + GROUP + "/另一本/bank.json", Map.of("formatVersion", 2, "extension", Map.of("path", f.extension), "questions", List.of(Map.of("id", "q", "title", "题", "data", Map.of()))));
+        f.put("question-banks/" + GROUP + "/另一本/bank.json", Map.of("formatVersion", 2, "id", ImportArchives.BANK_IDS.get("判断题"), "extension", Map.of("path", f.extension), "questions", List.of(Map.of("id", "q", "title", "题", "data", Map.of()))));
         assertThat(rejected(f, INVALID_QUESTION_BANK).getMessage()).contains("练习", "q1", "引用了不存在的图片");
     }
 

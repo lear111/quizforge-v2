@@ -1,6 +1,6 @@
 # 题库包格式 4
 
-> **文档版本：** v0.5
+> **文档版本：** v0.6
 > **日期：** 2026-10-29
 > **依据：** [需求 v1.3 C-01、FR-09](../requirements/01-requirements.md)，[遗留契约 C-01～C-04](../legacy/01-contracts.md)，[数据库设计](01-database.md)，[题库共享与更新](04-bank-sharing-and-updates.md)
 > **参照：** 旧格式 3 的规则（`quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`、`LISTENING.md`，`core/server/host/library/library-archive.js`、`directories.js`、`library-package.js` @ `4522bb8`）
@@ -87,6 +87,7 @@ extensions/<组>/
 ```json
 {
   "formatVersion": 2,
+  "id": "60000000-0000-4000-8000-000000000001",
   "title": "1997年真题",
   "extension": {"path": "extensions/考研英语/完形填空"},
   "features": {"whiteboard": true, "exam": true},
@@ -290,9 +291,9 @@ M2 的来源 JSON 为 `{"type":"upload","filename":"原文件名.qbank"}`，sour
 
 | 对象/字段 | 白名单、必填与限制 | 出处 |
 | --- | --- | --- |
-| 题库根 | 仅 formatVersion/id/version/title/description/extension/features/listening/questions；formatVersion/questions 必填。旧加载器没有总白名单；**格式 4 已改**，按正文严格原则拒绝其他字段 | `QUESTION_BANK_FORMAT.md:基本结构`；`library/collections.js:prepareCollection`；正文第 1、4 节 |
+| 题库根 | 仅 formatVersion/id/version/title/description/extension/features/listening/questions；formatVersion/id/questions 必填。旧加载器没有总白名单；**格式 4 已改**，按正文严格原则拒绝其他字段 | `QUESTION_BANK_FORMAT.md:基本结构`；`library/collections.js:prepareCollection`；正文第 1、4 节 |
 | formatVersion | **格式 4 已改**：题库及示例都必须显式为整数 2，不继承旧版省略按 1 的分支 | `extensions/extension-api.js:requireBankFormat`；正文第 4、5 节 |
-| id/version/title | 作者元数据，可省略；不作为身份/去重键/显示名称。id 出现时按 A.1，title 出现时为非空文本最多 300；version 未被旧加载器校验，**旧版未限制**其类型/长度，不自设上限。旧安装器会补 id/覆盖 title；**格式 4 已改**为允许省略且不改写，显示名称单独取 folderName | `library/collections.js:prepareCollection`；`library/library-package.js:installPackage/exportPackage`；`QUESTION_BANK_FORMAT.md:基本结构`；正文第 4、9 节 |
+| id/version/title | 旧版作者元数据可省略，id 按 A.1；**格式 4 已改（v0.6）**：id 必填，为标准 8-4-4-4-12 小写十六进制 UUID，普通题库与拓展示例合计在包内唯一，不自动生成或规范化，用于广场新旧版本对应；content_sha256 仍按 9.1 去重。title 可省略，出现时为非空文本最多 300；version 未被旧加载器校验，**旧版未限制**其类型/长度，不自设上限。旧安装器会补 id/覆盖 title；格式 4 不改写，显示名称单独取 folderName | `library/collections.js:prepareCollection`；`library/library-package.js:installPackage/exportPackage`；`QUESTION_BANK_FORMAT.md:基本结构`；正文第 4、9 节 |
 | description | 可选字符串，允许空串，最多 4000 | `library/collections.js:optional/prepareCollection` |
 | features | 仅 editing/whiteboard/history/exam 四个 boolean；对象或字段省略默认 true，禁止题目级覆盖。解析器保留显式 false，在线版对 editing/history 的使用策略留给业务层 | `library/features.js:BankFeatures.read`；`library/collections.js:prepareCollection`；正文第 4 节 |
 | questions | 数组 1～10000，保持题序 | `library/collections.js:prepareCollection` |

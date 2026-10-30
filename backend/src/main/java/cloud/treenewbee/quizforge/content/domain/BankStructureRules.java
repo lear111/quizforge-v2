@@ -18,7 +18,6 @@ final class BankStructureRules {
         Consumer<String> rootFail = fail(name, null);
         keys(bank, Set.of("formatVersion", "id", "version", "title", "description", "extension", "features", "listening", "questions"), rootFail);
         if (!integer(bank.get("formatVersion"), 2, 2)) rootFail.accept("formatVersion 必须显式为整数 2");
-        if (bank.containsKey("id") && (!(bank.get("id") instanceof String id) || !ID.matcher(id).matches())) rootFail.accept("作者 id 格式无效");
         if (bank.containsKey("title")) text(bank, "title", 300, rootFail);
         optionalDescription(bank, rootFail);
         if (bank.containsKey("features")) {
