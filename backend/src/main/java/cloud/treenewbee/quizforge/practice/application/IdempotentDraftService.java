@@ -13,6 +13,7 @@ import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptRow;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 
+/** 同一 requestId 的请求只执行一次；重发时返回首次的响应。 */
 @Service
 public class IdempotentDraftService {
 
@@ -20,7 +21,6 @@ public class IdempotentDraftService {
     private final ReceiptMapper receiptMapper;
     private final TransactionTemplate tx; // Spring 自动提供，构造器注入即可
 
-    // 构造器自己写
     public IdempotentDraftService(DraftService draftService, ReceiptMapper receiptMapper, TransactionTemplate tx) {
         this.draftService = draftService;
         this.receiptMapper = receiptMapper;
@@ -33,14 +33,13 @@ public class IdempotentDraftService {
         byte[] hash = requestHash(contextId, questionId, clientRevision, answerJson);
 
         try {
-            // 事务 1：查回执 → 执行业务 → 写回执
             return tx.execute(status -> {
                 ReceiptRow existing = receiptMapper.find(userId, requestId);
                 if (existing != null) {
                     return replay(existing, hash);
                 }
                 long revision = draftService.saveDraft(userId, contextId, questionId, clientRevision, answerJson,
-                        contentSha256); // 调用 draftService.saveDraft
+                        contentSha256); 
                 String response = "{\"revision\":" + revision + "}";
                 receiptMapper.insert(userId, requestId, hash, response); // 写回执
                 return response;
@@ -55,13 +54,11 @@ public class IdempotentDraftService {
     }
 
     private String replay(ReceiptRow row, byte[] hash) {
-        // 哈希相同 → 返回 row.response()
-        // 哈希不同 → 抛出 422，code 用 "REQUEST_ID_REUSED"
-        // 提示：比较 byte[] 不能用 ==，也不能用 equals
+
         if (java.util.Arrays.equals(row.requestSha256(), hash)) {
             return row.response();
         } else {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "REQUEST_ID_REUSED", "请求 ID 已被重复使用");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "REQUEST_ID_REUSED", "请求 ID 已被重复使用");
         }
     }
 
@@ -76,8 +73,8 @@ public class IdempotentDraftService {
         }
     }
 
+    /** 冲突后在新事务中重查回执：区分"自己的重复请求"和"他人的修改"。 */
     private String recheck(String userId, String requestId, byte[] hash, RuntimeException original) {
-        // 你来写：新事务里查回执，没有 → 抛出 original，有 → replay
         return tx.execute(status -> {
             ReceiptRow existing = receiptMapper.find(userId, requestId);
             if (existing == null)
