@@ -1,0 +1,137 @@
+package cloud.treenewbee.quizforge.practice.application;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.UUID;
+
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper;
+import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptMapper;
+import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptRow;
+import cloud.treenewbee.quizforge.shared.web.ApiException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
+@Service
+public class SubmitService {
+
+    private final PracticeReadService reads;
+    private final DraftService drafts;
+    private final SubmitGrader grader;
+    private final QuestionStateMapper states;
+    private final PracticeContextMapper contexts;
+    private final PracticeRoundMapper rounds;
+    private final ReceiptMapper receipts;
+    private final RoundSnapshots snapshots;   // Codex 之后来写：组装轮次和单题快照的 JSON
+    private final TransactionTemplate tx;
+    private final Clock clock;
+    private final JsonMapper json;
+
+    // 构造器
+
+    public String submit(String userId, String requestId, String collectionId, String questionId,
+                         long clientRevision, JsonNode answer) {
+        String answerJson = json.writeValueAsString(answer);
+        byte[] hash = requestHash(collectionId, questionId, clientRevision, answerJson);  // 复制 IdempotentDraftService 里的写法，开头加上 "submit" 以免和草稿的哈希混淆
+
+        try {
+            // 0. 查回执
+            ReceiptRow existing = receipts.find(userId, requestId);
+            if (existing != null) return replay(existing, hash);
+
+            // 1. 先保存答案
+            var prepared = reads.prepareDraft(userId, collectionId, questionId);   // 内含 contextId、contentSha256
+            long revision = drafts.saveDraft(userId, prepared.contextId(), questionId, clientRevision, answerJson,
+                    prepared.contentSha256());   // 事务内保存草稿，revision +1
+
+            // 2. 事务外判分
+            GradeOutcome outcome = grader.grade(userId, collectionId, questionId, answer);   // 内含 result、score、maxScore、outlineStates、projection
+
+            // 3. 事务内写入
+            return tx.execute(status -> {
+                Instant now = clock.instant();
+                var context = contexts.lockForUpdate(prepared.contextId(), userId)
+                        .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "题库不存在"));
+
+                int updated = states.submit(
+                        outcome.resultJson(),
+                        outcome.gradingStatus(),
+                        scale4(outcome.score()),
+                        scale4(outcome.maxScore()),
+                        outcome.outlineStatesJson(),
+                        outcome.projectedJson(),
+                        now,
+                        prepared.contextId(),
+                        questionId,
+                        userId,
+                        revision
+                );   // 分数先用 scale4() 处理
+                if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "CONFLICT", "答案已被修改或已提交");         // 409，判分期间答案被改了，或者已经提交过了
+
+                String roundId = context.currentRoundId();
+                if (roundId == null) {
+                    roundId = UUID.randomUUID().toString();
+                    // 创建轮次：rounds.insertRound(new PracticeRoundRow(...))，mode 是 "practice"，status 是 "in_progress"，
+                    // collectionSnapshot 用 snapshots.collection(prepared)，summary、completedAt、deletedAt 填 null
+                    rounds.insertRound(new PracticeRoundRow(roundId, userId, collectionId, prepared.contextId(), "practice", "in_progress", snapshots.collection(prepared), null, now, now, null, null));
+                    contexts.setCurrentRound(contextId, userId, roundId, now);   // contexts.setCurrentRound(...)
+                }
+                // 冻结单题快照：payload 用 snapshots.question(prepared, answer, outcome)
+                rounds.insertQuestionSnapshot(new PracticeRoundQuestionSnapshotRow(roundId, questionId, userId, snapshots.question(prepared, answer, outcome), prepared.extensionDigest(), now));
+                contexts.incrementSummaryVersion(contextId, userId, now);   // 汇总版本号 +1
+
+                String response = "{\"revision\":" + (revision + 1) + "}";
+                receipts.insert(userId, requestId, hash, response);   // 写回执
+                return response;
+            });
+        } catch (DuplicateKeyException e) {
+            return recheck(userId, requestId, hash, e);
+        } catch (ApiException e) {
+            if (e.status() != HttpStatus.CONFLICT) throw e;
+            return recheck(userId, requestId, hash, e);
+        }
+    }
+
+    /** 分数与满分用同一规则舍入到 4 位小数，保证"满分才算全对"的比较不受精度影响；待评分时为 null。 */
+    private static BigDecimal scale4(BigDecimal value) {
+        return value != null ? value.setScale(4, BigDecimal.RoundingMode.HALF_UP) : null;   // 注意 null
+    }
+
+    // replay、recheck、requestHash：参考 IdempotentDraftService 自己写
+
+    private String replay(ReceiptRow row, byte[] hash) {
+        if (java.util.Arrays.equals(row.requestSha256(), hash)) {
+            return row.response();
+        } else {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "REQUEST_ID_REUSED", "请求 ID 已被重复使用");
+        }
+    }
+
+    private String recheck(String userId, String requestId, byte[] hash, RuntimeException original) {
+        return tx.execute(status -> {
+            ReceiptRow existing = receipts.find(userId, requestId);
+            if (existing == null)
+                throw original;
+            return replay(existing, hash);
+        });
+    }
+
+    private static byte[] requestHash(String collectionId, String questionId, long clientRevision, String answerJson) {
+        // 复制 IdempotentDraftService 的写法，开头加上 "submit" 以免和草稿的哈希混淆
+        try {
+            var md = MessageDigest.getInstance("SHA-256");
+            String canonical = "submit\n" + collectionId + "\n" + questionId + "\n" + clientRevision + "\n" + answerJson;
+            return md.digest(canonical.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}
