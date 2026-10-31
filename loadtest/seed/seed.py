@@ -1,6 +1,7 @@
 """Local-only repeatable fixtures. No direct business inserts: only sample review approval uses SQL."""
 import argparse, ipaddress, json, os, secrets, subprocess, urllib.request, urllib.error, urllib.parse
 from pathlib import Path
+from answers import sample_banks
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -13,6 +14,29 @@ def local_url(value):
     if not local or url.scheme != "http" or url.username or url.password or url.path not in ("", "/") or url.query or url.fragment:
         raise argparse.ArgumentTypeError("base URL must be a local loopback HTTP origin")
     return value.rstrip("/")
+
+def api_client(base_url):
+    base_url = local_url(base_url)
+    # No proxies or redirects: requests must remain on the local origin.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *unused): return None
+    client = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    def request(path, body=None, token=None, content_type="application/json"):
+        headers = {"Content-Type": content_type, "Origin": base_url}
+        if token: headers["Cookie"] = token
+        if body is not None and not isinstance(body, bytes): body = json.dumps(body).encode()
+        req = urllib.request.Request(base_url + path, data=body, headers=headers)
+        try:
+            with client.open(req, timeout=180) as response:
+                return response.status, (None if response.status == 204 else json.loads(response.read())), response.headers
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read()), error.headers
+    return request
+
+
+def require(status, body, expected=200):
+    if status != expected: raise RuntimeError(f"HTTP {status}: {body}")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -37,28 +61,19 @@ def main():
     published = subprocess.check_output(compose + ["port", "nginx", "80"], text=True).strip()
     if published != "127.0.0.1:" + str(urllib.parse.urlsplit(args.base_url).port or 80):
         parser.error("base URL port must match this project's loopback nginx mapping")
-    # No redirects: a local service must never redirect this script to a remote target.
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *unused): return None
-    client = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    def request(path, body=None, token=None, content_type="application/json"):
-        headers = {"Content-Type": content_type, "Origin": args.base_url}
-        if token: headers["Cookie"] = token
-        if body is not None and not isinstance(body, bytes): body = json.dumps(body).encode()
-        req = urllib.request.Request(args.base_url + path, data=body, headers=headers)
-        try:
-            with client.open(req, timeout=180) as response:
-                return response.status, (None if response.status == 204 else json.loads(response.read())), response.headers
-        except urllib.error.HTTPError as error:
-            return error.code, json.loads(error.read()), error.headers
-    def require(status, body, expected=200):
-        if status != expected: raise RuntimeError(f"HTTP {status}: {body}")
+    request = api_client(args.base_url)
     state_file = args.output.with_name(args.output.stem + ".seed-state.json")
     existing = state_file if state_file.exists() else args.output
     old = json.loads(existing.read_text(encoding="utf-8")) if existing.exists() else []
     by_email = {u["email"]: u for u in old}
     users = []
-    archive = (ROOT / "samples/basic-types.qbank").read_bytes()
+    archives = {name: (ROOT / "samples" / name) for name in ("basic-types.qbank", "loadtest-300.qbank")}
+    templates = {name: sample_banks(path) for name, path in archives.items()}
+    def checkpoint():
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        temp = state_file.with_suffix(".tmp")
+        temp.write_text(json.dumps(list(by_email.values()), ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.replace(state_file)
     for i in range(args.users):
         email = f"loadtest-{i:04d}@example.test"
         previous = by_email.get(email)
@@ -71,27 +86,28 @@ def main():
             status, body, headers = request("/api/auth/register", {"email": email, "name": f"压测用户{i}", "password": password})
         require(status, body)
         token = headers["Set-Cookie"].split(";", 1)[0]
-        if not previous:
-            by_email[email] = {"email": email, "password": password, "collections": []}
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            state_file.write_text(json.dumps(list(by_email.values()), ensure_ascii=False, indent=2), encoding="utf-8")
         collections = previous.get("collections", []) if previous else []
-        if not collections or any(request(f'/api/collections/bank/{row["id"]}', token=token)[0] not in (200, 422) for row in collections):
-            boundary = "qf-" + secrets.token_hex(16)
-            upload = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="basic-types.qbank"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
-                      + archive + f'\r\n--{boundary}--\r\n'.encode())
-            status, body, _ = request("/api/library/import", upload, token, "multipart/form-data; boundary=" + boundary)
-            require(status, body)
-            collections = [{"id": row["id"], "title": row["title"]} for row in body["collections"]]
         user = {"email": email, "password": password, "collections": collections}
         users.append(user)
         by_email[email] = user
-        # Checkpoint credentials after each successful account; reruns reuse users and instances.
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        checkpoint = {**by_email, **{u["email"]: u for u in users}}
-        temp = state_file.with_suffix(".tmp")
-        temp.write_text(json.dumps(list(checkpoint.values()), ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(state_file)
+        checkpoint()
+        for filename, archive in archives.items():
+            expected = templates[filename]
+            current = [row for row in collections if row["title"] in expected]
+            if (len(current) != len(expected) or {row["title"] for row in current} != set(expected)
+                    or any(request(f'/api/collections/bank/{row["id"]}', token=token)[0] not in (200, 422) for row in current)):
+                boundary = "qf-" + secrets.token_hex(16)
+                upload = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
+                          + archive.read_bytes() + f'\r\n--{boundary}--\r\n'.encode())
+                status, body, _ = request("/api/library/import", upload, token, "multipart/form-data; boundary=" + boundary)
+                require(status, body)
+                current = [{"id": row["id"], "title": row["title"]} for row in body["collections"]]
+                if {row["title"] for row in current} != set(expected):
+                    raise RuntimeError("Imported sample titles do not match package")
+                collections[:] = [row for row in collections if row["title"] not in expected] + current
+            for row in current: row["sample"] = filename
+            # Preserve each completed import if the next archive fails or the process is interrupted.
+            checkpoint()
         # Only digests referenced by these sample instances receive the test-only approval.
         import uuid
         ids = [str(uuid.UUID(row["id"])) for row in collections]
@@ -101,6 +117,10 @@ def main():
             status, body, _ = request(f'/api/collections/bank/{row["id"]}', token=token)
             require(status, body)
             row["questionIds"] = [q["id"] for q in body["questions"]]
+            answers = templates[row["sample"]][row["title"]]["answers"]
+            if set(row["questionIds"]) != set(answers):
+                raise RuntimeError("Imported question IDs do not match sample outline")
+            row["answers"] = answers
         status, body, _ = request("/api/auth/logout", b"", token)
         require(status, body, 204)
         print(f"Prepared {i + 1}/{args.users} users", flush=True)

@@ -111,3 +111,37 @@ with zipfile.ZipFile(OUTPUT / 'central-outline.qbank', 'w', compression=zipfile.
         entry.compress_type = zipfile.ZIP_DEFLATED
         entry.external_attr = 0o100644 << 16
         archive.writestr(entry, data)
+
+# An independent mixed bank for repeatable load preparation. Keep the pinned extension bytes.
+content = files(TYPES[:3], 'bank')
+templates = [json.loads(content[f'question-banks/{GROUP}/{name}/bank.json'])['questions'][0] for name in TYPES[:3]]
+content = {path: data for path, data in content.items() if not path.startswith('question-banks/')}
+questions = []
+for index in range(300):
+    kind = index % 3
+    question = copy.deepcopy(templates[kind])
+    question['id'] = f'loadtest-{index + 1:03d}'
+    question['title'] = f'压测第 {index + 1} 题'
+    question['extension'] = {'path': f'extensions/{GROUP}/{TYPES[kind]}'}
+    data = question['data']
+    data['stem'] = {'type': 'doc', 'content': [{'type': 'paragraph', 'content': [
+        {'type': 'text', 'text': f'压测第 {index + 1} 题（{TYPES[kind]}）'}]}]}
+    if 'options' in data:
+        identifiers = {option['id']: f'option-{index + 1}-{number}' for number, option in enumerate(data['options'])}
+        for option in data['options']: option['id'] = identifiers[option['id']]
+        if kind == 0: data['correctOptionId'] = identifiers[data['correctOptionId']]
+        else: data['correctOptionIds'] = [identifiers[value] for value in data['correctOptionIds']]
+    else:
+        data['correctAnswer'] = (index // 3) % 2 == 0
+    questions.append(question)
+bank = dict(formatVersion=2, id='60000000-0000-4000-8000-000000000300', title='loadtest-300',
+            questions=questions, outline=[{'group': f'压测分组 {offset // 50 + 1}',
+                'items': [{'question': q['id']} for q in questions[offset:offset + 50]]} for offset in range(0, 300, 50)])
+content[f'question-banks/{GROUP}/loadtest-300/bank.json'] = encode(bank)
+with zipfile.ZipFile(OUTPUT / 'loadtest-300.qbank', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+    for path, data in sorted(content.items()):
+        entry = zipfile.ZipInfo(path, date_time=(2026, 10, 30, 0, 0, 0))
+        entry.compress_type = zipfile.ZIP_DEFLATED
+        entry.external_attr = 0o100644 << 16
+        archive.writestr(entry, data)
+print('loadtest-300.qbank', (OUTPUT / 'loadtest-300.qbank').stat().st_size)
