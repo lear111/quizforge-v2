@@ -198,6 +198,20 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
         assertThat(JSON.readTree((String)row.get("answer"))).isEqualTo(answer("单选题",false));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isZero();
     }
+    @Test void resolveTargetSucceedsWithoutCallingUnavailableRunner() {
+        doThrow(new RuleRunnerException("runner unavailable")).when(runner).execute(anyString(), any(), anyMap());
+        doThrow(new RuleRunnerException("runner unavailable")).when(runner).execute(anyString(), any(), anyMap(), any());
+        var sample = samples.get("单选题");
+        var target = reads.resolveTarget(user, sample.collection(), sample.question().questionId());
+        assertThat(target.contextId()).isEqualTo(jdbc.queryForObject(
+                "SELECT id FROM practice_context WHERE user_id=? AND collection_id=?", String.class, user, sample.collection()));
+        assertThat(target.contentSha256()).containsExactly(sample.question().contentSha256());
+        assertThat(target.extensionDigest()).containsExactly(sample.question().extensionDigest());
+        assertThat(reads.resolveTarget(user, sample.collection(), sample.question().questionId()).contextId())
+                .isEqualTo(target.contextId());
+        verifyNoInteractions(runner);
+    }
+
     @Test void submitRunnerFailureReturns503AndKeepsSavedDraft() throws Exception {
         assertThat(get("单选题").statusCode()).isEqualTo(200);
         doThrow(new RuleRunnerException("unavailable")).when(runner).execute(eq("submit"),any(),anyMap());
@@ -294,6 +308,13 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
     void stoppedRealRunnerReturns503AndRetainsDraft() throws Exception {
         assertThat(get("单选题").statusCode()).isEqualTo(200);
         RUNNER.stop();
+        reset(runner);
+        var sample = samples.get("单选题");
+        var target = reads.resolveTarget(user, sample.collection(), sample.question().questionId());
+        assertThat(target.contextId()).isNotBlank();
+        assertThat(target.contentSha256()).containsExactly(sample.question().contentSha256());
+        assertThat(target.extensionDigest()).containsExactly(sample.question().extensionDigest());
+        verifyNoInteractions(runner);
         error(post("单选题","submit","stopped",0,answer("单选题",true)),503,"RULE_UNAVAILABLE");
         var row=jdbc.queryForMap("SELECT status,revision,answer,result FROM practice_question_state WHERE user_id=?",user);
         assertThat(row.get("status")).isEqualTo("draft"); assertThat(row.get("result")).isNull();

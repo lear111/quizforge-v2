@@ -92,6 +92,15 @@ public class PracticeReadService {
         return renderQuestion(userId, qid, collection, question, context, row, stamp);
     }
 
+    public record SubmitTarget(String contextId, byte[] contentSha256, byte[] extensionDigest) {}
+
+    /** Resolve the owned, approved question and practice context without executing extension code. */
+    public SubmitTarget resolveTarget(String userId, String collectionId, String questionId) {
+        var source = source(userId, collectionId, questionId);
+        return new SubmitTarget(context(userId, collectionId), source.question().contentSha256(),
+                source.question().extensionDigest());
+    }
+
     public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId, String collectionSnapshot) {}
 
     /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
