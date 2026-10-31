@@ -28,7 +28,7 @@ services:
     volumes:
       - ../loadtest/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
-    networks: [monitoring]
+    networks: [monitoring, public]
     cpus: 0.5
     mem_limit: 512m
   grafana:
@@ -41,11 +41,12 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
     volumes:
       - ../loadtest/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../loadtest/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
-    networks: [monitoring]
+    networks: [monitoring, public]
     cpus: 0.5
     mem_limit: 512m
   k6:

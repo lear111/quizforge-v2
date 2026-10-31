@@ -18,7 +18,7 @@ docker compose @compose up -d --build
 Invoke-RestMethod http://localhost:8099/api/health
 ```
 
-等待 health 返回成功再造数。所有公开端口只绑定 127.0.0.1。app 的管理端口 9091 **没有宿主机端口映射**；Prometheus 在 internal monitoring 网络访问 `http://app:9091/actuator/prometheus`。Nginx 对 `/actuator` 和其子路径返回 404。其他环境的管理端口默认绑定 127.0.0.1，只暴露 prometheus 端点。
+等待 health 返回成功再造数。所有公开端口只绑定 127.0.0.1。Prometheus/Grafana 同时加入 UI 网络以支持 Docker Desktop 的本机端口转发；到 app 的抓取仍经 internal monitoring 网络，未配置任何远程抓取或 remote_write，Grafana 的遥测、更新、预装插件与公钥在线检索均关闭。app 的管理端口 9091 **没有宿主机端口映射**；Prometheus 在 internal monitoring 网络访问 `http://app:9091/actuator/prometheus`。Nginx 对 `/actuator` 和其子路径返回 404。其他环境的管理端口默认绑定 127.0.0.1，只暴露 prometheus 端点。
 
 ```powershell
 # 应返回 404，而非指标正文
