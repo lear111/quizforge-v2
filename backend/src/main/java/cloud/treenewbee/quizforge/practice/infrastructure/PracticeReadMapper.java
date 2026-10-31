@@ -41,7 +41,7 @@ public interface PracticeReadMapper {
     @Select("""
             SELECT q.question_id AS id, q.title, q.outline, q.listening, q.extension_digest,
                    e.extension_id, e.version AS extension_version, e.name AS extension_name,
-                   s.status, s.answer_state, s.result, s.outline_states, s.revision, q.outline_group_index, q.outline_group_name
+                   s.status, s.answer_state, s.result, s.outline_states, s.revision, q.outline_group_index, q.outline_group_name, q.content_sha256, s.score, s.max_score, s.grading_status
             FROM content_question q
             JOIN content_extension_package e ON e.digest = q.extension_digest
             LEFT JOIN practice_question_state s ON s.context_id = #{contextId}
@@ -52,7 +52,7 @@ public interface PracticeReadMapper {
             @Param("userId") String userId);
 
     @Select("""
-            SELECT status, answer, answer_state, result, outline_states, projection, revision
+            SELECT status, answer, answer_state, result, outline_states, projection, revision, score, max_score, grading_status
             FROM practice_question_state WHERE context_id = #{contextId} AND question_id = #{qid}
               AND BINARY question_id = BINARY #{qid} AND user_id = #{userId}
             """)

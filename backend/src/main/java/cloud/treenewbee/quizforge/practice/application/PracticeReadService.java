@@ -71,7 +71,7 @@ public class PracticeReadService {
                     outline != null && outline.path("level").asString().equals("question") ? outline.path("label").asString() : null,
                     outline != null && outline.path("level").asString().equals("parts") ? outline.path("items") : null, decode(row.listening()), row.outlineGroupIndex(), row.outlineGroupName()));
             states.put(row.id(), new State(row.status() == null ? "unanswered" : row.status(), null,
-                    "submitted".equals(row.status()) ? decode(row.result()) : null,
+                    "submitted".equals(row.status()) ? SubmissionResults.result(json, row.result(), row.score(), row.maxScore(), row.gradingStatus()) : null,
                     row.revision() == null ? 0 : row.revision(), decode(row.answerState()), decode(row.outlineStates())));
         }
         // The revision is an opaque validator, not a raw bank hash containing answer-dependent information.
@@ -92,7 +92,7 @@ public class PracticeReadService {
         return renderQuestion(userId, qid, collection, question, context, row, stamp);
     }
 
-    public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template) {}
+    public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId, String collectionSnapshot) {}
 
     /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
     public PreparedDraft prepareDraft(String userId, String id, String qid) {
@@ -102,7 +102,37 @@ public class PracticeReadService {
         String context = context(userId, id);
         var template = renderQuestion(userId, qid, collection, question, context, null,
                 stamps.stamp(context, qid, 0, question.contentSha256(), question.extensionDigest()));
-        return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template);
+        return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template, userId,
+                collectionSnapshot(collection, context, userId));
+    }
+
+    /** Validate the public version without projecting or grading; receipt replay must not execute rules. */
+    public void validateContentVersion(String userId, String collectionId, String qid, String contentVersion) {
+        var source = source(userId, collectionId, qid);
+        String context = context(userId, collectionId);
+        if (contentVersion != null && !contentVersion.equals(stamps.stamp(context, qid, 0,
+                source.question().contentSha256(), source.question().extensionDigest()).contentVersion())) {
+            throw new ApiException(HttpStatus.CONFLICT, "CONTENT_CONFLICT", "题目内容版本已变化，请刷新后重试");
+        }
+    }
+
+    private String collectionSnapshot(PracticeReadRows.Collection collection, String context, String userId) {
+        var snapshot = json.createObjectNode();
+        snapshot.put("id", collection.id()); snapshot.put("kind", "bank"); snapshot.put("title", collection.title());
+        snapshot.put("description", collection.description());
+        snapshot.set("features", features(collection)); snapshot.set("listening", listeningMetadata(collection));
+        var items = snapshot.putArray("questions");
+        for (var row : reads.questions(collection.bankId(), context, userId)) {
+            var outline = decode(row.outline());
+            var item = items.addObject(); item.put("id", row.id()); item.put("title", row.title());
+            item.put("contentSha256", hex(row.contentSha256()));
+            item.set("type", json.valueToTree(new Extension(row.extensionId(), row.extensionVersion(), row.extensionName(), hex(row.extensionDigest()))));
+            item.set("outline", outline); item.set("listening", decode(row.listening()));
+            item.set("outlineLabel", outline != null && "question".equals(outline.path("level").asString()) ? outline.get("label") : null);
+            item.set("outlineItems", outline != null && "parts".equals(outline.path("level").asString()) ? outline.get("items") : null);
+            item.put("outlineGroupIndex", row.outlineGroupIndex()); item.put("outlineGroupName", row.outlineGroupName());
+        }
+        return json.writeValueAsString(snapshot);
     }
 
     /** Internal rule input; ownership, availability and exact question lookup match the read path. */
@@ -134,12 +164,12 @@ public class PracticeReadService {
             if (projected == null) throw unavailable();
         }
         State state = row == null ? new State("unanswered", null, null, 0, null, null)
-                : new State(row.status(), decode(row.answer()), submitted ? decode(row.result()) : null, row.revision(),
+                : new State(row.status(), decode(row.answer()), submitted ? SubmissionResults.result(json, row.result(), row.score(), row.maxScore(), row.gradingStatus()) : null, row.revision(),
                         decode(row.answerState()), decode(row.outlineStates()));
         return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
                 reads.whiteboard(context, qid, userId).map(json::readTree).orElse(null), stamp,
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
-                features(collection), new Capabilities(!submitted, false, false, false, false, false), null);
+                features(collection), new Capabilities(!submitted, !submitted, false, false, false, false), null);
     }
 
     private String project(ExtensionPackageRow extension, String data) {
