@@ -1,7 +1,7 @@
 # 题库包格式 4
 
-> **文档版本：** v0.6
-> **日期：** 2026-10-29
+> **文档版本：** v0.7
+> **日期：** 2026-10-31
 > **依据：** [需求 v1.3 C-01、FR-09](../requirements/01-requirements.md)，[遗留契约 C-01～C-04](../legacy/01-contracts.md)，[数据库设计](01-database.md)，[题库共享与更新](04-bank-sharing-and-updates.md)
 > **参照：** 旧格式 3 的规则（`quizforge_web/core/docs/reference/LIBRARY_PACKAGES.md`、`QUESTION_BANK_FORMAT.md`、`LISTENING.md`，`core/server/host/library/library-archive.js`、`directories.js`、`library-package.js` @ `4522bb8`）
 
@@ -30,6 +30,7 @@
 | 资源文件命名 | 图片不再要求 `<sha256>.<扩展名>`，**图片与音频都可自由命名**；引用方式不变（见第 6.3 节） |
 | 资源类型 | 改为由**资源类型规则表**（第 6 节）统一定义 |
 | 大小上限 | 上传 64 → **128 MiB**，解压 128 → **256 MiB**（第 7 节） |
+| 题目大纲 | 每题的 `outline` 字段**删除**，改为 `bank.json` 顶层集中定义的 `outline`；大纲同时决定**题序**与**分组**（第 4.3 节） |
 | 旧格式兼容分支 | **删除**：`{id,version}` 旧绑定、分组根下的独立 JSON 题库、`development.json`、根平铺拓展等升级提示均不再需要 |
 
 ## 3. 包结构
@@ -95,10 +96,12 @@ extensions/<组>/
     "materials": [{"id": "part-a", "title": "Part A", "file": "assets/part-a.mp3"}],
     "examMaterialId": "part-a"
   },
+  "outline": [
+    {"group": "完形填空", "items": [{"question": "q1", "label": "1"}]}
+  ],
   "questions": [{
     "id": "q1",
     "title": "第 1 题",
-    "outline": {"level": "question", "label": "1"},
     "listening": {"materialId": "part-a"},
     "data": { }
   }]
@@ -115,7 +118,8 @@ extensions/<组>/
 | `extension` | 可选的默认绑定 `{path, id?}`，逐题绑定优先 |
 | `features` | 可选，只允许 `editing`、`whiteboard`、`history`、`exam` 四个布尔字段，省略为 `true`。在线版：`whiteboard`、`exam` 生效；`editing` 不使用；`history:false` 忽略（统一保存历史） |
 | `listening` | 可选，见 4.2 |
-| `questions` | 1～10000 项，按题序排列 |
+| `outline` | 可选，题目大纲，见 4.3。**写了大纲时，题序由大纲决定** |
+| `questions` | 1～10000 项。有 `outline` 时只是题目集合，数组顺序不影响题序；无 `outline` 时按数组顺序排列 |
 
 每道题：
 
@@ -124,7 +128,6 @@ extensions/<组>/
 | `id` | 匹配 `^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$`，同一题库内唯一（区分大小写） |
 | `title` | 非空，最多 300 字符 |
 | `extension` | 可选的逐题绑定；**每道题必须有有效绑定**（逐题或默认） |
-| `outline` | 可选，`{level:"question",label}` 或 `{level:"parts",items:[{id,label}]}`（1～100 项），规则与格式 3 相同 |
 | `listening` | 可选，`{materialId}`，必须指向本题库声明的材料 |
 | `data` | 由所绑定拓展的 `questionSchema` 与规则校验，宿主不解析内部字段 |
 
@@ -144,6 +147,45 @@ extensions/<组>/
 | `materials[].title` | 1～160 字符 |
 | `materials[].file` | 必须是 `assets/<文件名>`，且该文件属于**音频**类型 |
 | `examMaterialId` | 可选，必须是已声明的材料 ID |
+
+### 4.3 题目大纲 `outline`
+
+大纲让用户看到自己在哪道题、快速跳转、看到每道题的作答情况。它由两种元素组成：**分组标签**（只用于分隔，不可点击）和**题目标签**（可点击跳转，颜色反映作答状态）。
+
+```json
+"outline": [
+  {"group": "完形填空", "items": [
+    {"question": "cloze", "parts": [
+      {"id": "p1", "label": "1"}, {"id": "p2", "label": "2"}]}
+  ]},
+  {"group": "阅读理解", "items": [
+    {"question": "reading-1", "parts": [{"id": "p21", "label": "21"}, {"id": "p22", "label": "22"}]},
+    {"question": "reading-2", "label": "Text 2"}
+  ]},
+  {"group": "写作", "items": [{"question": "essay"}]}
+]
+```
+
+| 元素 | 约束 |
+| --- | --- |
+| `outline` | 1～10000 个分组组成的数组 |
+| 分组 | 恰好 `{group?, items}`。`group` 可选，1～80 纯文本；省略时该组不显示标题。相邻分组同名也各自成组，不合并 |
+| `items` | 1～10000 项 |
+| 题目项 | `{question, label?}` 或 `{question, parts}`，`label` 与 `parts` **不可同时出现** |
+| `question` | 引用 `questions[].id`，精确匹配（区分大小写） |
+| `label` | 1～80 纯文本：大纲中显示这一个大题标签，小题不显示 |
+| `parts` | 1～100 项 `{id,label}`：大纲中显示这些小题标签，大题本身不显示；要求绑定拓展声明 `outline-items`（规则同附录 A.3） |
+| 两者都省略 | 与格式 3 无显式大纲时相同：拓展声明并实现 `outline-items` 时由 `outlineBatch` 派生小题；否则显示自动编号（题序号） |
+
+**整体规则（导入时校验，违反即拒绝，不修正）：**
+
+1. 写了 `outline` 时，**每道题必须恰好出现一次**：引用不存在的题、重复引用、遗漏任何一题都拒绝。
+2. **题序 = 大纲中出现的先后**（跨分组连续计算），导入时写入 `content_question.position`。题卡顺序、“下一题”、大纲排列都以它为准。
+3. 一道大题只能整体出现在一个位置，它的小题随大题出现，不能拆到不同分组。
+4. 省略 `outline` 时：题序取 `questions` 数组顺序，按题型（相邻且绑定同一拓展）自动分组，标签为自动编号或派生小题，与当前样例题库的行为一致。
+5. 小题 `id` 是作答状态（`outline_states`）和跳转的稳定标识，题目 `id` 是作答记录的稳定标识，题库更新时都不应改变；`label`、`group` 只用于显示，可随时修改。
+
+**调整顺序的权限：** 题序只能由题库开发者在开发版（本地编辑器）中调整，例如在大纲中拖动，导出新版本后上传。网页端用户**没有修改题库的权限**，不能调整题序、分组或标签；V2 网页端不提供个人自定义题序。
 
 ## 5. 拓展
 
@@ -270,6 +312,7 @@ M2 的来源 JSON 为 `{"type":"upload","filename":"原文件名.qbank"}`，sour
 | 编号 | 事项 |
 | --- | --- |
 | PK-1 | 视频资源的上限、引用方式与播放（第 6.2 节） |
+| PK-3 | 开发版编辑器中通过拖动大纲调整题序（写回 `outline` 顺序）；属于 Windows / 本地开发版，不在 V2 网页端范围 |
 | PK-2 | `assets/` 中未被引用的资源：目前照样存储（与“直接拷贝”一致），是否需要提示制作者 |
 
 ## 附录 A：沿用的旧版规则
@@ -297,13 +340,15 @@ M2 的来源 JSON 为 `{"type":"upload","filename":"原文件名.qbank"}`，sour
 | description | 可选字符串，允许空串，最多 4000 | `library/collections.js:optional/prepareCollection` |
 | features | 仅 editing/whiteboard/history/exam 四个 boolean；对象或字段省略默认 true，禁止题目级覆盖。解析器保留显式 false，在线版对 editing/history 的使用策略留给业务层 | `library/features.js:BankFeatures.read`；`library/collections.js:prepareCollection`；正文第 4 节 |
 | questions | 数组 1～10000，保持题序 | `library/collections.js:prepareCollection` |
-| 每题 | 仅 id/title/extension/outline/listening/data；id/title/data 必填。id 按 A.1，同库区分大小写且唯一；title 非空最多 300；data 必须存在，内部类型/字段不额外加宿主约束。根字段白名单同样是**格式 4 已改** | `library/collections.js:prepareCollection`；正文第 1、4 节 |
+| 每题 | 仅 id/title/extension/listening/data（**格式 4 已改**：`outline` 移到 `bank.json` 顶层，第 4.3 节）；id/title/data 必填。id 按 A.1，同库区分大小写且唯一；title 非空最多 300；data 必须存在，内部类型/字段不额外加宿主约束。根字段白名单同样是**格式 4 已改** | `library/collections.js:prepareCollection`；正文第 1、4 节 |
 | extension | 根默认或逐题绑定，逐题优先；存在的根默认也须有效。每题最终必须有有效绑定；仅 `{path,id?}` | `library/collections.js:prepareCollection`；`library/identity.js:referenceIdentity/findExtension`；正文第 4.1 节 |
 | path | 非空字符串，最多 1000，精确指向本包 `extensions/<组>/<拓展>`；不按 ID/名称/大小写猜测 | `library/identity.js:extensionPath/findExtension` |
 | 可选 id | 按 A.1 的 ID 规则，与目标 manifest.id 精确一致 | `library/identity.js:referenceIdentity/findExtension` |
 | 旧绑定 | **格式 4 已改**：不接受 `{id,version}`、development、typeId 或其他键，没有旧绑定兼容分支 | `library/identity.js:referenceIdentity`；`EXTENSIONS.md:绑定、样例与旧数据`；正文第 2、4.1 节 |
 
 ### A.3 显式大纲
+
+格式 4 中这些规则适用于顶层 `outline` 的题目项：`label` 对应旧版 `{level:"question",label}`，`parts` 对应旧版 `{level:"parts",items}`。
 
 | 规则 | 限制 | 出处 |
 | --- | --- | --- |
@@ -371,3 +416,4 @@ M2 的来源 JSON 为 `{"type":"upload","filename":"原文件名.qbank"}`，sour
 | v0.4 | 2026-10-29 | 明确题库内容哈希的版本化输入与规范序列化，V3 放宽拓展元数据列长 |
 | v0.5 | 2026-10-29 | 补充 M2 导入事务、规则分批、题目内容哈希、满分精度与 V4 审核版本列长 |
 | v0.6 | 2026-10-29 | `bank.json` 的 `id` 改为必填 UUID（包内唯一），作为题库在题库广场中的身份 |
+| v0.7 | 2026-10-31 | 题目大纲改为 `bank.json` 顶层集中定义（4.3）：作者手写分组、大纲决定题序、必须覆盖全部题目；删除每题 `outline`；题序只能在开发版中调整，网页端用户无修改题库权限 |
