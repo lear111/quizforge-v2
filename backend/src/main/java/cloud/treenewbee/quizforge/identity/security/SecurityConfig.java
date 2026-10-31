@@ -20,6 +20,18 @@ import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 public class SecurityConfig {
 
     @Bean
+    @org.springframework.core.annotation.Order(1)
+    SecurityFilterChain metricsSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http.securityMatcher("/actuator", "/actuator/**")
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(c -> c.disable())
+                .authorizeHttpRequests(a -> a
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/actuator/prometheus").permitAll()
+                        .anyRequest().denyAll())
+                .build();
+    }
+
+    @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             @Value("${qf.security.allowed-origin}") String allowedOrigin,

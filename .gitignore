@@ -20,3 +20,10 @@ data/
 
 # Generated authenticated SDK payloads.
 frontend/.generated-sdk/
+
+# Local load-test accounts and credentials
+loadtest/users.json
+loadtest/users.tmp
+loadtest/*.seed-state.json
+loadtest/*.seed-state.tmp
+loadtest/seed/__pycache__/

@@ -3,6 +3,12 @@ package cloud.treenewbee.quizforge.rules;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -39,8 +45,15 @@ public class RuleRunnerClient {
     private final JsonMapper json;
     private final HttpClient http;
     private final Semaphore permits;
+    private final MeterRegistry meters;
 
     public RuleRunnerClient(RuleRunnerProperties properties, JsonMapper json) {
+        this(properties, json, new SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public RuleRunnerClient(RuleRunnerProperties properties, JsonMapper json, MeterRegistry meters) {
+        this.meters = meters;
         this.properties = properties;
         this.json = json;
         this.http = HttpClient.newBuilder()
@@ -48,6 +61,10 @@ public class RuleRunnerClient {
                 .connectTimeout(Duration.ofSeconds(2))
                 .build();
         this.permits = new Semaphore(properties.maxConcurrency());
+        Gauge.builder("qf.rule.runner.bulkhead.active", permits,
+                p -> properties.maxConcurrency() - p.availablePermits()).register(meters);
+        Gauge.builder("qf.rule.runner.bulkhead.limit", properties, RuleRunnerProperties::maxConcurrency).register(meters);
+        meters.counter("qf.rule.runner.bulkhead.rejected");
     }
 
     /** 使用默认时限执行一个操作。 */
@@ -64,21 +81,44 @@ public class RuleRunnerClient {
     public RuleResult execute(String op, RulePackage rulePackage, Map<String, ?> input, Duration deadline) {
         HttpRequest request = buildRequest(op, rulePackage, input, deadline);
 
-        if (!permits.tryAcquire()) {
-            throw new RuleRunnerException("rule-runner 并发已满");
-        }
+        String operation = metricOp(op);
+        Timer.Sample timing = Timer.start(meters);
+        boolean acquired = permits.tryAcquire();
         try {
+            if (!acquired) {
+                meters.counter("qf.rule.runner.bulkhead.rejected").increment();
+                throw new RuleRunnerException("rule-runner 并发已满");
+            }
+            RuleResult result;
             try {
-                return send(request);
+                result = send(request);
             } catch (RuleRunnerException e) {
                 if (e.getCause() instanceof ConnectException) {
-                    return send(request); // 连接失败，重试一次
-                }
-                throw e;
+                    result = send(request); // 连接失败，重试一次
+                } else throw e;
             }
+            if (!result.ok() && "RULE_TIMEOUT".equals(result.code())) {
+                meters.counter("qf.rule.runner.timeouts", "op", operation, "source", "runner").increment();
+            }
+            return result;
+        } catch (RuleRunnerException e) {
+            if (e.getCause() instanceof HttpTimeoutException) {
+                meters.counter("qf.rule.runner.timeouts", "op", operation, "source", "http").increment();
+            }
+            throw e;
         } finally {
-            permits.release();
+            if (acquired) permits.release();
+            timing.stop(Timer.builder("qf.rule.runner.duration").tag("op", operation).register(meters));
         }
+    }
+
+    private static String metricOp(String op) {
+        if (op == null) return "other";
+        return switch (op) {
+            case "capabilities", "validateBank", "outlineBatch", "scoreBatch", "project", "projectBatch",
+                    "validateAnswer", "submit", "review", "prepareAiGrading" -> op;
+            default -> "other";
+        };
     }
 
     /** 发送一次请求并解析响应；网络错误和非 200 状态都转换成 RuleRunnerException。 */

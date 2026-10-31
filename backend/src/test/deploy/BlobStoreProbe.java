@@ -9,7 +9,7 @@ public final class BlobStoreProbe {
         Class<?> boot = Class.forName("org.springframework.boot.SpringApplication");
         Class<?> application = Class.forName("cloud.treenewbee.quizforge.QuizForgeApplication");
         Object context = boot.getMethod("run", Class.class, String[].class).invoke(null, application,
-                new String[] {"--server.port=0", "--spring.main.banner-mode=off", "--logging.level.root=ERROR"});
+                new String[] {"--server.port=0", "--management.server.port=0", "--spring.main.banner-mode=off", "--logging.level.root=ERROR"});
         try {
             Class<?> storage = Class.forName("cloud.treenewbee.quizforge.content.infrastructure.BlobStore");
             Object store = context.getClass().getMethod("getBean", Class.class).invoke(context, storage);
