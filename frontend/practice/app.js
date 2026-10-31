@@ -44,7 +44,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?(collection.readOnly?'当前题库没有可保存的未提交题目。':'草稿会自动保存；提交和白板功能尚未开放。'):'';
+const practiceNotice=collection=>collection?.kind==='bank'?(collection.readOnly?'当前题库没有可保存的未提交题目。':'草稿会自动保存；可提交判分，白板功能尚未开放。'):'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
