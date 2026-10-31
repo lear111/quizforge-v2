@@ -54,6 +54,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check local fixture answer adapters (no network or load)
+        run: python3 -B -m unittest discover -s loadtest/seed -p 'test_*.py'
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

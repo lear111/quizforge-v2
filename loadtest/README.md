@@ -34,7 +34,9 @@ python loadtest/seed/seed.py --project $project --base-url http://localhost:8099
 
 脚本通过 HTTP 登录/注册，上传 `samples/basic-types.qbank`，再用同一 Compose 项目的 MySQL 执行样例拓展审批 SQL（reviewer=loadtest-fixture）。只批准这些实例引用的摘要；这是压测白名单夹具，不是审核流程。脚本会拒绝远程 URL、HTTP 重定向、远程 Docker 连接、没有 `qf.loadtest=true` 标签的 MySQL，以及不匹配该项目 Nginx 映射端口的 URL。
 
-生成 `loadtest/users.json`，格式为数组：`[{email,password,collections:[{id,title,questionIds:[...]}]}]`。包含明文测试密码，已加入 gitignore，不上传到 PR 或制品。每个用户有五本基础题型题库。重复执行时使用文件中的账号密码，已有且仍可访问的实例不重复导入；账号密码同时保存在同目录的 `users.seed-state.json` 检查点中（同样已忽略）；人数减少时仍保留其他账号的密码。不要删除这些文件后对同一个数据库重跑（会丢失随机密码）。从头重建时同时使用全新 Compose 项目和新 `--output` 文件，或只删除自己的隔离项目卷及造数文件。中断时已完成的账号会保存在检查点中。
+生成 `loadtest/users.json`，格式为数组：`[{email,password,collections:[{id,title,sample,questionIds:[...],answers:{题目ID:作答对象}}]}]`。包含明文测试密码，已加入 gitignore，不上传到 PR 或制品。每个用户有五本基础题型题库和一本 `loadtest-300`（混合 300 题），共 305 道可见题。重复执行时使用文件中的账号密码，已有且仍可访问的实例不重复导入；旧版仅含五本基础题型的检查点会保留这些实例，只补导入压测题库。账号密码同时保存在同目录的 `users.seed-state.json` 检查点中（同样已忽略）；人数减少时仍保留其他账号的密码。不要删除这些文件后对同一个数据库重跑（会丢失随机密码）。从头重建时同时使用全新 Compose 项目和新 `--output` 文件，或只删除自己的隔离项目卷及造数文件。每次导入完成都会保存检查点。
+
+`answers[qid]` 可直接放进动作请求的 `data.answer`，不是字符串化的 JSON。生成器读取 `.qbank` 内原始题目 data，以及 manifest 指定的 questionSchema / answerSchema；不从读题 API 获取标准答案。单选、多选和判断使用 data 中的正确答案，选项 ID 不硬编码；两种简答题按真实小题 ID 分别生成富文本或答题区文本。答题区还遵循固定上游 `rules.js` 的 `areaId()` / `height()` / `areaValid()`：ID 为 `response-<小题ID>`，高度取 data.answerHeight，省略时为 480；这些跨字段约束无法仅靠 JSON Schema 推断。未被集中大纲引用的题不输出作答。不支持的 schema 明确失败，不猜测合法答案。这里只适配固定来源的五种基础拓展，不是通用的 JSON Schema 作答生成器。
 
 参数 `--users N` 指定本次输出人数。默认输出位置固定，切换项目时也应切换 `--output`；k6 则需将所用文件复制为其挂载目录的 users.json。脚本默认严格串行，避免把造数阶段当作压测。测试账号使用 `loadtest-0000@example.test` 等固定名称。
 
@@ -47,6 +49,18 @@ docker compose @compose --profile tools run --rm k6 run smoke.js
 ```
 
 `smoke.js` 固定 1 VU、1 次迭代，只登录并读取 users.json 第一人的第一道题；校验全部成功且 HTTP 错误率为 0。BASE_URL 默认是本地 Compose 的 `http://nginx`，Origin 取上述 QF_PUBLIC_ORIGIN。Cookie 在正式接口中带 Secure；本地 HTTP 冒烟客户端显式复制登录响应中的 Cookie 到读题请求头，不改变服务端 Cookie 安全属性。不自动跟随重定向。脚本只允许 Compose nginx 或 loopback 地址。
+
+### 作答正确性验证（会提交题目）
+
+对全新、可丢弃的本地造数项目运行：
+
+```powershell
+python -B -m unittest discover -s loadtest/seed -p 'test_*.py'
+python loadtest/seed/verify_answers.py --base-url http://localhost:8099
+# 自定义 seed --output 时，传同一 --users-file；默认只验证第一位用户。
+```
+
+验证脚本对该用户的全部 305 个 answers 逐个读题、HTTP 保存草稿、HTTP 提交，要求两个写操作均为 200；303 道客观题必须取得题库 data 声明的满分。普通简答题保持拓展的 graded/0，答题区简答保持 pending/null。它会消耗这位用户的未提交状态，不要在准备正式测量的账号上运行；再次验证应换新项目/账号。seed 重跑只复用题库实例，不重置已提交状态。该脚本是串行正确性测试，不是 k6 场景或容量测试；CI 只运行无网络的 Python 单元测试，不运行造数或 HTTP 写入验证。
 
 ## Grafana 与指标
 
