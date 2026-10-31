@@ -61,7 +61,9 @@ class SecurityIntegrationTest extends MySqlTestBase {
     @Autowired JdbcTemplate jdbc;
     @Autowired Clock clock;
     @Autowired ApplicationContext context;
-    @Autowired SecurityFilterChain securityChain;
+    @Autowired
+    @org.springframework.beans.factory.annotation.Qualifier("securityFilterChain")
+    SecurityFilterChain securityChain;
 
     private final List<String> userIds = new ArrayList<>();
     private final HttpClient http = HttpClient.newBuilder()

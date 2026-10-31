@@ -1,6 +1,10 @@
 package cloud.treenewbee.quizforge.practice.projection;
 
 import java.util.function.Supplier;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import org.springframework.stereotype.Component;
 
@@ -16,7 +20,10 @@ public class CaffeineProjectionCache implements ProjectionCache {
 
     private final Cache<ProjectionKey, String> cache;
 
-    public CaffeineProjectionCache() {
+    public CaffeineProjectionCache() { this(new SimpleMeterRegistry()); }
+
+    @Autowired
+    public CaffeineProjectionCache(MeterRegistry meters) {
         this.cache = Caffeine.newBuilder()
                 .maximumWeight(64L * 1024 * 1024)
 
@@ -25,6 +32,7 @@ public class CaffeineProjectionCache implements ProjectionCache {
 
                 .recordStats()
                 .build();
+        CaffeineCacheMetrics.monitor(meters, cache, "projection");
     }
 
     @Override

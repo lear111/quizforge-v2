@@ -51,3 +51,24 @@ qf:
     token: ${QF_RULE_RUNNER_TOKEN:quizforge-local-rule-token}
     max-concurrency: ${QF_RULE_RUNNER_CONCURRENCY:8}
     default-deadline: 8s
+
+# Separate listener: loopback by default; Compose monitoring opts into its private network.
+management:
+  server:
+    port: ${QF_MANAGEMENT_PORT:9091}
+    address: ${QF_MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        qf.rule.runner.duration: true
+      minimum-expected-value:
+        http.server.requests: 1ms
+        qf.rule.runner.duration: 1ms
+      maximum-expected-value:
+        http.server.requests: 120s
+        qf.rule.runner.duration: 120s
