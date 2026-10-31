@@ -7,12 +7,17 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
+import java.math.RoundingMode;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper;
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundMapper;
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundQuestionRow;
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundRow;
 import cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptRow;
@@ -30,12 +35,28 @@ public class SubmitService {
     private final PracticeContextMapper contexts;
     private final PracticeRoundMapper rounds;
     private final ReceiptMapper receipts;
-    private final RoundSnapshots snapshots;   // Codex 之后来写：组装轮次和单题快照的 JSON
+    private final RoundSnapshots snapshots;
     private final TransactionTemplate tx;
     private final Clock clock;
     private final JsonMapper json;
 
     // 构造器
+    public SubmitService(PracticeReadService reads, DraftService drafts, SubmitGrader grader,
+                        QuestionStateMapper states, PracticeContextMapper contexts, PracticeRoundMapper rounds,
+                        ReceiptMapper receipts, RoundSnapshots snapshots, TransactionTemplate tx,
+                        Clock clock, JsonMapper json) {
+        this.reads = reads;
+        this.drafts = drafts;
+        this.grader = grader;
+        this.states = states;
+        this.contexts = contexts;
+        this.rounds = rounds;
+        this.receipts = receipts;
+        this.snapshots = snapshots;
+        this.tx = tx;
+        this.clock = clock;
+        this.json = json;
+    }
 
     public String submit(String userId, String requestId, String collectionId, String questionId,
                          long clientRevision, JsonNode answer) {
@@ -49,7 +70,8 @@ public class SubmitService {
 
             // 1. 先保存答案
             var prepared = reads.prepareDraft(userId, collectionId, questionId);   // 内含 contextId、contentSha256
-            long revision = drafts.saveDraft(userId, prepared.contextId(), questionId, clientRevision, answerJson,
+            String contextId = prepared.contextId();
+            long revision = drafts.saveDraft(userId, contextId, questionId, clientRevision, answerJson,
                     prepared.contentSha256());   // 事务内保存草稿，revision +1
 
             // 2. 事务外判分
@@ -58,7 +80,7 @@ public class SubmitService {
             // 3. 事务内写入
             return tx.execute(status -> {
                 Instant now = clock.instant();
-                var context = contexts.lockForUpdate(prepared.contextId(), userId)
+                var context = contexts.lockForUpdate(contextId, userId)
                         .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "题库不存在"));
 
                 int updated = states.submit(
@@ -69,27 +91,37 @@ public class SubmitService {
                         outcome.outlineStatesJson(),
                         outcome.projectedJson(),
                         now,
-                        prepared.contextId(),
+                        contextId,
                         questionId,
                         userId,
                         revision
                 );   // 分数先用 scale4() 处理
-                if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "CONFLICT", "答案已被修改或已提交");         // 409，判分期间答案被改了，或者已经提交过了
+                if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "REVISION_CONFLICT", "答案已被修改或已提交");
 
                 String roundId = context.currentRoundId();
                 if (roundId == null) {
                     roundId = UUID.randomUUID().toString();
-                    // 创建轮次：rounds.insertRound(new PracticeRoundRow(...))，mode 是 "practice"，status 是 "in_progress"，
-                    // collectionSnapshot 用 snapshots.collection(prepared)，summary、completedAt、deletedAt 填 null
-                    rounds.insertRound(new PracticeRoundRow(roundId, userId, collectionId, prepared.contextId(), "practice", "in_progress", snapshots.collection(prepared), null, now, now, null, null));
-                    contexts.setCurrentRound(contextId, userId, roundId, now);   // contexts.setCurrentRound(...)
+                    if (rounds.insertRound(new PracticeRoundRow(roundId, userId, collectionId, contextId, "practice", "in_progress",
+                            snapshots.collection(prepared), null, now, now, null, null)) != 1) {
+                        throw new IllegalStateException("创建轮次失败");
+                    }
+                    if (contexts.setCurrentRound(contextId, userId, roundId, now) != 1) {
+                        throw new IllegalStateException("设置当前轮次失败");
+                    }
                 }
-                // 冻结单题快照：payload 用 snapshots.question(prepared, answer, outcome)
-                rounds.insertQuestionSnapshot(new PracticeRoundQuestionSnapshotRow(roundId, questionId, userId, snapshots.question(prepared, answer, outcome), prepared.extensionDigest(), now));
-                contexts.incrementSummaryVersion(contextId, userId, now);   // 汇总版本号 +1
+
+                // upsert：插入时返回 1，更新时返回 2，所以判断 < 1
+                if (rounds.upsertRoundQuestion(new PracticeRoundQuestionRow(roundId, questionId, userId,
+                        snapshots.question(prepared, answer, outcome), prepared.extensionDigest(), now)) < 1) {
+                    throw new IllegalStateException("保存题目快照失败");
+                }
+
+                if (contexts.bumpProgressVersion(contextId, userId, now) != 1) {
+                    throw new IllegalStateException("更新汇总版本失败");
+                }
 
                 String response = "{\"revision\":" + (revision + 1) + "}";
-                receipts.insert(userId, requestId, hash, response);   // 写回执
+                receipts.insert(userId, requestId, hash, response);
                 return response;
             });
         } catch (DuplicateKeyException e) {
@@ -102,7 +134,7 @@ public class SubmitService {
 
     /** 分数与满分用同一规则舍入到 4 位小数，保证"满分才算全对"的比较不受精度影响；待评分时为 null。 */
     private static BigDecimal scale4(BigDecimal value) {
-        return value != null ? value.setScale(4, BigDecimal.RoundingMode.HALF_UP) : null;   // 注意 null
+        return value != null ? value.setScale(4, RoundingMode.HALF_UP) : null;   // 注意 null
     }
 
     // replay、recheck、requestHash：参考 IdempotentDraftService 自己写
