@@ -1,6 +1,7 @@
 package cloud.treenewbee.quizforge.shared.web;
 
 import java.util.UUID;
+import cloud.treenewbee.quizforge.rules.RuleRunnerException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ErrorResponse> handleApi(ApiException error) {
         return ResponseEntity.status(error.status()).body(ErrorResponse.of(error.code(), error.getMessage()));
+    }
+
+    @ExceptionHandler(RuleRunnerException.class)
+    ResponseEntity<ErrorResponse> handleRuleUnavailable(RuleRunnerException error) {
+        log.warn("Rule service unavailable", error);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of("RULE_UNAVAILABLE", "规则服务暂时不可用，请稍后重试"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
