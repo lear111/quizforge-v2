@@ -41,7 +41,7 @@ public interface PracticeReadMapper {
     @Select("""
             SELECT q.question_id AS id, q.title, q.outline, q.listening, q.extension_digest,
                    e.extension_id, e.version AS extension_version, e.name AS extension_name,
-                   s.status, s.answer_state, s.result, s.outline_states, s.revision
+                   s.status, s.answer_state, s.result, s.outline_states, s.revision, q.outline_group_index, q.outline_group_name
             FROM content_question q
             JOIN content_extension_package e ON e.digest = q.extension_digest
             LEFT JOIN practice_question_state s ON s.context_id = #{contextId}

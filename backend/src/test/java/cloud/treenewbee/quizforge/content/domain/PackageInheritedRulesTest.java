@@ -18,34 +18,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class PackageInheritedRulesTest {
-    static Stream<Arguments> outlines() {
-        return Stream.of(outline("bad level", Map.of("level", "other", "label", "1")),
-                outline("missing label", Map.of("level", "question")), outline("extra field", Map.of("level", "question", "label", "1", "items", List.of())),
-                outline("empty label", Map.of("level", "question", "label", "")), outline("long label", Map.of("level", "question", "label", "x".repeat(81))),
-                outline("edge NBSP", Map.of("level", "question", "label", "\u00a01")), outline("HTML label", Map.of("level", "question", "label", "<b>")),
-                outline("control label", Map.of("level", "question", "label", "a\u0085b")), outline("empty parts", Map.of("level", "parts", "items", List.of())),
-                outline("duplicate parts", Map.of("level", "parts", "items", List.of(Map.of("id", "a", "label", "1"), Map.of("id", "a", "label", "2")))),
-                outline("long part ID", Map.of("level", "parts", "items", List.of(Map.of("id", "x".repeat(129), "label", "1")))),
-                outline("extra part field", Map.of("level", "parts", "items", List.of(Map.of("id", "a", "label", "1", "other", true)))));
-    }
-    @ParameterizedTest(name = "{0}") @MethodSource("outlines")
-    void appendixOutlineRejectsInvalidShapePlainTextLengthAndIds(String description, Object outline) throws Exception {
-        PackageFixture f = fixture(); f.question(q -> q.put("outline", outline));
-        assertThat(rejected(f, INVALID_QUESTION_BANK).getMessage()).contains("练习", "q1");
-    }
-    @Test
-    void outlinePartsRequireCapabilityAndAcceptExactLengthAndCountBoundaries() throws Exception {
-        PackageFixture f = fixture();
-        List<Object> items = new ArrayList<>();
-        for (int i = 0; i < 100; i++) items.add(Map.of("id", "x".repeat(126) + i, "label", "标".repeat(80)));
-        f.question(q -> q.put("outline", Map.of("level", "parts", "items", items)));
-        rejected(f, INVALID_QUESTION_BANK);
-        f.manifest(m -> m.put("requiresApi", Map.of("major", 1, "minMinor", 1, "capabilities", List.of("outline-items"))));
-        assertThat(f.parse().banks()).hasSize(1);
-        items.add(Map.of("id", "last", "label", "101"));
-        f.question(q -> q.put("outline", Map.of("level", "parts", "items", items))); rejected(f, INVALID_QUESTION_BANK);
-    }
-
     static Stream<Arguments> listeningFailures() {
         return Stream.of(listening("empty", b -> b.put("listening", Map.of("materials", List.of()))),
                 listening("unknown", b -> b.put("listening", Map.of("materials", List.of(material("one", "assets/a.mp3")), "extra", 1))),
@@ -204,6 +176,7 @@ class PackageInheritedRulesTest {
     @Test
     void questionAndBindingLengthBoundariesWithExampleUuid() throws Exception {
         PackageFixture f = fixture(); f.question(q -> { q.put("id", "q".repeat(120)); q.put("title", "题".repeat(300)); });
+        f.bank(PackageFixture::centralizeOutline);
         assertThat(f.parse().banks()).hasSize(1);
         f.question(q -> q.put("title", "x".repeat(299) + "😀")); rejected(f, INVALID_QUESTION_BANK);
         f = fixture(); f.bank(b -> b.put("extension", Map.of("path", "x".repeat(1001)))); rejected(f, INVALID_QUESTION_BANK);

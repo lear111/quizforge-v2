@@ -98,7 +98,7 @@ class ContentMapperTest extends MySqlTestBase {
     void questionPrimaryAndPositionUniqueKeysPreserveDecimalJsonAndNulls() throws Exception {
         String bank = Ids.uuidV7();
         var row = new QuestionRow(bank, "Q-1", 0, "原始题目", hash(), "{\"label\":\"一\"}", null,
-                "{\"answer\":\"私有答案\",\"score\":1.25}", new BigDecimal("1234.5678"), hash());
+                "{\"answer\":\"私有答案\",\"score\":1.25}", new BigDecimal("1234.5678"), hash(), 9999, "分组😀");
         assertThat(questions.insert(row)).isEqualTo(1);
         for (var stored : new QuestionRow[] {questions.findById(bank, "Q-1").orElseThrow(), questions.findByPosition(bank, 0).orElseThrow()}) {
             assertThat(stored).usingRecursiveComparison().ignoringFields("data", "outline").isEqualTo(row);
@@ -107,9 +107,9 @@ class ContentMapperTest extends MySqlTestBase {
         assertThat(questions.findById(bank, "q-1")).isEmpty();
         assertThat(questions.findById(Ids.uuidV7(), "Q-1")).isEmpty(); assertThat(questions.findByPosition(bank, 1)).isEmpty();
         assertThatThrownBy(() -> questions.insert(row)).isInstanceOf(DuplicateKeyException.class);
-        var samePosition = new QuestionRow(bank, "Q-2", 0, "second", hash(), null, null, "{}", BigDecimal.ZERO, hash());
+        var samePosition = new QuestionRow(bank, "Q-2", 0, "second", hash(), null, null, "{}", BigDecimal.ZERO, hash(), null, null);
         assertThatThrownBy(() -> questions.insert(samePosition)).isInstanceOf(DuplicateKeyException.class);
-        var nullable = new QuestionRow(bank, "Q-2", 1, "second", hash(), null, "{}", "[]", new BigDecimal("0.0000"), hash());
+        var nullable = new QuestionRow(bank, "Q-2", 1, "second", hash(), null, "{}", "[]", new BigDecimal("0.0000"), hash(), null, null);
         questions.insert(nullable);
         assertThat(questions.findById(bank, "Q-2").orElseThrow()).usingRecursiveComparison().isEqualTo(nullable);
     }
@@ -155,7 +155,7 @@ class ContentMapperTest extends MySqlTestBase {
         }
         int position = 0;
         for (String id : new String[] {"Q", "q"}) {
-            questions.insert(new QuestionRow(bank, id, position++, "题目", digest, null, null, "{}", new BigDecimal("1.0000"), hash()));
+            questions.insert(new QuestionRow(bank, id, position++, "题目", digest, null, null, "{}", new BigDecimal("1.0000"), hash(), null, null));
             assertThat(questions.findById(bank, id).orElseThrow().questionId()).isEqualTo(id);
         }
     }

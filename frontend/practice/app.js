@@ -593,7 +593,8 @@ const libraryTransfer=bindLibraryTransfer({request,getContext:()=>({kind:listMod
   onImported:result=>transitionTo(async()=>{
     await refreshCatalog();questionsCache.clear();pagesCache.clear();
     if(!activeKey){const first=catalog.banks.find(row=>!row.error&&row.availability?.available!==false);if(first)await openCollection(first.kind||'bank',first.id);}
-    notice(`已导入 ${result.collections?.length??result.importedBanks??0} 本题库。已有题库与进度保留。`);
+    const warnings=(result.collections||[]).flatMap(bank=>(bank.warnings||[]).map(warning=>`${bank.title}：${warning.message}（${warning.questionIds.join('、')}）`));
+    notice(`已导入 ${result.collections?.length??result.importedBanks??0} 本题库。已有题库与进度保留。${warnings.join('；')}`);
   })});
 $('#library-new-group').addEventListener('click',()=>libraryManager.open('group',null,'create'));
 bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline});

@@ -66,3 +66,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - page-assets.js 集中加载受鉴权的答题区 SDK；冻结页面已有组件时不重复加载。scripts/build-sdk.mjs 按 4522bb8 的 answer-area-component.js 组装器生成 JSON，并打包富文本静态/编辑组件；生成物仍不提交。
 - practice-context.js 遵守服务端 canSave/canSubmit/canRetry/canWhiteboard=false；app.js 显示只读阶段提示，自动打开时跳过审核中的题库；library-view.js 显示 availability。Bridge 沙箱和题型页面不改。
 - Nginx SDK 文件移到 internal 目录，API 鉴权后发送；公开 richtext bundle 路径关闭。宿主共用源码仍保留在 shared/。
+
+## 2026-10-31：格式 4 v0.7 集中大纲
+
+- `practice/outline/outline-groups.js` 改用服务端的 outlineGroupIndex / outlineGroupName，不再按拓展题型分组；相邻同名组不合并。
+- `practice/outline/outline-view.js` 只在作者提供分组名时显示标题，状态、高亮和跳转逻辑保留。
+- `practice/app.js` 展示导入响应 warnings 中未引用题的数量与 ID。

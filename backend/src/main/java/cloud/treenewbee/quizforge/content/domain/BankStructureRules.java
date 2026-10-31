@@ -16,7 +16,7 @@ final class BankStructureRules {
     static Set<String> validate(String name, Map<String, Object> bank, Map<String, QbankPackageParser.Asset> assets,
             Map<String, Map<String, Object>> extensions, String exampleOwner) {
         Consumer<String> rootFail = fail(name, null);
-        keys(bank, Set.of("formatVersion", "id", "version", "title", "description", "extension", "features", "listening", "questions"), rootFail);
+        keys(bank, Set.of("formatVersion", "id", "version", "title", "description", "extension", "features", "listening", "outline", "questions"), rootFail);
         if (!integer(bank.get("formatVersion"), 2, 2)) rootFail.accept("formatVersion 必须显式为整数 2");
         if (bank.containsKey("title")) text(bank, "title", 300, rootFail);
         optionalDescription(bank, rootFail);
@@ -29,19 +29,20 @@ final class BankStructureRules {
         Set<String> used = new HashSet<>();
         String fallback = bank.containsKey("extension") ? binding(bank.get("extension"), extensions, exampleOwner, rootFail) : null;
         if (fallback != null) used.add(fallback);
+        Map<String, Map<String, Object>> questionExtensions = new java.util.LinkedHashMap<>();
         Set<String> ids = new HashSet<>();
         for (Object raw : array(bank.get("questions"), 1, 10_000, rootFail)) {
             Map<String, Object> question = object(raw, rootFail);
             Object rawId = question.get("id");
             Consumer<String> questionFail = fail(name, rawId instanceof String id ? id : "<未提供>");
-            keys(question, Set.of("id", "title", "extension", "outline", "listening", "data"), questionFail);
+            keys(question, Set.of("id", "title", "extension", "listening", "data"), questionFail);
             if (!(rawId instanceof String id) || !ID.matcher(id).matches() || !ids.add(id)) questionFail.accept("题目 ID 无效或重复");
             text(question, "title", 300, questionFail);
             if (!question.containsKey("data")) questionFail.accept("缺少 data");
             String owner = question.containsKey("extension") ? binding(question.get("extension"), extensions, exampleOwner, questionFail) : fallback;
             if (owner == null) questionFail.accept("缺少有效的拓展绑定");
             used.add(owner);
-            if (question.containsKey("outline")) outline(question.get("outline"), extensions.get(owner), questionFail);
+            questionExtensions.put((String) rawId, extensions.get(owner));
             if (question.containsKey("listening")) {
                 Map<String, Object> listening = object(question.get("listening"), questionFail);
                 keys(listening, Set.of("materialId"), questionFail);
@@ -49,6 +50,7 @@ final class BankStructureRules {
             }
             images(question.get("data"), assets, questionFail);
         }
+        centralOutline(bank.get("outline"), questionExtensions, rootFail);
         return used;
     }
 
@@ -82,22 +84,40 @@ final class BankStructureRules {
         return ids;
     }
 
-    private static void outline(Object raw, Map<String, Object> extension, Consumer<String> fail) {
-        Map<String, Object> outline = object(raw, fail);
-        if ("question".equals(outline.get("level"))) {
-            keys(outline, Set.of("level", "label"), fail);
-            if (outline.size() != 2 || !plain(outline.get("label"), 80)) fail.accept("大题 outline 标签必须为 1～80 字符的纯文本");
-            return;
+    private static void centralOutline(Object raw, Map<String, Map<String, Object>> extensions, Consumer<String> fail) {
+        List<Object> groups = array(raw, 1, 10_000, detail -> fail.accept("outline：" + detail));
+        Set<String> referenced = new HashSet<>();
+        for (int g = 0; g < groups.size(); g++) {
+            String location = "outline[" + g + "]";
+            Consumer<String> groupFail = detail -> fail.accept(location + "：" + detail);
+            Map<String, Object> group = object(groups.get(g), groupFail);
+            keys(group, Set.of("group", "items"), groupFail);
+            if (group.containsKey("group") && !plain(group.get("group"), 80)) groupFail.accept("group 必须为 1～80 字符的纯文本");
+            List<Object> items = array(group.get("items"), 1, 10_000, detail -> fail.accept(location + ".items：" + detail));
+            for (int i = 0; i < items.size(); i++) {
+                String at = location + ".items[" + i + "]";
+                Consumer<String> itemFail = detail -> fail.accept(at + "：" + detail);
+                Map<String, Object> item = object(items.get(i), itemFail);
+                keys(item, Set.of("question", "label", "parts"), itemFail);
+                Object id = item.get("question");
+                if (!(id instanceof String) || !extensions.containsKey(id)) fail.accept(at + ".question：引用了不存在的题目「" + id + "」");
+                if (!referenced.add((String) id)) fail.accept(at + ".question：重复引用题目「" + id + "」");
+                if (item.containsKey("label") && item.containsKey("parts")) itemFail.accept("label 与 parts 不可同时出现");
+                if (item.containsKey("label") && !plain(item.get("label"), 80)) itemFail.accept("label 必须为 1～80 字符的纯文本");
+                if (!item.containsKey("parts")) continue;
+                if (!LegacyExtensionRules.outlineDeclared(extensions.get(id))) itemFail.accept("parts 需要题目「" + id + "」的拓展声明 outline-items 能力");
+                List<Object> parts = array(item.get("parts"), 1, 100, detail -> fail.accept(at + ".parts：" + detail));
+                Set<String> partIds = new HashSet<>();
+                for (int j = 0; j < parts.size(); j++) {
+                    String partAt = at + ".parts[" + j + "]";
+                    Consumer<String> partFail = detail -> fail.accept(partAt + "：" + detail);
+                    Map<String, Object> part = object(parts.get(j), partFail);
+                    keys(part, Set.of("id", "label"), partFail);
+                    if (!plain(part.get("id"), 128) || !partIds.add((String) part.get("id"))) partFail.accept("id 必须为唯一的 1～128 字符纯文本");
+                    if (!plain(part.get("label"), 80)) partFail.accept("label 必须为 1～80 字符的纯文本");
+                }
+            }
         }
-        keys(outline, Set.of("level", "items"), fail);
-        if (!"parts".equals(outline.get("level")) || outline.size() != 2) fail.accept("outline 必须选择 question 或 parts");
-        Set<String> ids = new HashSet<>();
-        for (Object value : array(outline.get("items"), 1, 100, fail)) {
-            Map<String, Object> item = object(value, fail);
-            keys(item, Set.of("id", "label"), fail);
-            if (item.size() != 2 || !plain(item.get("id"), 128) || !plain(item.get("label"), 80) || !ids.add((String) item.get("id"))) fail.accept("小题必须含唯一纯文本 id（最多 128 字符）和 label（最多 80 字符）");
-        }
-        if (!LegacyExtensionRules.outlineDeclared(extension)) fail.accept("显式小题目录需要所属拓展声明 API 1.1 outline-items 能力");
     }
 
     private static void images(Object data, Map<String, QbankPackageParser.Asset> assets, Consumer<String> fail) {
