@@ -69,7 +69,7 @@ public class PracticeReadService {
             questions.add(new QuestionSummary(row.id(), row.title(),
                     new Extension(row.extensionId(), row.extensionVersion(), row.extensionName(), hex(row.extensionDigest())),
                     outline != null && outline.path("level").asString().equals("question") ? outline.path("label").asString() : null,
-                    outline != null && outline.path("level").asString().equals("parts") ? outline.path("items") : null, decode(row.listening())));
+                    outline != null && outline.path("level").asString().equals("parts") ? outline.path("items") : null, decode(row.listening()), row.outlineGroupIndex(), row.outlineGroupName()));
             states.put(row.id(), new State(row.status() == null ? "unanswered" : row.status(), null,
                     "submitted".equals(row.status()) ? decode(row.result()) : null,
                     row.revision() == null ? 0 : row.revision(), decode(row.answerState()), decode(row.outlineStates())));
@@ -136,7 +136,7 @@ public class PracticeReadService {
         State state = row == null ? new State("unanswered", null, null, 0, null, null)
                 : new State(row.status(), decode(row.answer()), submitted ? decode(row.result()) : null, row.revision(),
                         decode(row.answerState()), decode(row.outlineStates()));
-        return new QuestionResponse(new Question(qid, question.title(), projected), state,
+        return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
                 reads.whiteboard(context, qid, userId).map(json::readTree).orElse(null), stamp,
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
                 features(collection), new Capabilities(!submitted, false, false, false, false, false), null);

@@ -67,10 +67,14 @@ public class ImportService {
         this.temporaryDirectory = Path.of(temporaryDirectory);
     }
 
-    public record ImportedCollection(String id, String bankId, String title, String groupName, boolean available) {}
+    public record ImportWarning(String code, String message, int count, List<String> questionIds) {}
+    public record ImportedCollection(String id, String bankId, String title, String groupName, boolean available,
+            List<ImportWarning> warnings) {}
     private record Extension(ParsedExtension parsed, RulePackage spec, boolean canOutline) {}
-    private record Question(Map<String, Object> author, Extension extension, Object outline, BigDecimal maxScore, String hash) {}
-    private record Bank(ParsedBank parsed, String hash, Map<String, String> assetHashes, List<Question> questions) {}
+    private record Placement(int groupIndex, String groupName, Object outline) {}
+    private record Question(Map<String, Object> author, Extension extension, Object outline, BigDecimal maxScore, String hash,
+            int groupIndex, String groupName) {}
+    private record Bank(ParsedBank parsed, String hash, Map<String, String> assetHashes, List<Question> questions, List<String> omittedIds) {}
 
     /** Caller owns the input stream. Parsing and all HTTP calls finish before the business transaction starts. */
     public List<ImportedCollection> importArchive(String userId, String filename, InputStream upload) {
@@ -116,6 +120,16 @@ public class ImportService {
             assetHashes.put(path.substring("assets/".length()), asset.sha256());
         });
         List<Map<String, Object>> authorQuestions = (List<Map<String, Object>>) bank.bank().get("questions");
+        Map<String, Placement> placements = new LinkedHashMap<>();
+        List<Map<String, Object>> outlineGroups = (List<Map<String, Object>>) bank.bank().get("outline");
+        for (int g = 0; g < outlineGroups.size(); g++) {
+            Map<String, Object> group = outlineGroups.get(g);
+            for (Map<String, Object> item : (List<Map<String, Object>>) group.get("items")) {
+                Object outline = item.containsKey("label") ? Map.of("level", "question", "label", item.get("label"))
+                        : item.containsKey("parts") ? Map.of("level", "parts", "items", item.get("parts")) : null;
+                placements.put((String) item.get("question"), new Placement(g, (String) group.get("group"), outline));
+            }
+        }
         Map<String, List<Integer>> groups = new LinkedHashMap<>();
         List<Extension> bindings = new ArrayList<>();
         for (int index = 0; index < authorQuestions.size(); index++) {
@@ -130,7 +144,10 @@ public class ImportService {
             Extension extension = extensions.get(group.getKey());
             List<Object> data = group.getValue().stream().map(i -> authorQuestions.get(i).get("data")).toList();
             rules.batch(extension.spec(), "validateBank", data, null);
-            List<Integer> missingOutline = group.getValue().stream().filter(i -> !authorQuestions.get(i).containsKey("outline")).toList();
+            List<Integer> missingOutline = group.getValue().stream().filter(i -> {
+                Placement placement = placements.get(authorQuestions.get(i).get("id"));
+                return placement == null || placement.outline() == null;
+            }).toList();
             Map<Integer, Object> outlines = new HashMap<>();
             if (extension.canOutline() && extension.spec().outlineItemsDeclared() && !missingOutline.isEmpty()) {
                 List<JsonNode> generated = rules.batch(extension.spec(), "outlineBatch",
@@ -151,14 +168,19 @@ public class ImportService {
             for (int i = 0; i < group.getValue().size(); i++) {
                 int index = group.getValue().get(i);
                 Map<String, Object> author = authorQuestions.get(index);
-                Object outline = author.containsKey("outline") ? author.get("outline") : outlines.get(index);
+                Placement placement = placements.get(author.get("id"));
+                Object outline = placement != null && placement.outline() != null ? placement.outline() : outlines.get(index);
                 if (outline instanceof JsonNode node) outline = json.readValue(node.toString(), Object.class);
                 prepared.set(index, new Question(author, extension, outline, maxScore(scores.get(i).path("maxScore")),
-                        QuestionContentHash.compute(author, extension.parsed().digest(), outline, bank.bank().get("listening"), assetHashes)));
+                        QuestionContentHash.compute(author, extension.parsed().digest(), outline, bank.bank().get("listening"), assetHashes),
+                        placement == null ? -1 : placement.groupIndex(), placement == null ? null : placement.groupName()));
             }
         }
         String hash = BankContentHash.compute(bank.bank(), assetHashes, bindings.stream().map(e -> e.parsed().digest()).toList());
-        return new Bank(bank, hash, Map.copyOf(assetHashes), List.copyOf(prepared));
+        Map<String, Question> byId = new LinkedHashMap<>();
+        prepared.forEach(question -> byId.put((String) question.author().get("id"), question));
+        List<String> omitted = byId.keySet().stream().filter(id -> !placements.containsKey(id)).toList();
+        return new Bank(bank, hash, Map.copyOf(assetHashes), placements.keySet().stream().map(byId::get).toList(), omitted);
     }
 
     private BigDecimal maxScore(JsonNode value) {
@@ -204,7 +226,7 @@ public class ImportService {
                 String digest = question.extension().parsed().digest();
                 rows.add(new QuestionRow(id, (String) question.author().get("id"), index, (String) question.author().get("title"),
                         hex(digest), nullableJson(question.outline()), nullableJson(question.author().get("listening")), encode(question.author().get("data")),
-                        question.maxScore(), hex(question.hash())));
+                        question.maxScore(), hex(question.hash()), question.groupIndex(), question.groupName()));
             }
             questions.insertBatch(rows);
             if (!bank.parsed().assets().isEmpty()) {
@@ -220,7 +242,10 @@ public class ImportService {
             String id = Ids.uuidV7(), bankId = ids.get(bank.hash()), title = bank.parsed().folderName();
             collections.insert(new PracticeCollectionRow(id, userId, bankId, title, group,
                     encode(Map.of("type", "upload", "filename", filename)), null, null, bank.parsed().bankKey(), null, "current", now, null));
-            result.add(new ImportedCollection(id, bankId, title, group, availability.isAvailable(bankId)));
+            List<ImportWarning> warnings = bank.omittedIds().isEmpty() ? List.of() : List.of(new ImportWarning(
+                    "QUESTIONS_NOT_IN_OUTLINE", bank.omittedIds().size() + " 道题未出现在大纲中，不会显示",
+                    bank.omittedIds().size(), bank.omittedIds()));
+            result.add(new ImportedCollection(id, bankId, title, group, availability.isAvailable(bankId), warnings));
         }
         return List.copyOf(result);
     }

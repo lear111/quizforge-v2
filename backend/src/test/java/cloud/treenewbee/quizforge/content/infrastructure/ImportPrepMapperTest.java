@@ -101,7 +101,7 @@ class ImportPrepMapperTest extends MySqlTestBase {
     void questionBatchPersistsEveryColumnAndOriginalOrderingInOneStatement() throws Exception {
         String bank = Ids.uuidV7();
         var first = question(bank, "q1", 0);
-        var second = new QuestionRow(bank, "q2", 1, "第二题", hash(), "[]", "{\"track\":\"a\"}", "null", new BigDecimal("0.0000"), hash());
+        var second = new QuestionRow(bank, "q2", 1, "第二题", hash(), "[]", "{\"track\":\"a\"}", "null", new BigDecimal("0.0000"), hash(), 1, "作者分组");
         assertThat(questions.insertBatch(List.of(first, second))).isEqualTo(2);
         assertThat(questions.findById(bank, "q1").orElseThrow()).usingRecursiveComparison().ignoringFields("data").isEqualTo(first);
         assertThat(JsonMapper.builder().build().readTree(questions.findByPosition(bank, 0).orElseThrow().data()))
@@ -152,6 +152,6 @@ class ImportPrepMapperTest extends MySqlTestBase {
 
     private static QuestionRow question(String bank, String id, int position) throws Exception {
         return new QuestionRow(bank, id, position, "题目中文", hash(), null, null,
-                "{\"answer\":\"原始答案\",\"weight\":1.25}", new BigDecimal("12.3456"), hash());
+                "{\"answer\":\"原始答案\",\"weight\":1.25}", new BigDecimal("12.3456"), hash(), null, null);
     }
 }

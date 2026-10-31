@@ -37,6 +37,16 @@ def image(value):
         return value.get('type') == 'image' or any(image(child) for child in value.values())
     return isinstance(value, list) and any(image(child) for child in value)
 
+def centralize(bank):
+    items = []
+    for question in bank['questions']:
+        item = {'question': question['id']}
+        old = question.pop('outline', None)
+        if old:
+            item['label' if old['level'] == 'question' else 'parts'] = old.get('label', old.get('items'))
+        items.append(item)
+    bank['outline'] = [{'items': items}]
+
 def files(types, scope):
     result = {'quizforge-package.json': encode(dict(format='quizforge-bank-group', formatVersion=4, group=GROUP, scope=scope))}
     for name in types:
@@ -50,12 +60,22 @@ def files(types, scope):
         for question in example['questions']:
             if 'extension' in question:
                 question['extension'] = {'path': prefix}
+        centralize(example)
         content['examples/bank.json'] = encode(example)
         result.update({f'{prefix}/{path}': value for path, value in content.items()})
         chosen = next((q for q in example['questions'] if name == '单选题' and image(q['data'])), example['questions'][0])
         question = copy.deepcopy(chosen)
         question.pop('extension', None)
         bank = dict(formatVersion=2, id=BANK_IDS[name], title=name, extension={'path': prefix}, questions=[question])
+        centralize(bank)
+        bank['outline'][0]['group'] = '基础练习'
+        if name == '单选题':
+            bank['outline'][0]['items'][0]['label'] = '示例 A'
+        if name == '简答题':
+            bank['outline'][0]['items'][0]['parts'] = [{'id': question['data']['parts'][0]['id'], 'label': '简答'}]
+        unused = copy.deepcopy(question)
+        unused['id'] = 'unreferenced-example'
+        bank['questions'].append(unused)
         result[f'question-banks/{GROUP}/{name}/bank.json'] = encode(bank)
         for path, value in content.items():
             if path.startswith('examples/assets/'):
@@ -70,3 +90,24 @@ for filename, types, scope in [('basic-types.qbank', TYPES, 'group'), ('single-c
             entry.external_attr = 0o100644 << 16
             archive.writestr(entry, data)
     print(filename, (OUTPUT / filename).stat().st_size)
+
+# A single bank exercises ordered groups, adjacent equal names and an unnamed group.
+content = files(['简答题'], 'bank')
+path = f'question-banks/{GROUP}/简答题/bank.json'
+bank = json.loads(content[path])
+first = bank['questions'][0]
+second, third = copy.deepcopy(first), copy.deepcopy(first)
+second['id'], third['id'] = 'second', 'third'
+bank['questions'].extend([second, third])
+bank['outline'] = [
+    {'group': '作者分组', 'items': [{'question': 'second', 'label': '第二题先做'}]},
+    {'group': '作者分组', 'items': [{'question': first['id'], 'parts': [{'id': first['data']['parts'][0]['id'], 'label': '小题'}]}]},
+    {'items': [{'question': 'third'}]},
+]
+content[path] = encode(bank)
+with zipfile.ZipFile(OUTPUT / 'central-outline.qbank', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+    for path, data in sorted(content.items()):
+        entry = zipfile.ZipInfo(path, date_time=(2026, 10, 30, 0, 0, 0))
+        entry.compress_type = zipfile.ZIP_DEFLATED
+        entry.external_attr = 0o100644 << 16
+        archive.writestr(entry, data)

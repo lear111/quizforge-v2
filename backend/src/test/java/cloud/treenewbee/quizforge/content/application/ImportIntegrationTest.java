@@ -152,6 +152,7 @@ class ImportIntegrationTest extends MySqlTestBase {
             questions.add(question);
         }
         bank.put("questions", questions);
+        bank.put("outline", List.of(Map.of("items", questions.stream().map(q -> Map.of("question", q.get("id"))).toList())));
         // Extra text nodes add their own JSON framing; tune the last short text after framing is known.
         for (Map<String, Object> question : questions) {
             Map<String, Object> data = (Map<String, Object>) question.get("data");
@@ -225,10 +226,11 @@ class ImportIntegrationTest extends MySqlTestBase {
         Map<String,Object> second = (Map<String,Object>) ((List<?>)judge.get("questions")).getFirst();
         Map<String,Object> third = JSON.readValue(JSON.writeValueAsBytes(first), LinkedHashMap.class);
         second.put("id", "judge"); second.put("extension", Map.of("path", ImportArchives.extension("判断题")));
-        third.put("id", "single-2"); third.put("outline", Map.of("level", "question", "label", "作者大纲"));
+        third.put("id", "single-2");
         ((Map<String,Object>)first.get("data")).put("maxScore", 2);
         ((Map<String,Object>)second.get("data")).put("maxScore", 3);
         ((Map<String,Object>)third.get("data")).put("maxScore", 7);
+        bank.put("outline", List.of(Map.of("items", List.of(Map.of("question", first.get("id")), Map.of("question", "judge"), Map.of("question", "single-2", "label", "作者大纲")))));
         bank.put("questions", List.of(first, second, third)); files.put(singlePath, JSON.writeValueAsBytes(bank));
         files.keySet().removeIf(path -> path.startsWith(ImportArchives.bank("判断题") + "/"));
         var response = upload(cookie(), ImportArchives.zip(files));
@@ -251,7 +253,8 @@ class ImportIntegrationTest extends MySqlTestBase {
         ImportArchives.edit(files, ImportArchives.bank("简答题") + "/bank.json", bank -> {
             Map<String, Object> first = (Map<String, Object>) ((List<?>) bank.get("questions")).getFirst();
             Map<String, Object> second = JSON.readValue(JSON.writeValueAsBytes(first), LinkedHashMap.class);
-            second.put("id", "explicit"); second.put("outline", Map.of("level", "question", "label", "作者大纲"));
+            second.put("id", "explicit");
+            bank.put("outline", List.of(Map.of("items", List.of(Map.of("question", first.get("id")), Map.of("question", "explicit", "label", "作者大纲")))));
             bank.put("questions", List.of(first, second));
         });
         var response = upload(cookie(), ImportArchives.zip(files));
@@ -437,6 +440,127 @@ class ImportIntegrationTest extends MySqlTestBase {
         }
         assertError(http.send(HttpRequest.newBuilder(url()).header("Origin", ORIGIN).POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString()), 401, "UNAUTHENTICATED");
         assertNoBusinessData();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void centralOutlineControlsPositionsGroupsWarningsReadVisibilityAndTotalScore() throws Exception {
+        var files = ImportArchives.files(List.of("单选题"), "bank");
+        ImportArchives.edit(files, ImportArchives.bank("单选题") + "/bank.json", bank -> {
+            Map<String,Object> original = (Map<String,Object>) ((List<?>)bank.get("questions")).getFirst();
+            List<Map<String,Object>> all = new ArrayList<>();
+            for (int i = 1; i <= 4; i++) {
+                Map<String,Object> question = JSON.readValue(JSON.writeValueAsBytes(original), LinkedHashMap.class);
+                question.put("id", "q"+i); ((Map<String,Object>)question.get("data")).put("maxScore", i); all.add(question);
+            }
+            bank.put("questions", all);
+            bank.put("outline", List.of(
+                    Map.of("group", "作者分组", "items", List.of(Map.of("question", "q3", "label", "第三题先做"))),
+                    Map.of("group", "作者分组", "items", List.of(Map.of("question", "q1", "parts", List.of(Map.of("id", "stable", "label", "小题"))))),
+                    Map.of("items", List.of(Map.of("question", "q2")))));
+        });
+        // Explicit parts require the outline-items declaration.
+        ImportArchives.edit(files, ImportArchives.extension("单选题") + "/manifest.json", manifest ->
+                manifest.put("requiresApi", Map.of("major", 1, "minMinor", 1, "capabilities", List.of("outline-items"))));
+        String cookie = cookie(); var response = upload(cookie, ImportArchives.zip(files));
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        JsonNode imported = body(response).path("collections").get(0);
+        assertThat(imported.path("warnings").get(0).path("count").asInt()).isEqualTo(1);
+        assertThat(imported.path("warnings").get(0).path("questionIds").toString()).isEqualTo("[\"q4\"]");
+        assertThat(imported.path("warnings").get(0).path("message").asString()).contains("1 道题", "不会显示");
+        assertThat(jdbc.queryForList("SELECT question_id FROM content_question ORDER BY position", String.class)).containsExactly("q3", "q1", "q2");
+        assertThat(jdbc.queryForList("SELECT outline_group_index FROM content_question ORDER BY position", Integer.class)).containsExactly(0, 1, 2);
+        assertThat(jdbc.queryForList("SELECT outline_group_name FROM content_question ORDER BY position", String.class)).containsExactly("作者分组", "作者分组", null);
+        assertThat(jdbc.queryForObject("SELECT question_count FROM content_bank", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT SUM(max_score) FROM content_question", java.math.BigDecimal.class)).isEqualByComparingTo("6");
+        assertThat(jdbc.queryForObject("SELECT outline->>'$.level' FROM content_question WHERE question_id='q3'", String.class)).isEqualTo("question");
+        assertThat(jdbc.queryForObject("SELECT outline->>'$.level' FROM content_question WHERE question_id='q1'", String.class)).isEqualTo("parts");
+        jdbc.update("INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT digest,extension_id,version,'approved' FROM content_extension_package");
+        String path = "/api/collections/bank/" + imported.path("id").asString();
+        var overview = get(cookie, path); assertThat(overview.statusCode()).as(overview.body()).isEqualTo(200);
+        JsonNode rows = body(overview).path("questions");
+        assertThat(rows.size()).isEqualTo(3);
+        for(int i=0;i<3;i++) assertThat(rows.get(i).path("outlineGroupIndex").asInt()).isEqualTo(i);
+        assertThat(rows.get(0).path("outlineGroupName").asString()).isEqualTo("作者分组");
+        assertThat(body(overview).path("states").has("q4")).isFalse();
+        assertThat(get(cookie, path+"/questions/q4").statusCode()).isEqualTo(404);
+        var question=get(cookie,path+"/questions/q3");assertThat(question.statusCode()).as(question.body()).isEqualTo(200);
+        assertThat(body(question).path("question").path("outlineGroupIndex").asInt()).isZero();
+        assertThat(body(question).path("question").path("outlineGroupName").asString()).isEqualTo("作者分组");
+        assertThat(overview.body()).doesNotContain("correctOptionId");assertThat(question.body()).doesNotContain("correctOptionId");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void groupingAndOrderingChangeBankHashButNotQuestionHashAndUnusedContentStillChangesBankHash() throws Exception {
+        var files=ImportArchives.files(List.of("单选题"),"bank");
+        ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank->{
+            var first=(Map<String,Object>)((List<?>)bank.get("questions")).getFirst();
+            var second=new LinkedHashMap<>(first);second.put("id","q2");
+            var unused=new LinkedHashMap<>(first);unused.put("id","unused");
+            bank.put("questions",List.of(first,second,unused));
+            bank.put("outline",List.of(Map.of("group","旧分组","items",List.of(Map.of("question","q1"),Map.of("question","q2")))));
+        });
+        var first=imports.importArchive(auth.register(Ids.uuidV7()+"@example.test","用户","pass12345",null).userId(),"one.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank->bank.put("outline",List.of(
+                Map.of("group","新分组","items",List.of(Map.of("question","q2"))),Map.of("items",List.of(Map.of("question","q1"))))));
+        var second=imports.importArchive(auth.register(Ids.uuidV7()+"@example.test","用户","pass12345",null).userId(),"two.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        assertThat(first.bankId()).isNotEqualTo(second.bankId());
+        for(String q:List.of("q1","q2")) assertThat(jdbc.queryForList("SELECT DISTINCT HEX(content_sha256) FROM content_question WHERE question_id=?",String.class,q)).hasSize(1);
+        ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank->((Map<String,Object>)((List<?>)bank.get("questions")).get(2)).put("title","未引用题也参与哈希"));
+        var third=imports.importArchive(auth.register(Ids.uuidV7()+"@example.test","用户","pass12345",null).userId(),"three.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        assertThat(third.bankId()).isNotEqualTo(second.bankId());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_question WHERE question_id='unused'",Integer.class)).isZero();
+    }
+
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"schema","rule","score","outline"})
+    @SuppressWarnings("unchecked")
+    void invalidUnreferencedQuestionStillRejectsEntireImport(String failure) throws Exception {
+        var files=ImportArchives.files(List.of("单选题"),"bank");
+        ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank->{
+            var first=(Map<String,Object>)((List<?>)bank.get("questions")).getFirst();
+            Map<String,Object> unused=JSON.readValue(JSON.writeValueAsBytes(first),LinkedHashMap.class);unused.put("id","unused");
+            if(failure.equals("schema"))unused.put("data",Map.of());
+            else ((Map<String,Object>)unused.get("data")).put("maxScore",99);
+            bank.put("questions",List.of(first,unused));
+        });
+        if(failure.equals("outline")) ImportArchives.edit(files,ImportArchives.extension("单选题")+"/manifest.json",m->m.put("requiresApi",Map.of("major",1,"minMinor",1,"capabilities",List.of("outline-items"))));
+        String path=ImportArchives.extension("单选题")+"/rules.js";
+        String hook=switch(failure) {
+            case "rule" -> "validateQuestion(data){return data.maxScore!==99;},";
+            case "score" -> "getScore(data){return {score:0,maxScore:data.maxScore===99?0.00001:1,gradingStatus:'graded'};},";
+            case "outline" -> "getOutlineItems(data){return data.maxScore===99?[{id:'a',label:'1'},{id:'a',label:'2'}]:[];},";
+            default -> "";
+        };
+        if(!hook.isEmpty())files.put(path,("QF.defineType({"+hook+"project(){return {maxScore:1}},grade(){return {}}})").getBytes(StandardCharsets.UTF_8));
+        var response=upload(cookie(),ImportArchives.zip(files));
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(422);assertNoBusinessData();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void changingOnlyUnreferencedQuestionsExtensionChangesBankIdentity() throws Exception {
+        var files = ImportArchives.files(List.of("单选题", "判断题"), "bank");
+        String visiblePath=ImportArchives.bank("单选题")+"/bank.json";
+        Map<String,Object> unusedBank=JSON.readValue(files.get(ImportArchives.bank("判断题")+"/bank.json"),LinkedHashMap.class);
+        Map<String,Object> unused=(Map<String,Object>)((List<?>)unusedBank.get("questions")).getFirst();
+        unused.put("id","unused");unused.put("extension",Map.of("path",ImportArchives.extension("判断题")));
+        files.keySet().removeIf(path->path.startsWith(ImportArchives.bank("判断题")+"/"));
+        ImportArchives.edit(files,visiblePath,bank->bank.put("questions",List.of(((List<?>)bank.get("questions")).getFirst(),unused)));
+        byte[] originalBankJson=files.get(visiblePath).clone();
+        var first=imports.importArchive(Ids.uuidV7(),"one.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        String rulePath=ImportArchives.extension("判断题")+"/rules.js";
+        files.put(rulePath,(new String(files.get(rulePath),StandardCharsets.UTF_8)+"\n// unreferenced extension revision\n").getBytes(StandardCharsets.UTF_8));
+        var second=imports.importArchive(Ids.uuidV7(),"two.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        assertThat(files.get(visiblePath)).isEqualTo(originalBankJson);
+        assertThat(second.bankId()).isNotEqualTo(first.bankId());
+        assertThat(jdbc.queryForList("SELECT DISTINCT HEX(content_sha256) FROM content_question",String.class)).hasSize(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_question WHERE question_id='unused'",Integer.class)).isZero();
+        assertThat(second.warnings().getFirst().questionIds()).containsExactly("unused");
+    }
+
+    private HttpResponse<String> get(String cookie,String path) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).header("Cookie",cookie).GET().build(),HttpResponse.BodyHandlers.ofString());
     }
 
     private String cookie() { return "__Host-qf_session=" + auth.register(Ids.uuidV7()+"@example.test", "导入测试", "pass12345", null).token(); }

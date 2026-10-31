@@ -71,6 +71,7 @@ class QbankPackageParserTest {
             bank.remove("extension");
             bank.put("questions", List.of(Map.of("id", "q", "title", "a", "extension", Map.of("path", f.extension), "data", Map.of()),
                     Map.of("id", "Q", "title", "b", "extension", Map.of("path", f.extension), "data", List.of(1, 2))));
+            PackageFixture.centralizeOutline(bank);
         });
         assertThat(f.parse().banks().getFirst().bank().get("questions")).asList().hasSize(2);
     }
@@ -219,7 +220,7 @@ class QbankPackageParserTest {
         f = fixture();
         List<Object> questions = new ArrayList<>();
         for (int i = 0; i < 10_000; i++) questions.add(Map.of("id", "q" + i, "title", "题", "data", Map.of()));
-        f.bank(b -> b.put("questions", questions)); assertThat(f.parse().banks()).hasSize(1);
+        f.bank(b -> { b.put("questions", questions); PackageFixture.centralizeOutline(b); }); assertThat(f.parse().banks()).hasSize(1);
         questions.add(Map.of("id", "q10000", "title", "题", "data", Map.of()));
         f.bank(b -> b.put("questions", questions)); rejected(f, INVALID_QUESTION_BANK);
     }

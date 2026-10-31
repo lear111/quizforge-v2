@@ -7,10 +7,10 @@ export function renderOutlineView({document,pane,onNavigate,onSummary}){
   const $=selector=>document.querySelector(selector);
   const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!=null)node.textContent=text;return node;};
   const root=$('#outline-list'),rows=visibleQuestions(pane),qid=visibleQuestionId(pane);
-  const summaryAvailable=hasScoreSummary(pane),extension=pane?.view==='history'?pane.historyView.extension:pane?.collection.extension;
+  const summaryAvailable=hasScoreSummary(pane);
   // Ink, answer text and revision changes do not affect the outline. Keep its
   // nodes and keyboard focus until visible labels, navigation or states change.
-  const signature=JSON.stringify([rows,extension,qid,pane?.outlineItemId,pane?.summaryShown,summaryAvailable,
+  const signature=JSON.stringify([rows,qid,pane?.outlineItemId,pane?.summaryShown,summaryAvailable,
     pane?.summaryShown?pane.scoreSummary?.questions:null,
     rows.map(row=>{const state=outlineStateFor(pane,row.id);return [state.status,state.result?.score,state.result?.maxScore,state.result?.gradingStatus,state.outlineStates];})]);
   const previous=renderedOutlines.get(root);
@@ -18,8 +18,8 @@ export function renderOutlineView({document,pane,onNavigate,onSummary}){
   root.replaceChildren();
   const roundScores=new Map(pane?.summaryShown?(pane.scoreSummary?.questions||[]).map(question=>[question.id,question]):[]);
   const statusLabels={unanswered:'未作答',draft:'已作答，待提交',pending:'已提交，待评分',correct:'正确',incorrect:'错误'};
-  for(const group of consecutiveQuestionGroups(rows,extension)){
-    const section=el('section','outline-group'),matrix=el('div','outline-matrix');section.append(el('h2','outline-group-title',group.name),matrix);root.append(section);
+  for(const group of consecutiveQuestionGroups(rows)){
+    const section=el('section','outline-group'),matrix=el('div','outline-matrix');if(group.name!=null)section.append(el('h2','outline-group-title',group.name));section.append(matrix);root.append(section);
     for(const {question:row,number}of group.items){
     const children=row.outlineItems||[],label=String(row.outlineLabel??number),state=outlineStateFor(pane,row.id),roundScore=roundScores.get(row.id),submitted=roundScore?roundScore.submitted===true:state.status==='submitted';
     const jump=itemId=>onNavigate(row.id,itemId);

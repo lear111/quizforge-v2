@@ -29,6 +29,7 @@ final class PackageFixture {
         Map<String, Object> examples = document(files.get(extension + "/examples/bank.json"));
         Map<String, Object> first = object(((List<?>) examples.get("questions")).get(0));
         put(BANK + "/bank.json", Map.of("formatVersion", 2, "id", ImportArchives.BANK_IDS.get(type), "title", "作者元数据名称", "extension", Map.of("path", extension),
+                "outline", List.of(Map.of("items", List.of(Map.of("question", "q1")))),
                 "questions", List.of(Map.of("id", "q1", "title", "第 1 题", "data", first.get("data")))));
         files.put(BANK + "/assets/自由图.PNG", PNG.clone());
     }
@@ -47,6 +48,7 @@ final class PackageFixture {
         Map<String, Object> example = document(files.get(owner + "/examples/bank.json"));
         example.put("formatVersion", 2);
         example.put("id", ImportArchives.exampleId(name));
+        centralizeOutline(example);
         bind(example, owner);
         for (Object question : (List<?>) example.get("questions")) bind(object(question), owner);
         ArrayDeque<Object> pending = new ArrayDeque<>(); pending.push(example);
@@ -79,5 +81,19 @@ final class PackageFixture {
     }
     @SuppressWarnings("unchecked") static Map<String, Object> object(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked") static Map<String, Object> document(byte[] bytes) { return JSON.readValue(bytes, LinkedHashMap.class); }
+    static void centralizeOutline(Map<String, Object> bank) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Object raw : (List<?>) bank.get("questions")) {
+            Map<String, Object> question = object(raw);
+            Map<String, Object> item = new LinkedHashMap<>(); item.put("question", question.get("id"));
+            Object old = question.containsKey("outline") ? question.remove("outline") : null;
+            if (old instanceof Map<?, ?> outline) {
+                if ("question".equals(outline.get("level"))) item.put("label", outline.get("label"));
+                else item.put("parts", outline.get("items"));
+            }
+            items.add(item);
+        }
+        bank.put("outline", List.of(Map.of("items", items)));
+    }
     private static void bind(Map<String, Object> value, String owner) { if (value.containsKey("extension")) value.put("extension", Map.of("path", owner)); }
 }

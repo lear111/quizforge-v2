@@ -12,4 +12,6 @@ public record QuestionRow(
         String listening,
         String data,
         BigDecimal maxScore,
-        byte[] contentSha256) {}
+        byte[] contentSha256,
+        Integer outlineGroupIndex,
+        String outlineGroupName) {}
