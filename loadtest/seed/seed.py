@@ -63,8 +63,11 @@ def main():
         email = f"loadtest-{i:04d}@example.test"
         previous = by_email.get(email)
         password = previous["password"] if previous else secrets.token_urlsafe(24)
-        status, body, headers = request("/api/auth/login", {"email": email, "password": password})
-        if status == 401:
+        if previous:
+            status, body, headers = request("/api/auth/login", {"email": email, "password": password})
+        else:
+            status, body, headers = request("/api/auth/register", {"email": email, "name": f"压测用户{i}", "password": password})
+        if status == 401 and previous:
             status, body, headers = request("/api/auth/register", {"email": email, "name": f"压测用户{i}", "password": password})
         require(status, body)
         token = headers["Set-Cookie"].split(";", 1)[0]
@@ -82,6 +85,7 @@ def main():
             collections = [{"id": row["id"], "title": row["title"]} for row in body["collections"]]
         user = {"email": email, "password": password, "collections": collections}
         users.append(user)
+        by_email[email] = user
         # Checkpoint credentials after each successful account; reruns reuse users and instances.
         args.output.parent.mkdir(parents=True, exist_ok=True)
         checkpoint = {**by_email, **{u["email"]: u for u in users}}
