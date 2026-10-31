@@ -68,11 +68,14 @@ public class SubmitService {
             ReceiptRow existing = receipts.find(userId, requestId);
             if (existing != null) return replay(existing, hash);
 
-            // 1. 先保存答案
-            var prepared = reads.prepareDraft(userId, collectionId, questionId);   // 内含 contextId、contentSha256
-            String contextId = prepared.contextId();
+            // 1. 先保存答案：只查数据库，不调用 rule-runner，确保后面任何外部调用失败时答案都已保存
+            var target = reads.resolveTarget(userId, collectionId, questionId);
+            String contextId = target.contextId();
             long revision = drafts.saveDraft(userId, contextId, questionId, clientRevision, answerJson,
-                    prepared.contentSha256());   // 事务内保存草稿，revision +1
+                    target.contentSha256());
+
+            // 答案已保存，接下来才做可能失败的外部调用（生成投影、判分）
+            var prepared = reads.prepareDraft(userId, collectionId, questionId);
 
             // 2. 事务外判分
             GradeOutcome outcome = grader.grade(userId, collectionId, questionId, answer);   // 内含 result、score、maxScore、outlineStates、projection

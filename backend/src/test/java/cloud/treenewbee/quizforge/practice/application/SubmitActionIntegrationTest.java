@@ -1,33 +1,52 @@
 package cloud.treenewbee.quizforge.practice.application;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.net.URI;
-import java.net.http.*;
-import java.util.concurrent.*;
-import org.springframework.beans.factory.annotation.Value;
-import java.nio.file.*;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
-import cloud.treenewbee.quizforge.MySqlTestBase;
-import cloud.treenewbee.quizforge.content.application.ImportService;
-import cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper;
-import cloud.treenewbee.quizforge.content.infrastructure.QuestionRow;
-import cloud.treenewbee.quizforge.identity.application.AuthService;
-import cloud.treenewbee.quizforge.rules.*;
-import cloud.treenewbee.quizforge.shared.id.Ids;
-import cloud.treenewbee.quizforge.shared.web.ApiException;
-import org.junit.jupiter.api.*;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -38,6 +57,15 @@ import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.ImageFromDockerfile;
+
+import cloud.treenewbee.quizforge.MySqlTestBase;
+import cloud.treenewbee.quizforge.content.application.ImportService;
+import cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper;
+import cloud.treenewbee.quizforge.content.infrastructure.QuestionRow;
+import cloud.treenewbee.quizforge.identity.application.AuthService;
+import cloud.treenewbee.quizforge.rules.RuleRunnerClient;
+import cloud.treenewbee.quizforge.rules.RuleRunnerException;
+import cloud.treenewbee.quizforge.shared.id.Ids;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -278,7 +306,7 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
         } finally { release.countDown(); jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),secondId); }
     }
 
-    @Test @Disabled("见报告第 1 条")
+    @Test
     void coldProjectionRunnerFailureMustStillPreserveDraft() throws Exception {
         var original=samples.get("单选题"); var q=original.question();
         String id="cold-"+Ids.uuidV7(); byte[] hash=new byte[32]; new java.security.SecureRandom().nextBytes(hash);
