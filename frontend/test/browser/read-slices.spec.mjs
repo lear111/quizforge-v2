@@ -1,4 +1,6 @@
-import {test,expect} from '@playwright/test';
+import {test,expect as baseExpect} from '@playwright/test';
+// Real SDK restore and grading share the CI host with MySQL; wait for readiness, not a five-second machine-speed assumption.
+const expect=baseExpect.configure({timeout:30000});
 import {execFileSync} from 'node:child_process';
 import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
@@ -68,7 +70,7 @@ test('real sample import, approval fixture, open and render all five types',asyn
   const openSingle=async tab=>{
     // start() automatically opens the first bank and closes mobile drawers when
     // it finishes. Wait for that transition before opening the drawer ourselves.
-    await expect(tab.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
+    await expect(tab.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1,{timeout:30000});
     await expect(tab.locator('#collection-loading')).toBeHidden();
     await expect(tab.locator('#library-list')).toHaveText(/\S/);
     if(await tab.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await tab.locator('#library-toggle').click();
@@ -97,5 +99,25 @@ test('real sample import, approval fixture, open and render all five types',asyn
   await other.screenshot({path:resolve(screenshots,`draft-${info.project.name}-conflict.png`),fullPage:true});
   await page.reload();const restored=await openSingle(page);await expect(restored.getByRole('radio',{name:'选项 A',exact:true})).toBeChecked();
   await page.screenshot({path:resolve(screenshots,`draft-${info.project.name}-restored.png`),fullPage:true});await other.close();
+  // Submit the restored wrong answer through the extension, then reload the frozen result.
+  const submittedResponse=page.waitForResponse(response=>action(response)&&response.request().postDataJSON().action==='submit');
+  await restored.getByRole('button',{name:'提交',exact:true}).click();
+  const submitted=await submittedResponse;expect(submitted.status()).toBe(200);
+  const submittedBody=await submitted.json();expect(submittedBody.state.status).toBe('submitted');
+  expect(submittedBody.state.result.score).toBeLessThan(submittedBody.state.result.maxScore);
+  await expect(page.locator('#outline-list .outline-item.incorrect')).toHaveCount(1);
+  await expect(restored.locator('#result')).toBeVisible();
+  await expect(restored.locator('label.choice.is-wrong')).toHaveCount(1);
+  await page.screenshot({path:resolve(screenshots,`submit-${info.project.name}-graded.png`),fullPage:true});
+  await page.reload();
+  await expect(page.locator('#collection-loading')).toBeHidden();
+  if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
+  await page.locator(`.library-item[data-item-id="${single.id}"]`).click();
+  await expect(page.locator('#outline-list .outline-item.incorrect')).toHaveCount(1);
+  const frozen=page.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
+  await expect(frozen.locator('#result')).toBeVisible();
+  await expect(frozen.getByRole('button',{name:'提交',exact:true})).toBeHidden();
+  await expect(frozen.locator('label.choice.is-wrong')).toHaveCount(1);
+  await page.screenshot({path:resolve(screenshots,`submit-${info.project.name}-refreshed.png`),fullPage:true});
   expect(errors).toEqual([]);
 });
