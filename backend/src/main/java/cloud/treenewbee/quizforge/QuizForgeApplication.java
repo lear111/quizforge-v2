@@ -4,6 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
+import cloud.treenewbee.quizforge.identity.maintenance.MaintenanceCommand;
+
 /**
  * QuizForge V2 backend entry point.
  *
@@ -16,6 +18,11 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class QuizForgeApplication {
 
     public static void main(String[] args) {
+        // 服务器维护命令（设置管理员、登录故障恢复），见 MaintenanceCommand。
+        if (MaintenanceCommand.matches(args)) {
+            MaintenanceCommand.main(args);
+            return;
+        }
         SpringApplication.run(QuizForgeApplication.class, args);
     }
 }

@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -16,7 +17,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 
+// 服务器维护命令以非 Web 方式启动应用（MaintenanceCommand），此时不装配 HTTP 安全过滤链。
 @Configuration
+@ConditionalOnWebApplication
 public class SecurityConfig {
 
     @Bean
@@ -48,8 +51,10 @@ public class SecurityConfig {
                 .csrf(c -> c.disable())
                 // 健康检查和认证入口允许匿名访问。
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/api/health",
-                                "/api/auth/register", "/api/auth/login", "/api/auth/logout").permitAll()
+                        .requestMatchers("/api/health", "/api/config",
+                                "/api/auth/register", "/api/auth/login", "/api/auth/logout",
+                                "/api/auth/email-code", "/api/auth/phone-code", "/api/auth/login-code",
+                                "/api/auth/password-reset-code", "/api/auth/password-reset").permitAll()
                         .anyRequest().authenticated())
                 // 认证失败也使用统一 JSON 错误格式。
                 .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))

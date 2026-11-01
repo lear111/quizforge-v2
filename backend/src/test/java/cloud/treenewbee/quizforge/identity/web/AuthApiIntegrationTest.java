@@ -144,7 +144,7 @@ class AuthApiIntegrationTest extends MySqlTestBase {
         String id = assertUser(register(email, "Alice", password), email, "Alice");
 
         assertThat(assertUser(login(email, password), email, "Alice")).isEqualTo(id);
-        assertError(login(email, password.trim()), 401, "INVALID_CREDENTIALS", "邮箱或密码错误");
+        assertError(login(email, password.trim()), 401, "INVALID_CREDENTIALS", "账号或密码不正确，或账号已停用");
     }
 
     @Test
@@ -197,8 +197,8 @@ class AuthApiIntegrationTest extends MySqlTestBase {
         HttpResponse<String> wrongPassword = login(email, "wrong-password");
         HttpResponse<String> missingEmail = login(email(), PASSWORD);
 
-        assertError(wrongPassword, 401, "INVALID_CREDENTIALS", "邮箱或密码错误");
-        assertError(missingEmail, 401, "INVALID_CREDENTIALS", "邮箱或密码错误");
+        assertError(wrongPassword, 401, "INVALID_CREDENTIALS", "账号或密码不正确，或账号已停用");
+        assertError(missingEmail, 401, "INVALID_CREDENTIALS", "账号或密码不正确，或账号已停用");
         assertThat(missingEmail.body()).isEqualTo(wrongPassword.body());
     }
 
@@ -507,8 +507,10 @@ class AuthApiIntegrationTest extends MySqlTestBase {
         assertThat(body.keySet()).isEqualTo(Set.of("user"));
         assertThat(body.get("user")).isInstanceOf(Map.class);
         Map<?, ?> user = (Map<?, ?>) body.get("user");
-        assertThat(user.keySet()).isEqualTo(Set.of("id", "email", "name"));
+        assertThat(user.keySet()).isEqualTo(Set.of("id", "email", "phone", "name", "admin", "unverifiedContacts"));
         assertThat(user.get("email")).isEqualTo(email);
+        assertThat(user.get("phone")).isNull();
+        assertThat(user.get("admin")).isEqualTo(false);
         assertThat(user.get("name")).isEqualTo(name);
         assertThat(user.get("id")).isInstanceOf(String.class);
         String id = (String) user.get("id");

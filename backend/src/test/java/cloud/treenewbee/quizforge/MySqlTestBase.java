@@ -20,12 +20,14 @@ import org.testcontainers.mysql.MySQLContainer;
         "qf.practice.jobs.enabled=false",
         // Cached test contexts share one MySQL; do not retain ten idle connections per context.
         "spring.datasource.hikari.minimum-idle=0",
-        "spring.datasource.hikari.maximum-pool-size=4"
+        "spring.datasource.hikari.maximum-pool-size=4",
+        // 测试不发送真实邮件或短信：验证码由 FakeVerification 记录在内存中。
+        "qf.verification.mode=fake"
 })
 public abstract class MySqlTestBase {
 
     @ServiceConnection
-    static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
+    protected static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
             .withDatabaseName("quizforge")
             .withUsername("quizforge")
             .withPassword("quizforge");
