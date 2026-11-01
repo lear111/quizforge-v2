@@ -136,13 +136,13 @@ docker compose @compose exec -T app jfr summary /tmp/qf-profile.jfr
 
 # 固定 async-profiler v4.2 的独立 Java converter，构建时校验官方 release SHA-256。
 docker compose @compose --profile tools build jfr-converter
-docker compose @compose --profile tools run --rm jfr-converter --state runnable --norm --dot app.jfr cpu.html
-docker compose @compose --profile tools run --rm jfr-converter --alloc --total --norm --dot app.jfr alloc.html
+docker compose @compose --profile tools run --rm jfr-converter --state runnable --norm --dot --reverse app.jfr cpu.html
+docker compose @compose --profile tools run --rm jfr-converter --alloc --total --norm --dot --reverse app.jfr alloc.html
 Start-Process loadtest/artifacts/cpu.html
 Start-Process loadtest/artifacts/alloc.html
 ```
 
-转换容器 `network_mode: none`，只读录制文件并向 artifacts 目录写 HTML；CPU 图按方法/调用栈聚合所有线程（没有 `--threads` 分拆），`--alloc --total` 显示采样估算的分配字节热点。这里必须用 `--state runnable`：v4.2 的 `--cpu` 筛选 async-profiler 的 STATE_DEFAULT，而 JDK 的 ExecutionSample 是 STATE_RUNNABLE，直接使用会得到空图（见 [JfrConverter.getThreadStates](https://github.com/async-profiler/async-profiler/blob/v4.2/src/converter/one/convert/JfrConverter.java#L109-L117)）。本配置关闭 NativeMethodSample 后，runnable 图只统计 Java ExecutionSample；不要直接套用到包含 native/wall 事件的其他录制。图中可点击栈缩放、搜索方法；分配图不代表存活堆或泄漏。JDK JFR 的 ExecutionSample 是 Java 执行采样，不能把它当作完整的 native/off-CPU 分析；未被采样的代码不会出现。原始 JFR 可能含环境/请求内容，users.json 含密码，`loadtest/artifacts/` 整体 gitignore，不上传原始录制或账号文件到 PR。官方工具依据：[JDK 21 jcmd](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jcmd.html)、[jfr configure](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jfr.html)、[async-profiler v4.2 converter](https://github.com/async-profiler/async-profiler/blob/v4.2/docs/ConverterUsage.md)。
+转换容器 `network_mode: none`，只读录制文件并向 artifacts 目录写 HTML；CPU 图按方法聚合所有线程（没有 `--threads` 分拆）；`--reverse` 将叶方法合并后展开调用者，便于直接看到跨调用链的热点，`--alloc --total` 显示采样估算的分配字节热点。这里必须用 `--state runnable`：v4.2 的 `--cpu` 筛选 async-profiler 的 STATE_DEFAULT，而 JDK 的 ExecutionSample 是 STATE_RUNNABLE，直接使用会得到空图（见 [JfrConverter.getThreadStates](https://github.com/async-profiler/async-profiler/blob/v4.2/src/converter/one/convert/JfrConverter.java#L109-L117)）。本配置关闭 NativeMethodSample 后，runnable 图只统计 Java ExecutionSample；不要直接套用到包含 native/wall 事件的其他录制。图中可点击栈缩放、搜索方法；分配图不代表存活堆或泄漏。JDK JFR 的 ExecutionSample 是 Java 执行采样，不能把它当作完整的 native/off-CPU 分析；未被采样的代码不会出现。原始 JFR 可能含环境/请求内容，users.json 含密码，`loadtest/artifacts/` 整体 gitignore，不上传原始录制或账号文件到 PR。官方工具依据：[JDK 21 jcmd](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jcmd.html)、[jfr configure](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jfr.html)、[async-profiler v4.2 converter](https://github.com/async-profiler/async-profiler/blob/v4.2/docs/ConverterUsage.md)。
 
 ### 20 VU / 60 秒测量链路冒烟
 
