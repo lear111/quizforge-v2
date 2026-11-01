@@ -1,6 +1,6 @@
 import {test,expect as baseExpect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
-import {readFile,mkdir} from 'node:fs/promises';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 const expect=baseExpect.configure({timeout:30000});
 
@@ -36,8 +36,9 @@ test('answer text, image and ink are captured before submit; both board layers s
   await expect(frame.locator('.qf-answer-shared textarea')).toBeVisible();
   await frame.locator('.qf-answer-shared textarea').fill('本次答案包含文字、图片和手写。');
   const png=Buffer.from(await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=80;canvas.height=40;const ctx=canvas.getContext('2d');ctx.fillStyle='#386db6';ctx.fillRect(0,0,80,40);return canvas.toDataURL('image/png').split(',')[1];}),'base64');
+  const fixture=resolve('../.artifacts',`answer-${info.project.name}.png`);await mkdir(resolve('../.artifacts'),{recursive:true});await writeFile(fixture,png);
   const upload=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/resources'&&response.request().method()==='POST');
-  await frame.getByLabel('上传图片',{exact:true}).setInputFiles({name:'answer.png',mimeType:'image/png',buffer:png});
+  await frame.getByLabel('上传图片',{exact:true}).setInputFiles(fixture);
   expect((await upload).status()).toBe(200);
   await expect(frame.locator('.qf-answer-shared-picture')).toHaveCount(1);
   const draw=async(notes=false)=>{
@@ -45,7 +46,11 @@ test('answer text, image and ink are captured before submit; both board layers s
     if(await tools.getAttribute('data-collapsed')==='true')await tools.getByRole('button',{name:/展开白板工具/}).click();
     await tools.getByRole('button',{name:'画笔，选中后再次点击选择颜色',exact:true}).click();
     const surface=frame.locator('.qf-answer-shared-surface');await surface.scrollIntoViewIfNeeded();
-    const rect=await surface.boundingBox(),y=rect.y+rect.height*(notes?.7:.45);
+    const rect=await pane.locator('iframe.question-frame').evaluate(frame=>{
+      const bounds=frame.getBoundingClientRect(),[x,y,width,height]=frame.qfSharedAnswerAreas[0].rect;
+      const sx=bounds.width/frame.clientWidth,sy=bounds.height/frame.clientHeight;
+      return {x:bounds.left+x*sx,y:bounds.top+y*sy,width:width*sx,height:height*sy};
+    }),y=rect.y+rect.height*(notes?.7:.45);
     await page.mouse.move(rect.x+rect.width*.35,y);await page.mouse.down();
     await page.mouse.move(rect.x+rect.width*.55,y+Math.min(15,rect.height*.08),{steps:10});await page.mouse.up();
   };

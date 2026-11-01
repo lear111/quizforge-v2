@@ -67,7 +67,7 @@ small { font-size: 12px; color: var(--muted); }
 .signed-in-note { margin: 14px 0 27px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 footer { padding: 0 20px 24px; color: var(--muted); font-size: 12px; text-align: center; }
 .quota-section { margin: 24px 0; text-align: left; }
-.quota-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.quota-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .quota-card { padding: 14px; border: 1px solid #e4e2ec; border-radius: 12px; background: #faf9fd; }
 .quota-card h3 { margin: 0 0 12px; font-size: 14px; }
 .quota-number { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }

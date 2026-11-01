@@ -67,7 +67,7 @@ test('real sample import, approval fixture, open and render all five types',asyn
   // Both tabs read revision 0 before either writes. Use actual extension controls and
   // the production write queue, including its 409 recovery UI; no mocked HTTP writes.
   const single=collections.find(item=>item.title==='单选题');
-  const openSingle=async tab=>{
+  const openSingle=async(tab,{submitted=false}={})=>{
     // start() automatically opens the first bank and closes mobile drawers when
     // it finishes. Wait for that transition before opening the drawer ourselves.
     await expect(tab.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1,{timeout:30000});
@@ -79,7 +79,7 @@ test('real sample import, approval fixture, open and render all five types',asyn
     await expect(tab.locator('#collection-loading')).toBeHidden();
     await expect(tab.locator('#document-title')).toHaveText('单选题');
     const frame=tab.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
-    await expect(frame.getByRole('radio',{name:'选项 A',exact:true})).toBeEnabled();
+    if(!submitted)await expect(frame.getByRole('radio',{name:'选项 A',exact:true})).toBeEnabled();
     return frame;
   };
   const firstFrame=await openSingle(page);
@@ -110,11 +110,8 @@ test('real sample import, approval fixture, open and render all five types',asyn
   await expect(restored.locator('label.choice.is-wrong')).toHaveCount(1);
   await page.screenshot({path:resolve(screenshots,`submit-${info.project.name}-graded.png`),fullPage:true});
   await page.reload();
-  await expect(page.locator('#collection-loading')).toBeHidden();
-  if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
-  await page.locator(`.library-item[data-item-id="${single.id}"]`).click();
+  const frozen=await openSingle(page,{submitted:true});
   await expect(page.locator('#outline-list .outline-item.incorrect')).toHaveCount(1);
-  const frozen=page.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
   await expect(frozen.locator('#result')).toBeVisible();
   await expect(frozen.getByRole('button',{name:'提交',exact:true})).toBeHidden();
   await expect(frozen.locator('label.choice.is-wrong')).toHaveCount(1);

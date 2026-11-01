@@ -225,11 +225,12 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         var old=JSON.valueToTree(Map.of("requestId","old-board","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
         ok(request(path(samples.get(type))+"/actions",old));
         ok(restart(type,"board-restart",ok(summary(type))));
-        var next=JSON.valueToTree(Map.of("requestId","new-board","revision",2,"action","whiteboard","data",Map.of("draft",doc)));
-        assertThat(ok(request(path(samples.get(type))+"/actions",next)).path("whiteboard").path("revision").asLong()).isEqualTo(3);
+        long nextRevision=ok(get(type)).path("whiteboard").path("revision").asLong();
+        var next=JSON.valueToTree(Map.of("requestId","new-board","revision",nextRevision,"action","whiteboard","data",Map.of("draft",doc)));
+        assertThat(ok(request(path(samples.get(type))+"/actions",next)).path("whiteboard").path("revision").asLong()).isEqualTo(nextRevision+1);
         var stale=JSON.valueToTree(Map.of("requestId","stale-board","revision",1,"action","whiteboard","data",Map.of("draft",doc)));
         error(request(path(samples.get(type))+"/actions",stale),409,"REVISION_CONFLICT");
-        assertThat(ok(get(type)).path("whiteboard").path("revision").asLong()).isEqualTo(3);
+        assertThat(ok(get(type)).path("whiteboard").path("revision").asLong()).isEqualTo(nextRevision+1);
     }
 
     private String uploadScreenshot() throws Exception {

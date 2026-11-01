@@ -353,7 +353,9 @@ CREATE TABLE practice_whiteboard (                 -- 草稿白板，单独成�
   context_id   CHAR(36)      NOT NULL,
   question_id  VARCHAR(120)  NOT NULL,
   user_id      CHAR(36)      NOT NULL,
-  draft        JSON          NOT NULL,             -- 笔迹数据，应用层限制大小（初值 2 MiB，按迁移统计调整）
+  draft        JSON          NOT NULL,             -- 作答草稿层
+  notes        JSON          NULL,                 -- V7：只追加笔记层；两层合计 2 MiB
+  revision     BIGINT        NOT NULL DEFAULT 1,    -- V7：独立于答案 revision
   size_bytes   INT           NOT NULL,
   updated_at   DATETIME(3)   NOT NULL,
   PRIMARY KEY (context_id, question_id),
@@ -544,9 +546,9 @@ SELECT COUNT(*)                                             AS question_count,
 
 ### 5.5 再练一次（restart）
 
-在一个事务中：锁上下文 → 将该上下文的全部作答状态更新为 `unanswered`、清空作答与结果、`revision + 1` → 删除白板 → `current_round_id = NULL`、`progress_version + 1` → 写回执。
+在一个事务中：锁上下文 → 将该上下文的全部作答状态更新为 `unanswered`、清空作答与结果、`revision + 1` → 清空白板两层并递增白板 revision（保留空行） → `current_round_id = NULL`、`progress_version + 1` → 写回执。
 
-这里用**更新而不是删除**作答行：如果删除后重建，`revision` 会回到初始值，前端缓存的旧版本号可能恰好与之相同，乐观锁就会失效。
+这里用**更新而不是删除**作答行和白板行：如果删除后重建，`revision` 会回到初始值，前端缓存的旧版本号可能恰好与之相同，乐观锁就会失效。白板清空不修改已冻结的轮次单题快照。
 
 ### 5.6 考试到期自动交卷
 
