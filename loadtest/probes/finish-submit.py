@@ -5,6 +5,7 @@
 """
 import argparse
 import concurrent.futures
+import http.client
 import json
 import math
 import os
@@ -13,6 +14,8 @@ import secrets
 import subprocess
 import sys
 import time
+import threading
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "loadtest/seed"))
@@ -72,14 +75,25 @@ def main():
         return body
 
     def submit_phase(cookie, base, ids):
+        # 每个虚拟用户复用 HTTP/1.1 连接，与浏览器/k6 相同，排除本机端口转发的新连接噪声。
+        local=threading.local();connections=[];origin=urllib.parse.urlsplit(args.base_url)
+        def init():
+            local.connection=http.client.HTTPConnection(origin.hostname,origin.port or 80,timeout=180)
+            connections.append(local.connection)
         def one(qid):
             start=time.perf_counter()
-            body=action(cookie,base,qid,"submit")
+            local.connection.request("POST",base+"/questions/"+qid+"/actions",
+                json.dumps({"requestId":secrets.token_hex(16),"revision":0,"action":"submit","data":{"answer":template[qid]}}),
+                {"Cookie":cookie,"Origin":args.base_url,"Content-Type":"application/json"})
+            response=local.connection.getresponse();body=json.loads(response.read());require(response.status,body)
             assert body["state"]["status"] == "submitted"
             assert body["state"]["result"]["score"] == body["state"]["result"]["maxScore"]
             return (time.perf_counter()-start)*1000
-        with concurrent.futures.ThreadPoolExecutor(args.vus) as pool:
-            return list(pool.map(one, ids))
+        try:
+            with concurrent.futures.ThreadPoolExecutor(args.vus,initializer=init) as pool:
+                return list(pool.map(one, ids))
+        finally:
+            for connection in connections:connection.close()
 
     def poll(cookie, base, job):
         status, body, _ = api(base+"/jobs/"+job,token=cookie);require(status,body)

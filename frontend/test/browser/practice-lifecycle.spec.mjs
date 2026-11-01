@@ -21,7 +21,6 @@ test('real practice finish, frozen history, append-only notes and deletion survi
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
   const open=async()=>{
     await page.goto('/practice/');
-    await expect(page.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
     await expect(page.locator('#collection-loading')).toBeHidden();
     if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
     await page.locator(`.library-item[data-item-id="${collection.id}"]`).click();
@@ -87,8 +86,11 @@ test('real practice finish, frozen history, append-only notes and deletion survi
   await page.mouse.move(rect.x+rect.width*.60,rect.y+rect.height*.5,{steps:10});await page.mouse.up();
   expect((await saved).status()).toBe(200);
   await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-notes.png`),fullPage:true});
-  await page.reload();await expect(page.locator('#collection-loading')).toBeHidden();
-  await page.locator('#history-open').click();await page.locator('.history-row').click();
+  await open();await expect(frame.locator('.answer-field')).toHaveText('点击作答');
+  await page.locator('#history-open').click();await expect(page.locator('.history-row')).toHaveCount(1);
+  const reloadedHistory=page.waitForResponse(response=>new URL(response.url()).pathname.startsWith(`/api/collections/bank/${collection.id}/history/`));
+  await page.locator('.history-row').click();
+  expect((await(await reloadedHistory).json()).questions[0].payload.whiteboard.notes.strokes).toHaveLength(1);
   await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
   await page.locator('#history-choose').click();await page.locator('.history-delete').click();
   await page.locator('#history-delete-dialog').getByRole('button',{name:/删除/}).click();

@@ -48,7 +48,7 @@ test('real sample import, approval fixture, open and render all five types',asyn
     await expect(page.locator('.question-error')).toHaveCount(0);
     const frame=page.frameLocator('.question-pane:not([hidden]) iframe.question-frame');
     await expect(frame.locator('body')).toContainText(/提交|答案|作答/);
-    await expect(page.locator('#notice')).toContainText('尚未开放');
+    await expect(page.locator('#notice')).toContainText('完成练习后核对评分');
     if(item.title==='单选题')await expect(frame.locator('img[data-asset-id]')).toHaveCount(1);
     await expect(frame.locator('.qfrt-image-missing')).toHaveCount(0);
     // Check resource images; submitted-answer snapshots are intentionally empty/hidden before submission.
