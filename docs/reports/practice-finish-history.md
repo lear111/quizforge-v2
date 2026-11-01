@@ -57,6 +57,25 @@
 
 ## P95 对比
 
+### 最终生产代码版本复测（15d4d31）
+
+同步 main 56b7668 后，先跑一组兼容性复验，再在同一最终版本、相同配置下完整复测三组。每阶段每组 90 次，前台 4 VU；每组后台处理 300 题，测量窗口内始终运行且实际推进。四组共 1080 次计时提交，全部 200、graded、满分，错误 0；四个后台任务全部完成。结果如下，未删除不利组，也未为复测调整参数：
+
+| 组 | 无任务 P95 ms | 完成期间 P95 ms | 完成后 P95 ms | 测量窗口内后台进度 |
+| --- | ---: | ---: | ---: | --- |
+| 首次兼容性复验 | 896.865 | 1093.511 | 506.540 | 1 → 20 |
+| 后续复测 1 | 364.783 | 318.592 | 413.108 | 1 → 11 |
+| 后续复测 2 | 512.384 | 498.274 | 925.906 | 1 → 14 |
+| 后续复测 3 | 389.517 | 475.832 | 589.871 | 1 → 16 |
+| 后续三组合并原始样本 | 398.210 | 436.957 | 617.429 | 三组均推进 |
+| 最终版本全部四组合并原始样本 | 623.419 | 686.797 | 599.259 | 四组均推进 |
+
+后续三组合并 during 上升约 9.7%，最终版本全部四组合并上升约 10.2%；首次复验与后续第 3 组各上升约 22%。其他两组没有上升，无任务阶段本身也有明显波动。因此**不能宣称性能约束已完全验收通过**：后台并发与频率已受限，但本次本机小样本没有证明对前台 P95 零影响，也没有排除约 10% 的总体影响。正式容量对照仍需复核；不以早期版本较有利的数值代替最终版本证据，不据此作容量结论。
+
+原始数据位于忽略目录 `.artifacts/finish-submit-latency-latest.json` 与 `.artifacts/finish-submit-latency-final-three.json`。复测沿用下面列出的隔离 Compose、探针和资源限制；默认验证码开启时的真实注册、导入、草稿、提交和异步完成链路也均通过。下面保留较早版本的测量与调参过程，供追溯，不作为最终版本的性能结论。
+
+### 较早版本与调参过程
+
 测量版本：19a1ddd（基于 main 70bf289）。随后合入 main 56b7668 的默认验证码、认证限频与密码哈希排队；该变更不处理题目 actions，额外复验其兼容性，未据此改写下述原始结果。
 
 环境：Windows Docker Desktop，本地 Docker Engine 6 vCPU / 15.33 GiB；被测 app 1.5 核/3 GiB、MySQL 1 核/2 GiB、runner 1.25 核/2 GiB、nginx 0.25 核/1 GiB，合计 4 核/8 GiB。runner limit=8、Java 舱壁=8，后台最多 1 个、预留前台 4 个。未更改 runner 的每包 2 worker、LRU、500 请求回收等规则。探针客户端为额外 0.25 核/128 MiB 的 Node 22 容器，通过本项目 Docker 网络请求 nginx；同源 Origin、Cookie 与真实 HTTP，复用连接，计时包含响应读取与解析。
@@ -86,6 +105,8 @@ docker compose -p qf-practice-finish-local -f deploy/docker-compose.yml -f loadt
 
 
 ## 最终验证
+
+最终生产代码提交 15d4d31 的 [CI 四项全部通过](https://github.com/lear111/quizforge-v2/actions/runs/41337561920)：`mvn verify` 共 **3203 项，失败 0、错误 0、跳过 3**；前端构建与 68 项测试通过，rule-runner 128 项通过，Compose 冒烟与 14 项真实浏览器测试通过，并确认共享 blob 的 runner 挂载只读。[桌面/手机浏览器截图与 trace](https://github.com/lear111/quizforge-v2/actions/runs/41337561920/artifacts/13096560079)。后续提交只整理本报告，最新 Checks 同样须全绿后转待审。
 
 CI（提交 ae612ed）：`mvn -B -ntp verify` 共 3189 项，失败 0、错误 0、跳过 3（既有 archive 分层/差异测试）；前端构建与 68 项测试通过，rule-runner 128 项通过，Compose 冒烟与 14 项真实浏览器测试通过。新增完成/历史集成测试 26 项，迁移测试 1 项；RuleRunnerClient 24 项中的 3 项为后台预留与优先级新增覆盖。本地对应提交另跑 `clean verify -Dtest=PracticeCompletionHistoryIntegrationTest,PracticeCompletionMigrationTest,RuleRunnerClientTest`：51 项、失败 0、错误 0。收尾同步 main 56b7668（V10 默认注册验证码）后，迁移顺延 V11，测试注册复用 main 的 fake 辅助方法；最终提交的 CI 结果见本 PR 最新 Checks / 描述。
 
