@@ -29,3 +29,7 @@ loadtest/*.seed-state.tmp
 loadtest/seed/__pycache__/
 loadtest/artifacts/
 loadtest/profiling/**/__pycache__/
+
+# Private upgrade inputs, converted banks, reports and browser screenshots.
+tools/qbank-upgrade/local/
+tools/qbank-upgrade/**/__pycache__/
