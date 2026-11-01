@@ -27,3 +27,5 @@ loadtest/users.tmp
 loadtest/*.seed-state.json
 loadtest/*.seed-state.tmp
 loadtest/seed/__pycache__/
+loadtest/artifacts/
+loadtest/profiling/**/__pycache__/

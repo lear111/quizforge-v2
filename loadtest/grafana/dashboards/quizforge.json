@@ -2,7 +2,7 @@
   "uid": "quizforge-loadtest",
   "title": "QuizForge 本地压测",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -524,6 +524,76 @@
           "placement": "bottom"
         }
       }
+    },
+    {
+      "id": 15,
+      "title": "各容器 CPU 使用量（核）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(container_cpu_usage_seconds_total{job=\"containers\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      },
+      "description": "Docker Engine stats，限于本次 Compose 项目的四个被测容器。CPU 为消耗核数；限流比例为发生限流的 CFS 周期/全部周期，不是损失的 CPU 百分比。缺失计数器不填 0。"
+    },
+    {
+      "id": 16,
+      "title": "各容器 CFS 限流周期比例",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(container_cpu_cfs_throttled_periods_total{job=\"containers\"}[$__rate_interval])) / sum by (service) (rate(container_cpu_cfs_periods_total{job=\"containers\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      },
+      "description": "Docker Engine stats，限于本次 Compose 项目的四个被测容器。CPU 为消耗核数；限流比例为发生限流的 CFS 周期/全部周期，不是损失的 CPU 百分比。缺失计数器不填 0。"
     }
   ]
 }

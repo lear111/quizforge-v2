@@ -8,7 +8,22 @@ COPY backend/src ./src
 COPY frontend/shared/richtext/service.json /frontend/shared/richtext/service.json
 RUN mvn -B -ntp -DskipTests package
 
-# Runtime stage: JRE only, non-root user.
+# Optional local profiling target; recording is started explicitly with jcmd.
+FROM eclipse-temurin:21-jdk AS profiling
+RUN useradd --system --uid 10001 quizforge \
+    && jfr configure --input profile.jfc --output /opt/qf-profile.jfc \
+       'jdk.ExecutionSample#period=10ms' \
+       'jdk.NativeMethodSample#enabled=false' \
+       'jdk.ObjectAllocationSample#enabled=true' \
+       'jdk.ObjectAllocationSample#stackTrace=true' \
+       'jdk.ObjectAllocationSample#throttle=150/s'
+WORKDIR /app
+COPY --from=build /src/target/quizforge-backend.jar app.jar
+USER quizforge
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]
+
+# Default runtime remains JRE only, non-root user.
 FROM eclipse-temurin:21-jre
 RUN useradd --system --uid 10001 quizforge
 WORKDIR /app

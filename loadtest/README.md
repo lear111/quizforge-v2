@@ -1,6 +1,6 @@
 # 本地压测准备
 
-只用于开发机的隔离 Compose 项目，不得将 BASE_URL、抓取目标或 Docker context 指向远程服务器。这里只提供造数和单用户连通性检查，正式 k6 场景由作者编写。需要本地 Docker Compose **2.24.4+**（使用 `!override`）、Python 3、可用的 Docker 内存至少 10 GiB；无需安装 k6。监控和负载生成器在被测 4 核/8 GiB 之外，还会消耗开发机资源；本次冒烟不构成容量结论。
+只用于开发机的隔离 Compose 项目，不得将 BASE_URL、抓取目标或 Docker context 指向远程服务器。这里只提供造数、单用户连通性检查及可选的短时 profiling 冒烟，正式 k6 场景由作者编写。需要本地 Docker Compose **2.24.4+**（使用 `!override`）、Python 3、可用的 Docker 内存至少 10 GiB；无需安装 k6、Java 或 profiler。监控和负载生成器在被测 4 核/8 GiB 之外，还会消耗开发机资源；本次冒烟不构成容量结论。
 
 ## 启动
 
@@ -86,10 +86,79 @@ Runner 新增抓取目标 `rule-runner:8090/v1/metrics/prometheus`，也应为 U
 | `qf_runner_worker_starts_total` | 启动尝试累计次数；异步启动失败也记一次。 |
 | `qf_runner_worker_stops_total{reason}` | 停止累计次数；lru、max_requests、timeout、abnormal_exit、idle、shutdown、output_limit，单进程只记一次。 |
 | `qf_runner_workers`、`qf_runner_queue_length` | 池内当前工作进程数（含空闲）与等待分配的队列长度。 |
+| `container_cpu_usage_seconds_total{project,service,id}` | Docker Engine 的 cpu_usage.total_usage 纳秒转秒；rate 后是消耗的 CPU 核数，不是占 quota 的百分比。 |
+| `container_cpu_cfs_periods_total{project,service,id}` | Engine throttling_data.periods，CFS 调度周期累计数。 |
+| `container_cpu_cfs_throttled_periods_total{project,service,id}` | Engine throttling_data.throttled_periods，至少发生过一次限流的周期数。 |
+| `container_cpu_cfs_throttled_seconds_total{project,service,id}` | Engine throttling_data.throttled_time 纳秒转秒；可能跨多个运行线程累计，不能当作墙钟损失比例。 |
+| `qf_container_collector_up{project}` | Docker API 版本与当前项目容器发现是否成功。 |
+| `qf_container_stats_up{project,service,id}` | 该容器的 stats 请求是否成功；缺失或请求失败不会伪造 CPU/CFS 样本。 |
+| `qf_container_stats_throttling_available{project,service,id}` | 是否包含全部三个 CFS 计数器；不支持时为 0，CFS 图表为空而非显示“未限流”。 |
 
 P95/P99 用 `histogram_quantile(0.95/0.99, sum by(le,uri,method)(rate(http_server_requests_seconds_bucket[1m])))`；runner 按 op 聚合。HTTP 和 runner 直方图边界范围配置为 1ms..120s，超过上界的观测仍进入 +Inf 桶。错误率面板分别显示 5xx、4xx+5xx；业务规则的 HTTP 422 会计入后者。进入 Controller 前即被安全过滤器拒绝的请求可能以 UNKNOWN 为 uri；面板保留该标签，不使用原始 URL 制造高基数。5 秒抓取，建议至少等待两次抓取再看区间 rate。单次冒烟或没有请求时，部分图表为空/NaN 属正常，不将“无数据”画成 0。
 
 官方配置依据：[Spring Boot metrics](https://docs.spring.io/spring-boot/4.1/reference/actuator/metrics.html)、[Micrometer cache binding](https://docs.micrometer.io/micrometer/reference/reference/cache.html)、[Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/)、[k6 Cookie API](https://grafana.com/docs/k6/latest/using-k6/cookies/)。依赖版本由项目 Spring Boot 4.1.2 BOM 管理。
+
+## 容器 CPU 与限流观测
+
+压测 overlay 使用等效的轻量 `container-metrics` exporter，而非 cAdvisor。它通过本机 Linux Docker Engine 的 Unix socket，只调用 GET `/version`、`/containers/json`、`/containers/{id}/stats?stream=false&one-shot=true`，动态协商 API 版本；按 Compose project 标签筛选后再次核对，仅采集 **app/mysql/rule-runner/nginx**。没有远程 Docker endpoint 配置，不读取容器环境变量，不控制容器。Prometheus 在 internal monitoring 网络抓取 `container-metrics:9404/metrics`，不发布端口；`containers` target 应为 UP，collector/stats/throttling_available 三类指标应为 1。
+
+这避免了 cAdvisor 在 Desktop VM 中的宿主根目录/cgroup 挂载差异。本次选择等效方案，没有据此声称 cAdvisor 不兼容。Docker socket 的 `:ro` 只保护挂载文件，**不限制 Engine HTTP API 的写方法**；因此仅在本机可丢弃环境使用这个受信任的 GET-only exporter，不把 socket 或端口暴露到外网。此镜像因 socket 权限使用 root，drop 全部 capabilities、只读根文件系统；app 仍为非 root。不要复用到生产部署。
+
+新增“各容器 CPU 使用量（核）”与“各容器 CFS 限流周期比例”图表。后者为 `rate(throttled_periods)/rate(periods)`：例如 0.4 表示 40% 的调度周期发生过限流，**不是损失 40% 的 CPU**。重建容器后 id 标签变化，Prometheus 能处理每个容器计数器的重置；不能跨 id 先求和再 rate。刚启动或没发生有效周期时可能为 NaN。
+
+如果该 Engine 不提供 `throttling_data`，先检查 `qf_container_stats_throttling_available`，不要从 `docker stats` 的 CPU% 推断限流。可用下面的本机对照方式；cgroup v2 中 `nr_periods/nr_throttled/throttled_usec` 分别对应上面三个 CFS 计数器（时间单位微秒），同一录制前后各取一次：
+
+```powershell
+docker compose @compose exec -T app cat /sys/fs/cgroup/cpu.stat
+docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}'
+```
+
+`docker stats` 仅是使用量快照，不能替代 CFS 指标。Windows/WSL2 的 Linux 容器运行在 Docker Desktop VM 内，宿主任务管理器不是容器 CPU quota 的观测点。本地 Engine 的 API 定义见 [Docker Engine container stats](https://docs.docker.com/reference/api/engine/version/v1.51/#tag/Container/operation/ContainerStats)。
+
+## 按需 JFR 与 HTML 火焰图
+
+仅压测 overlay 选择 `backend/Dockerfile` 的 `profiling` target（Temurin 21 **JDK**，带 jcmd/jfr）；默认生产构建仍使用最终 JRE stage。app 的 entrypoint、堆和 CPU quota 不变，额外预设 FlightRecorder 的 stackdepth=128。**没有 `StartFlightRecording` 参数，也不会自动录制。** `/opt/qf-profile.jfc` 基于 JDK 的 profile 配置，ExecutionSample 间隔 10ms，关闭 NativeMethodSample（避免把 native 中等待的线程混入 Java CPU 图），ObjectAllocationSample 启用 stackTrace，throttle=150/s。录制有开销，开启/未开启的数据应分开记录。
+
+在上面启动环境的同一个 PowerShell 窗口运行；jcmd 与 app 同为 uid 10001，无需宿主 Java：
+
+```powershell
+# 初始应为 No available recordings；app 中 Java 是 PID 1。
+docker compose @compose exec -T app jcmd 1 JFR.check
+# 开始录制，限制磁盘缓冲大小/最长保留时间；不会自动结束。
+docker compose @compose exec -T app jcmd 1 JFR.start name=qf settings=/opt/qf-profile.jfc disk=true maxsize=256m maxage=5m
+# 此时运行压测；要中途导出且继续录制可执行：
+# docker compose @compose exec -T app jcmd 1 JFR.dump name=qf filename=/tmp/qf-profile-part.jfr
+# 停止并导出，放 /tmp 避免绑定目录的 uid 权限差异。
+docker compose @compose exec -T app jcmd 1 JFR.stop name=qf filename=/tmp/qf-profile.jfr
+New-Item -ItemType Directory -Force loadtest/artifacts | Out-Null
+docker compose @compose cp app:/tmp/qf-profile.jfr loadtest/artifacts/app.jfr
+docker compose @compose exec -T app jfr summary /tmp/qf-profile.jfr
+
+# 固定 async-profiler v4.2 的独立 Java converter，构建时校验官方 release SHA-256。
+docker compose @compose --profile tools build jfr-converter
+docker compose @compose --profile tools run --rm jfr-converter --state runnable --norm --dot app.jfr cpu.html
+docker compose @compose --profile tools run --rm jfr-converter --alloc --total --norm --dot app.jfr alloc.html
+Start-Process loadtest/artifacts/cpu.html
+Start-Process loadtest/artifacts/alloc.html
+```
+
+转换容器 `network_mode: none`，只读录制文件并向 artifacts 目录写 HTML；CPU 图按方法/调用栈聚合所有线程（没有 `--threads` 分拆），`--alloc --total` 显示采样估算的分配字节热点。这里必须用 `--state runnable`：v4.2 的 `--cpu` 筛选 async-profiler 的 STATE_DEFAULT，而 JDK 的 ExecutionSample 是 STATE_RUNNABLE，直接使用会得到空图（见 [JfrConverter.getThreadStates](https://github.com/async-profiler/async-profiler/blob/v4.2/src/converter/one/convert/JfrConverter.java#L109-L117)）。本配置关闭 NativeMethodSample 后，runnable 图只统计 Java ExecutionSample；不要直接套用到包含 native/wall 事件的其他录制。图中可点击栈缩放、搜索方法；分配图不代表存活堆或泄漏。JDK JFR 的 ExecutionSample 是 Java 执行采样，不能把它当作完整的 native/off-CPU 分析；未被采样的代码不会出现。原始 JFR 可能含环境/请求内容，users.json 含密码，`loadtest/artifacts/` 整体 gitignore，不上传原始录制或账号文件到 PR。官方工具依据：[JDK 21 jcmd](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jcmd.html)、[jfr configure](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jfr.html)、[async-profiler v4.2 converter](https://github.com/async-profiler/async-profiler/blob/v4.2/docs/ConverterUsage.md)。
+
+### 20 VU / 60 秒测量链路冒烟
+
+新建一个未被使用的 `qf-loadtest-profiling` 项目（将启动段 `$project` 改为此值；端口也选空闲值），不要复用正式压测账号或已提交题目。此脚本会执行真实的 overview/read/draft/submit，不是容量基准。
+
+```powershell
+python loadtest/seed/seed.py --project $project --base-url $env:QF_PUBLIC_ORIGIN --users 20 --output loadtest/artifacts/users.json
+# 等待 Prometheus 至少两次抓取后，按上面命令 JFR.start。
+$usersPath=(Resolve-Path loadtest/artifacts/users.json).Path
+docker compose @compose --profile tools run --rm -v "${usersPath}:/work/users.json:ro" k6 run profiling/smoke.js
+# 再执行 JFR.stop、cp 和两个 converter 命令。
+# Grafana 应出现 CPU 核数、CFS 周期比例，Prometheus 三个 target 都 UP。
+docker compose @compose down
+```
+
+默认为 20 VU/60s，setup 阶段串行登录（避免无关的 scrypt 舱壁突发），每个 VU 使用独立账号，每轮使用新的客观题；`VUS`/`DURATION` 可通过 compose run `-e` 调整，账号数量不得小于 VU。脚本没有远程 JS import，拒绝非本机 URL，禁止重定向；本地 HTTP 只显式重放 Secure Cookie，不改服务端属性。每人最多 300 轮，耗尽或遇到已提交题会失败，重跑请换全新项目/夹具。不对延迟设容量阈值，仅检查 HTTP 200 与客观题满分。
 
 ## 可复现资源边界与收尾
 
@@ -101,7 +170,7 @@ P95/P99 用 `histogram_quantile(0.95/0.99, sum by(le,uri,method)(rate(http_serve
 | nginx | 0.25 核 | 0.5 GiB |
 | 合计 | 4 核 | 8 GiB |
 
-Prometheus、Grafana 各 0.5 核/512 MiB，k6 1 核/512 MiB，不计入被测机配置。quota 是上限，不代表独占物理核；记录主机 CPU、Docker 可用资源、镜像 digest、提交号、人数、缓存冷热、连接池和 runner 并发配置，才能比较结果。镜像固定版本；保留卷会保留缓存以外的业务数据和监控历史，重启 app 会清空 JVM 投影缓存。
+压测基线固定 **QF_RULE_WORKER_LIMIT=8**；第三轮在此值下 LRU 抖动已消除，本任务保留该基线，以避免把重复冷启动混入 app CPU 分析。不改生产 compose 的默认值，也不改变池调度或 Java 舱壁。Prometheus、Grafana 各 0.5 核/512 MiB，container-metrics 0.25 核/128 MiB，k6 1 核/512 MiB，转换器 1 核/1 GiB，不计入被测机配置；转换在压测后进行。quota 是上限，不代表独占物理核；记录主机 CPU、Docker 可用资源、镜像 digest、提交号、人数、缓存冷热、连接池和 runner 并发配置，才能比较结果。镜像固定版本；保留卷会保留缓存以外的业务数据和监控历史，重启 app 会清空 JVM 投影缓存。
 
 ```powershell
 docker compose @compose down
