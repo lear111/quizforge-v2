@@ -23,7 +23,7 @@
 | --- | --- |
 | 传输方式 | HTTP/1.1 + JSON，Java 端使用 JDK 自带的 `HttpClient`，保持长连接 |
 | 网络位置 | Docker Compose 内部网络，只有 `app` 容器能访问；该网络**不能访问外网** |
-| 接口 | `POST /v1/execute` 执行规则；`GET /v1/health` 健康检查；`GET /v1/metrics` 运行指标 |
+| 接口 | `POST /v1/execute` 执行规则；`GET /v1/health` 健康检查；`GET /v1/metrics` JSON 指标；`GET /v1/metrics/prometheus` Prometheus 指标（同样需要内部令牌） |
 | 内部认证 | 请求头 `X-Internal-Token` 携带共享密钥（通过环境变量配置），作为网络隔离之外的第二道防线 |
 | 拓展文件 | rule-runner 以**只读**方式挂载文件存储的 `blobs/` 目录（ADR-007），按 SHA-256 读取规则与 Schema 文件 |
 
@@ -241,6 +241,7 @@ rule-runner 主进程（HTTP 服务，不执行任何拓展代码）
 
 - rule-runner 每个请求输出一行结构化日志：`requestId`、`op`、拓展摘要前 12 位、耗时、结果码。不记录题目和作答内容。
 - `GET /v1/metrics` 提供：各操作的调用次数与耗时分布、超时次数、工作进程数、队列长度。阶段六压测时用来判断 rule-runner 是否成为瓶颈。
+- `GET /v1/metrics/prometheus` 保留上述 JSON 接口不变，额外导出按 op 的池内排队/执行阶段直方图、进程启动次数、按原因的停止次数，以及当前进程数/队列长度；完整口径见 `rule-runner/README.md`。仅压测 overlay 为 runner 加入内部 monitoring 网络供 Prometheus 携带内部令牌抓取，不发布 runner 端口，不经 Nginx 对外暴露。
 - Java 记录调用 rule-runner 的耗时，并计算它在保存、提交 P95 中所占的比例（ADR-003 验证项 4）。
 
 ---

@@ -66,6 +66,10 @@ python loadtest/seed/verify_answers.py --base-url http://localhost:8099
 
 打开 <http://localhost:3000/d/quizforge-loadtest>，账号 `admin`，默认密码 `loadtest-local-only`（可通过 QF_GRAFANA_PASSWORD 替换）。面板和 Prometheus 数据源自动预置；Prometheus 在 <http://localhost:9090/targets> 应显示 quizforge 为 UP。端口可通过上述环境变量调整。
 
+Runner 新增抓取目标 `rule-runner:8090/v1/metrics/prometheus`，也应为 UP。仅 loadtest overlay 将 runner 加入 `internal: true` 的 monitoring 网络，未发布端口；Nginx 明确对该路径返回 404。Prometheus 按[官方 HTTP 配置](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_config)通过 `http_headers.X-Internal-Token.files` 读取 `/etc/prometheus/runner-token`；Compose config 内容来自与 app/runner 相同的 `QF_RULE_RUNNER_TOKEN`（含开发环境默认值），更换令牌后重新创建服务即可。不要把含令牌的 `docker compose config` 完整输出上传。
+
+新增四个面板：按 op 的 runner **排队 vs 执行 P95**、**进程启动次数/分钟**、**队列长度与当前进程数**、**按原因的停止次数/分钟**。启动/停止用 `increase(...[1m])`，直方图用与现有图表相同的 `$__rate_interval`。LRU 停止与启动同时频繁出现可作为抖动证据；执行阶段仍包含冷启动，不能直接当成钩子计算耗时。排队直方图只包含实际分配过 worker 的请求，未获分配便超时/拒绝/关闭的请求不进入该直方图。
+
 | Prometheus 名称 | 含义与标签 |
 | --- | --- |
 | `http_server_requests_seconds_bucket/count/sum` | 默认 HTTP Timer；按 `uri` 路由模板、method、status 等区分，直方图供 P95/P99。不要用真实题目 ID 作标签。 |
@@ -77,6 +81,11 @@ python loadtest/seed/verify_answers.py --base-url http://localhost:8099
 | `qf_rule_runner_timeouts_total{op,source}` | 累计超时，source=http 表示 Java HttpTimeoutException（含连接超时），source=runner 表示 HTTP 200 的 RULE_TIMEOUT；每次逻辑调用最多记一次。没有发生过时该标签序列尚不存在。 |
 | `cache_gets_total{cache="projection",result="hit"或"miss"}` | Caffeine 命中/未命中累计次数；面板用区间 rate(hit)/rate(hit+miss) 得命中率。 |
 | `cache_size`、`cache_evictions_total` 等 | Caffeine 默认绑定器输出的缓存大小、淘汰等统计。 |
+| `qf_runner_queue_wait_seconds_bucket/count/sum{op}` | runner 池内入队到分配 worker 的等待时间；单调时钟，按 op 区分。 |
+| `qf_runner_execution_seconds_bucket/count/sum{op}` | 发给 worker 前到收到完整结果帧或活动任务被终止的时间；含 IPC、worker 内序列化、冷启动、VM/Schema 初始化及失败执行，不含主进程输入编码和成功响应的解析。 |
+| `qf_runner_worker_starts_total` | 启动尝试累计次数；异步启动失败也记一次。 |
+| `qf_runner_worker_stops_total{reason}` | 停止累计次数；lru、max_requests、timeout、abnormal_exit、idle、shutdown、output_limit，单进程只记一次。 |
+| `qf_runner_workers`、`qf_runner_queue_length` | 池内当前工作进程数（含空闲）与等待分配的队列长度。 |
 
 P95/P99 用 `histogram_quantile(0.95/0.99, sum by(le,uri,method)(rate(http_server_requests_seconds_bucket[1m])))`；runner 按 op 聚合。HTTP 和 runner 直方图边界范围配置为 1ms..120s，超过上界的观测仍进入 +Inf 桶。错误率面板分别显示 5xx、4xx+5xx；业务规则的 HTTP 422 会计入后者。进入 Controller 前即被安全过滤器拒绝的请求可能以 UNKNOWN 为 uri；面板保留该标签，不使用原始 URL 制造高基数。5 秒抓取，建议至少等待两次抓取再看区间 rate。单次冒烟或没有请求时，部分图表为空/NaN 属正常，不将“无数据”画成 0。
 

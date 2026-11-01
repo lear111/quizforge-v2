@@ -6,3 +6,11 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: [app:9091]
+  - job_name: rule-runner
+    metrics_path: /v1/metrics/prometheus
+    follow_redirects: false
+    http_headers:
+      X-Internal-Token:
+        files: [/etc/prometheus/runner-token]
+    static_configs:
+      - targets: [rule-runner:8090]
