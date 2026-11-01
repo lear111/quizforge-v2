@@ -185,6 +185,29 @@ class QuotaIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_collection WHERE user_id=?", Long.class, user.id())).isEqualTo(1);
     }
 
+    @Test void storageBatchChecksNetGrowthAndRollsBackAllItemsOnOverage() {
+        var user = user(false); var admin = user(true);
+        tx.executeWithoutResult(s -> quotas.setStorage(user.id(),"state","old",null,100));
+        quotas.adjust(admin.id(),user.id(),100L,null);
+        tx.executeWithoutResult(s -> quotas.setStorageBatch(user.id(),List.of(
+                new QuotaService.StorageItem("snapshot","new",null,100),
+                new QuotaService.StorageItem("state","old",null,0))));
+        assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(100);
+        assertQuota(() -> tx.executeWithoutResult(s -> quotas.setStorageBatch(user.id(),List.of(
+                new QuotaService.StorageItem("state","old",null,102),
+                new QuotaService.StorageItem("snapshot","new",null,0)))),"STORAGE_QUOTA_EXCEEDED");
+        assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(100);
+        assertThat(jdbc.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE user_id=? AND category='snapshot'",Long.class,user.id())).isEqualTo(100);
+        assertThat(jdbc.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE user_id=? AND category='state'",Long.class,user.id())).isZero();
+        quotas.adjust(admin.id(),user.id(),200L,null);
+        tx.executeWithoutResult(s -> quotas.setStorage(user.id(),"whiteboard","context:q1",null,100));
+        quotas.adjust(admin.id(),user.id(),50L,null);
+        tx.executeWithoutResult(s -> quotas.setStorageBatchAndClearPrefix(user.id(),
+                List.of(new QuotaService.StorageItem("snapshot","new",null,75)),"whiteboard","context:"));
+        assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(75); // Shrinking is allowed above a newly lowered limit.
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category='whiteboard'",Integer.class,user.id())).isZero();
+    }
+
     @Test void storageAndDownloadRollbackWithCallerFailureAndRequireTransaction() {
         var user = user(false);
         assertThatThrownBy(() -> tx.executeWithoutResult(s -> {

@@ -30,6 +30,8 @@
 
 按 user_id 锁定 `quota_account`（初始化用直接获取排他锁的幂等 UPSERT，再 SELECT FOR UPDATE），持锁读取条目旧值、检查增量与更新用量。相同用户并发导入、下载、管理员修改在该行串行，不会各自基于旧余额通过；不同用户独立。配额与业务数据同事务失败回滚，拒绝增长后已用量不变。降低额度后允许缩减占用。
 
+练习操作一次可能同时缩减 live state、增加轮次摘要或替换快照，因此用 `setStorageBatch` 检查全部条目的净增量；restart 删除白板的释放也合并进入同一次检查。不会因中间更新顺序误拒绝最终未超额的操作；调低额度后，最终用量仍高于新上限的净缩减也允许。拒绝后整批条目及业务数据回滚。
+
 业务行锁先于账本锁；提交仍先保存草稿，事务外调用 rule-runner，再在最终事务锁存档/状态/轮次、写快照/回执并记账。最终提交超额只回滚结果/快照/回执，前阶段已提交的草稿保留。没有把网络判分包进数据库事务。删除先锁实例、按顺序锁存档/状态，最后释放账本；释放查询采用当前读，不使用过期一致性快照累计。
 
 并发测试以 MyBatis 门控保证两次真实导入在两个不同 MySQL connection / 活跃事务中同时到达插入，再放行；额度只容一份，断言一份成功、一份配额拒绝且恰好一个实例。下载以 barrier 同时预约，只允许一笔通过。不用 sleep 判断并发状态。
@@ -45,6 +47,7 @@
 | 公共内容不计费 | `publicContentReferenceDoesNotChargePrivateStorage` |
 | 导入拒绝无业务残留、并发不超用、HTTP 错误 | `overQuotaImportRollsBackEveryBusinessRowAndLedger`、`concurrentImportsCannotExceedSingleInstanceLimit`、`importHttpReturnsQuotaErrorAndDeleteHttpIsOwnerScoped` |
 | 同事务回滚、下载并发、跨日及服务重建 | `storageAndDownloadRollbackWithCallerFailureAndRequireTransaction`、`concurrentDownloadReservationsCannotExceedLimit`、`downloadLimitResetsAtBeijingMidnightAndSurvivesNewServiceCall` |
+| 批量净变化、降额后的缩减、超额整批回滚 | `storageBatchChecksNetGrowthAndRollsBackAllItemsOnOverage`；真实 runner 练习记账用例另在额度用满并有大白板时执行 restart |
 | 删除历史与白板、IDOR、释放 | `deletionRemovesHistoricalSnapshotsWhiteboardsAndReleasesAllOwnedItems`、上述 HTTP 删除测试 |
 | 草稿超额保留旧答案 | `draftGrowthIsBilledInSameTransactionAndFailurePreservesOldAnswer` |
 | 真实 runner 的提交/review/retry/restart、重放不重扣 | `practiceQuotaTracksSubmissionReviewRetryAndRestartWithoutChargingReplay` |
@@ -56,6 +59,8 @@
 ## 验证与边界
 
 测试数量及 CI 结果在 PR 描述更新。配额专项测试使用真实 MySQL；导入计费专项隔离规则调用，练习集成和浏览器另外使用真实 rule-runner，不将 mock 验证称为全链路验收。
+
+浏览器首轮 CI 的新增手机用例存在初始化时序：其他用例已审核相同样例后，进入练习空间会自动打开题库并关闭侧栏。已等待题库激活完成后再打开侧栏，后续四项 CI 通过。本机完整套件另一次在旧 `read-slices.spec.mjs:115` 的刷新后点击题库遇到侧栏移出视口超时（该用例该次之前的配额测试已成功，CI 完整 12 项通过）；这是旧用例的同类就绪边界，本任务记录但未修改旧读题测试或生产侧栏行为。
 
 目前没有题库导出/下载路由，`consumeDownload` 已完成持久化、跨日、并发与回滚测试，留给对应接口在准备文件后、授权响应前的事务内调用，按授权文件大小计入（网络中断不自动退还）。正常读题/读图路由没有接入扣减。上传图片/截图、白板写入、历史删除的未来接口须接入统一服务；当前已有的草稿与轮次写路径已接入，既有白板/上传资源已补记。尚无独立笔记表，现有快照及白板随题库删除。
 

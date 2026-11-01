@@ -114,6 +114,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     @Autowired QuestionMapper questions;
     @Autowired JdbcTemplate jdbc;
     @Autowired cloud.treenewbee.quizforge.quota.application.QuotaService quotas;
+    @Autowired org.springframework.transaction.support.TransactionTemplate quotaTransaction;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @MockitoSpyBean RuleRunnerClient runner;
     String user;
@@ -198,6 +199,11 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertPracticeQuotaEqualsPayloadBytes();
         assertThat(quotas.usage(user).storage().usedBytes()).isPositive(); // Frozen historical submission survives retry.
         ok(post(type,"submit","quota-again",4,answer(type,true)));
+        String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
+        String ink=JSON.writeValueAsString("x".repeat(10000));
+        jdbc.update("INSERT INTO practice_whiteboard VALUES (?, 'q1', ?, ?, 1, NOW(3))",context,user,ink);
+        quotaTransaction.executeWithoutResult(s -> quotas.setStorage(user,"whiteboard",context+":q1",samples.get(type).collection(),ink.length()));
+        jdbc.update("UPDATE quota_account SET storage_limit=storage_used WHERE user_id=?",user);
         ok(restart(type,"quota-restart",ok(summary(type))));
         assertPracticeQuotaEqualsPayloadBytes();
         assertThat(jdbc.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE user_id=? AND category='state'",Long.class,user)).isZero();
