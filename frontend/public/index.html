@@ -24,6 +24,7 @@
       <h1 id="page-title" tabindex="-1">欢迎回来</h1>
       <p id="page-description" class="description">登录你的 QuizForge 账号。</p>
       <p id="feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
+      <p id="notice" class="notice" role="status" hidden></p>
 
       <div id="checking-view" class="checking" role="status">
         <span class="spinner" aria-hidden="true"></span>
@@ -32,7 +33,7 @@
       </div>
 
       <div id="forms-view" hidden>
-        <div class="tabs" role="tablist" aria-label="账号操作">
+        <div id="tabs" class="tabs" role="tablist" aria-label="账号操作">
           <button id="login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-panel">登录</button>
           <button id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-panel" tabindex="-1">注册</button>
         </div>
@@ -41,25 +42,38 @@
           <form id="login-form" novalidate>
             <fieldset>
               <div class="field">
-                <label for="login-email">邮箱</label>
-                <input id="login-email" name="email" type="email" inputmode="email" autocomplete="username" placeholder="你的邮箱地址" autocapitalize="none" spellcheck="false">
+                <label for="login-email">邮箱或手机号</label>
+                <input id="login-email" name="identifier" type="text" inputmode="email" autocomplete="username" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
               </div>
               <div class="field">
                 <label for="login-password">密码</label>
                 <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
               </div>
+              <div class="field" data-requires="captcha" hidden>
+                <span class="label">人机验证</span>
+                <div class="captcha" data-captcha></div>
+              </div>
+              <div class="field" data-requires="code" hidden>
+                <label for="login-code">验证码</label>
+                <div class="code-row">
+                  <input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
+                  <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                </div>
+              </div>
               <button class="primary" type="submit">登录</button>
             </fieldset>
           </form>
+          <p class="switch-note"><button id="to-reset" class="text-button" type="button">忘记密码？</button></p>
           <p class="switch-note">还没有账号？<button id="to-register" class="text-button" type="button">注册新账号</button></p>
         </section>
 
         <section id="register-panel" role="tabpanel" aria-labelledby="register-tab" hidden>
+          <p id="register-closed" class="feedback" hidden>注册暂未开放：所需的验证服务尚未配置，请稍后再试。</p>
           <form id="register-form" novalidate>
             <fieldset>
               <div class="field">
-                <label for="register-email">邮箱</label>
-                <input id="register-email" name="email" type="email" inputmode="email" autocomplete="username" placeholder="你的邮箱地址" autocapitalize="none" spellcheck="false">
+                <label for="register-email">邮箱或手机号</label>
+                <input id="register-email" name="identifier" type="text" inputmode="email" autocomplete="username" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
               </div>
               <div class="field">
                 <label for="register-name">姓名</label>
@@ -74,22 +88,97 @@
                 <label for="register-confirm">确认密码</label>
                 <input id="register-confirm" name="confirm" type="password" autocomplete="new-password" placeholder="再输入一次密码">
               </div>
+              <div class="field" data-requires="invitation" hidden>
+                <label for="register-invitation">邀请码</label>
+                <input id="register-invitation" name="invitationCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="QF-XXXXXXXX-…">
+              </div>
+              <div class="field" data-requires="captcha" hidden>
+                <span class="label">人机验证</span>
+                <div class="captcha" data-captcha></div>
+              </div>
+              <div class="field" data-requires="code" hidden>
+                <label for="register-code">验证码</label>
+                <div class="code-row">
+                  <input id="register-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
+                  <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                </div>
+              </div>
               <button class="primary" type="submit">注册并登录</button>
             </fieldset>
           </form>
           <p class="switch-note">已有账号？<button id="to-login" class="text-button" type="button">去登录</button></p>
+        </section>
+
+        <section id="reset-panel" hidden aria-labelledby="page-title">
+          <form id="reset-form" novalidate>
+            <fieldset>
+              <div class="field">
+                <label for="reset-identifier">邮箱或手机号</label>
+                <input id="reset-identifier" name="identifier" type="text" inputmode="email" autocomplete="username" placeholder="注册时使用的邮箱或手机号" autocapitalize="none" spellcheck="false">
+              </div>
+              <div class="field" data-requires="always-captcha">
+                <span class="label">人机验证</span>
+                <div class="captcha" data-captcha></div>
+              </div>
+              <div class="field">
+                <label for="reset-code">验证码</label>
+                <div class="code-row">
+                  <input id="reset-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
+                  <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="reset-password">新密码</label>
+                <input id="reset-password" name="password" type="password" autocomplete="new-password" placeholder="8–128 个字符">
+              </div>
+              <div class="field">
+                <label for="reset-confirm">确认新密码</label>
+                <input id="reset-confirm" name="confirm" type="password" autocomplete="new-password" placeholder="再输入一次新密码">
+              </div>
+              <button class="primary" type="submit">重置密码</button>
+            </fieldset>
+          </form>
+          <p class="switch-note"><button id="reset-back" class="text-button" type="button">返回登录</button></p>
         </section>
       </div>
 
       <section id="signed-in-view" class="signed-in" hidden>
         <div class="success-mark" aria-hidden="true">✓</div>
         <p id="identity" class="identity"></p>
+        <p id="unverified" class="signed-in-note" hidden></p>
         <p class="signed-in-note">你可以随时退出当前账号。</p>
         <section class="quota-section" aria-label="资源用量">
           <div id="quota-cards" class="quota-grid"></div>
           <p id="quota-status" class="quota-note" role="status"></p>
           <button id="quota-refresh" class="text-button" type="button">刷新用量</button>
         </section>
+        <details id="contact-section" class="contact-section">
+          <summary>绑定或更换联系方式</summary>
+          <form id="contact-form" novalidate>
+            <fieldset>
+              <div class="field">
+                <label for="contact-identifier">新的邮箱或手机号</label>
+                <input id="contact-identifier" name="identifier" type="text" inputmode="email" autocomplete="off" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="contact-password">当前密码</label>
+                <input id="contact-password" name="password" type="password" autocomplete="current-password" placeholder="请输入当前密码">
+              </div>
+              <div class="field" data-requires="always-captcha">
+                <span class="label">人机验证</span>
+                <div class="captcha" data-captcha></div>
+              </div>
+              <div class="field">
+                <label for="contact-code">验证码</label>
+                <div class="code-row">
+                  <input id="contact-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
+                  <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                </div>
+              </div>
+              <button class="primary" type="submit">确认绑定</button>
+            </fieldset>
+          </form>
+        </details>
         <a href="/practice/" class="primary">进入练习空间</a>
           <button id="logout" class="secondary" type="button">退出登录</button>
       </section>

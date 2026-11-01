@@ -25,7 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import cloud.treenewbee.quizforge.MySqlTestBase;
+import cloud.treenewbee.quizforge.identity.domain.Contact;
 import cloud.treenewbee.quizforge.identity.domain.PasswordHasher;
+import cloud.treenewbee.quizforge.identity.infrastructure.AccountMapper;
 import cloud.treenewbee.quizforge.identity.domain.SessionToken;
 import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 import cloud.treenewbee.quizforge.identity.infrastructure.UserMapper;
@@ -113,8 +115,8 @@ class AuthServiceTest extends MySqlTestBase {
     }
 
     @Test
-    void normalizeEmailRejectsNull() {
-        assertThatThrownBy(() -> AuthService.normalizeEmail(null))
+    void emailContactRejectsNull() {
+        assertThatThrownBy(() -> Contact.email(null))
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.status()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
@@ -123,8 +125,8 @@ class AuthServiceTest extends MySqlTestBase {
 
     @ParameterizedTest
     @ValueSource(strings = {"", "   ", "\t\r\n"})
-    void normalizeEmailRejectsEmptyOrWhitespace(String email) {
-        assertThatThrownBy(() -> AuthService.normalizeEmail(email))
+    void emailContactRejectsEmptyOrWhitespace(String email) {
+        assertThatThrownBy(() -> Contact.email(email))
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.status()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(e.code()).isEqualTo("VALIDATION_FAILED");
@@ -148,7 +150,7 @@ class AuthServiceTest extends MySqlTestBase {
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.code()).isEqualTo("INVALID_CREDENTIALS");
                     assertThat(e.status()).isEqualTo(HttpStatus.UNAUTHORIZED);
-                    assertThat(e.getMessage()).isEqualTo("邮箱或密码错误");
+                    assertThat(e.getMessage()).isEqualTo("账号或密码不正确，或账号已停用");
                 });
     }
 
@@ -158,7 +160,7 @@ class AuthServiceTest extends MySqlTestBase {
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.code()).isEqualTo("INVALID_CREDENTIALS");
                     assertThat(e.status()).isEqualTo(HttpStatus.UNAUTHORIZED);
-                    assertThat(e.getMessage()).isEqualTo("邮箱或密码错误");
+                    assertThat(e.getMessage()).isEqualTo("账号或密码不正确，或账号已停用");
                 });
     }
 
@@ -169,14 +171,17 @@ class AuthServiceTest extends MySqlTestBase {
         when(emptyUsers.findByEmail(EMAIL)).thenReturn(Optional.empty());
         // 用户存在性必须独立于密码比较结果进行校验。
         when(matchingHasher.verify(PASSWORD, null)).thenReturn(true);
-        AuthService isolatedAuth = new AuthService(emptyUsers, mock(SessionMapper.class), matchingHasher,
+        AuthPolicyService policies = mock(AuthPolicyService.class);
+        when(policies.current()).thenReturn(new AuthPolicyService.Policy(false, false, false, false, false, 0));
+        AuthService isolatedAuth = new AuthService(emptyUsers, mock(AccountMapper.class), mock(SessionMapper.class),
+                matchingHasher, policies, mock(VerificationCodeService.class), mock(InvitationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC), mock(TransactionTemplate.class));
 
         assertThatThrownBy(() -> isolatedAuth.login(EMAIL, PASSWORD, USER_AGENT))
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.status()).isEqualTo(HttpStatus.UNAUTHORIZED);
                     assertThat(e.code()).isEqualTo("INVALID_CREDENTIALS");
-                    assertThat(e.getMessage()).isEqualTo("邮箱或密码错误");
+                    assertThat(e.getMessage()).isEqualTo("账号或密码不正确，或账号已停用");
                 });
     }
 
