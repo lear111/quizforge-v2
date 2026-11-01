@@ -186,54 +186,29 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(lifecycle(type,"retry","retry",2,JSON.createObjectNode()).body()).isEqualTo(response.body());
     }
 
-    @Test void practiceQuotaTracksSubmissionReviewRetryAndRestartWithoutChargingReplay() throws Exception {
+    @Test void submissionReviewRetryAndRestartDoNotChargePracticeStorage() throws Exception {
         String type="简答题";
-        ok(post(type,"submit","quota-submit",0,answer(type,true)));
-        long submitted=quotas.usage(user).storage().usedBytes(); assertThat(submitted).isPositive();
-        assertPracticeQuotaEqualsPayloadBytes();
-        ok(post(type,"submit","quota-submit",0,answer(type,true)));
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(submitted);
-        ok(lifecycle(type,"review","quota-review",2,reviewData(1.5,part(type))));
-        assertPracticeQuotaEqualsPayloadBytes();
-        ok(lifecycle(type,"retry","quota-retry",3,JSON.createObjectNode()));
-        assertPracticeQuotaEqualsPayloadBytes();
-        assertThat(quotas.usage(user).storage().usedBytes()).isPositive(); // Frozen historical submission survives retry.
-        ok(post(type,"submit","quota-again",4,answer(type,true)));
-        String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
-        String ink=JSON.writeValueAsString("x".repeat(10000));
-        jdbc.update("INSERT INTO practice_whiteboard VALUES (?, 'q1', ?, ?, 1, NOW(3))",context,user,ink);
-        quotaTransaction.executeWithoutResult(s -> quotas.setStorage(user,"whiteboard",context+":q1",samples.get(type).collection(),ink.length()));
+        long imported=quotas.usage(user).storage().usedBytes();
         jdbc.update("UPDATE quota_account SET storage_limit=storage_used WHERE user_id=?",user);
+        ok(post(type,"submit","quota-submit",0,answer(type,true)));
+        ok(post(type,"submit","quota-submit",0,answer(type,true)));
+        ok(lifecycle(type,"review","quota-review",2,reviewData(1.5,part(type))));
+        ok(lifecycle(type,"retry","quota-retry",3,JSON.createObjectNode()));
+        ok(post(type,"submit","quota-again",4,answer(type,true)));
         ok(restart(type,"quota-restart",ok(summary(type))));
-        assertPracticeQuotaEqualsPayloadBytes();
-        assertThat(jdbc.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE user_id=? AND category='state'",Long.class,user)).isZero();
-        assertThat(quotas.usage(user).storage().usedBytes()).isPositive(); // Historical snapshot and summary remain billed.
+        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(imported);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user)).isZero();
     }
 
-    @Test void quotaFailureDuringFinalSubmissionRollsBackResultRoundAndReceiptButKeepsPreviouslySavedDraft() throws Exception {
+    @Test void fullStorageDoesNotPreventDraftOrSubmission() throws Exception {
         String type="单选题";
+        long imported=quotas.usage(user).storage().usedBytes();
+        jdbc.update("UPDATE quota_account SET storage_limit=0 WHERE user_id=?",user);
         ok(post(type,"draft","quota-draft",0,answer(type,true)));
-        long draftBytes=quotas.usage(user).storage().usedBytes();
-        jdbc.update("UPDATE quota_account SET storage_limit=? WHERE user_id=?",draftBytes,user);
-        error(post(type,"submit","quota-too-full",1,answer(type,true)),413,"STORAGE_QUOTA_EXCEEDED");
-        var state=jdbc.queryForMap("SELECT status,revision,result FROM practice_question_state WHERE user_id=?",user);
-        assertThat(state.get("status")).isEqualTo("draft"); assertThat(((Number)state.get("revision")).longValue()).isEqualTo(2);
-        assertThat(state.get("result")).isNull();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_request_receipt WHERE user_id=? AND request_id='quota-too-full'",Integer.class,user)).isZero();
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(draftBytes);
+        ok(post(type,"submit","quota-full-submit",1,answer(type,true)));
+        assertThat(jdbc.queryForObject("SELECT status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("submitted");
+        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(imported);
         verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
-    }
-
-    private void assertPracticeQuotaEqualsPayloadBytes() {
-        long bytes=0;
-        for (var row:jdbc.queryForList("SELECT answer,answer_state,result,outline_states,projection FROM practice_question_state WHERE user_id=?",user))
-            for(var value:row.values())if(value!=null)bytes+=value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        for (var row:jdbc.queryForList("SELECT collection_snapshot,summary FROM practice_round WHERE user_id=? AND deleted_at IS NULL",user))
-            for(var value:row.values())if(value!=null)bytes+=value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        for (String payload:jdbc.queryForList("SELECT payload FROM practice_round_question WHERE user_id=?",String.class,user))
-            bytes+=payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(bytes);
     }
 
     @ParameterizedTest @ValueSource(strings={"简答题","简答题（答题区）"})
@@ -348,7 +323,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         ok(post(type,"submit","submit",0,answer(type,true)));
         var before=ok(summary(type)); String frozen=payload();
         String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
-        jdbc.update("INSERT INTO practice_whiteboard VALUES (?,?,?,JSON_OBJECT('strokes',JSON_ARRAY()),10,NOW(3))",context,samples.get(type).question().questionId(),user);
+        jdbc.update("INSERT INTO practice_whiteboard (context_id,question_id,user_id,draft,size_bytes,updated_at) VALUES (?,?,?,JSON_OBJECT('strokes',JSON_ARRAY()),10,NOW(3))",context,samples.get(type).question().questionId(),user);
         var response=restart(type,"restart",before); assertThat(ok(response).path("restarted").asBoolean()).isTrue();
         assertThat(restart(type,"restart",before).body()).isEqualTo(response.body());
         var row=jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=?",user);

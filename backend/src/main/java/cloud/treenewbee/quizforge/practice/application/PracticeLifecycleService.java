@@ -1,6 +1,5 @@
 package cloud.treenewbee.quizforge.practice.application;
 
-import cloud.treenewbee.quizforge.quota.application.PracticeStorage;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,16 +31,13 @@ public class PracticeLifecycleService {
     private final QuestionStamps stamps;
     private final Clock clock;
     private final JsonMapper json;
-    private final PracticeStorage storage;
 
     public PracticeLifecycleService(PracticeReadService reads, PracticeReadMapper readMapper, PracticeLifecycleMapper mapper,
             PracticeContextMapper contexts, PracticeSummaryService summaries, ReviewGrader grader, ReceiptMapper receipts,
-            TransactionTemplate tx, QuestionStamps stamps, Clock clock, JsonMapper json,
-            PracticeStorage storage) {
+            TransactionTemplate tx, QuestionStamps stamps, Clock clock, JsonMapper json) {
         this.reads = reads; this.readMapper = readMapper; this.mapper = mapper; this.contexts = contexts;
         this.summaries = summaries; this.grader = grader; this.receipts = receipts; this.tx = tx;
         this.stamps = stamps; this.clock = clock; this.json = json;
-        this.storage = storage;
     }
 
     public JsonNode retry(String userId, String collectionId, String qid, String requestId, long revision,
@@ -194,7 +190,6 @@ public class PracticeLifecycleService {
                 if (replay != null) return replay;
                 var response = operation.apply(context);
                 receipts.insert(userId, requestId, hash, json.writeValueAsString(response));
-                storage.context(userId, contextId, qid, context.currentRoundId());
                 // MySQL's JSON column normalizes object key order. Return that stored form
                 // on the first request too, so HTTP replay is identical byte for byte.
                 return receipt(userId, requestId, hash);
