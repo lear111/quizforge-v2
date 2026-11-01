@@ -15,13 +15,13 @@ export function bindLibraryManagement({request,getContext,beforeChange,onChanged
   function open(target,row,action='update'){
     const {kind,catalog}=getContext();if(busy||!catalog.canManage||kind==='extension'&&action==='create')return;
     operation={kind,target,action,path:row?.path||''};subject={...row};returnEdit=null;
-    const type=target==='group'?(kind==='extension'?'拓展分组':'分组'):kind==='bank'?'题库':'拓展',removing=action==='delete',creatingGroup=target==='group'&&action==='create',readOnly=kind==='extension'&&!removing;
+    const type=target==='group'?(kind==='extension'?'拓展分组':'分组'):kind==='bank'?'题库':'拓展',removing=action==='delete',deletingBank=removing&&kind==='bank'&&target==='item',creatingGroup=target==='group'&&action==='create',readOnly=kind==='extension'&&!removing;
     $('#library-manage-title').textContent=`${removing?'删除':action==='create'?'新建':readOnly?'管理':'编辑'}${type}`;
     $('#library-manage-name').value=target==='group'?(row?.name||''):(row?.title||row?.name||'');
-    $('#library-manage-fields').hidden=removing||readOnly;$('#library-manage-confirm').hidden=readOnly;$('#library-manage-confirm').textContent=removing?'移入回收目录':'保存';
+    $('#library-manage-fields').hidden=removing||readOnly;$('#library-manage-confirm').hidden=readOnly;$('#library-manage-confirm').textContent=deletingBank?'确认删除':removing?'移入回收目录':'保存';
     $('#library-manage-confirm').classList.toggle('danger-button',removing);
     const hint=removing?`${row?.title||row?.name||row?.path}：${target==='group'?'此分组及其全部内容（包括未显示的文件）':'此'+type}将移入 .trash/library 回收目录，作答与历史数据保留。${kind==='extension'?'仍有题库引用时无法删除。':''}`:target==='group'?'分组名就是文件夹名；改名不会重置作答与历史。':'名称对应实际文件夹或文件名，移动或改名不会重置作答与历史。';
-    $('#library-manage-hint').textContent=readOnly?`${row?.name||row?.title||row?.path}：拓展按实际路径引用，不支持改名或移动。可在下方删除；仍有题库引用时无法删除。`:hint+(removing&&kind==='bank'?' 配套拓展文件会保留，不随题库删除。':'');
+    $('#library-manage-hint').textContent=deletingBank?`将删除「${row?.title||row?.name}」及其作答、历史记录与笔记，释放已用存储空间。此操作无法撤销。`:readOnly?`${row?.name||row?.title||row?.path}：拓展按实际路径引用，不支持改名或移动。可在下方删除；仍有题库引用时无法删除。`:hint+(removing&&kind==='bank'?' 配套拓展文件会保留，不随题库删除。':'');
     $('#library-manage-more').hidden=action!=='update';$('#library-manage-export').hidden=kind!=='bank'||!onExport;$('#library-manage-export').textContent=target==='group'?'导出分组':'导出题库';
     $('#library-manage-cancel').textContent=readOnly?'关闭':'取消';
     const select=$('#library-manage-group');select.closest('label').hidden=target==='group';$('#library-manage-cancel').hidden=creatingGroup;select.replaceChildren(new Option('未分组（根目录）',''));
@@ -48,9 +48,17 @@ export function bindLibraryManagement({request,getContext,beforeChange,onChanged
     event.preventDefault();if(busy||!operation||operation.kind==='extension'&&operation.action!=='delete')return;const value={...operation};
     if(value.action!=='delete'){value.name=$('#library-manage-name').value.trim();value.group=value.target==='group'?'':$('#library-manage-group').value;if(!value.name){error('请输入名称');return;}}
     setBusy(true);error('');status('');
-    try{await beforeChange(value);const result=await request('/api/library/manage',{method:'POST',body:JSON.stringify(value),timeoutMs:60000});await onChanged(result,value);dialog.close();}
+    try{await beforeChange(value);const result=await changeLibrary(request,value,subject);await onChanged(result,value);dialog.close();}
     catch(failure){error(failure.message);}
     finally{setBusy(false);}
   });
   return {open};
+}
+
+export async function changeLibrary(request,operation,subject){
+  if(operation.kind==='bank'&&operation.target==='item'&&operation.action==='delete'){
+    await request(`/api/collections/bank/${encodeURIComponent(subject.id)}`,{method:'DELETE',timeoutMs:60000});
+    return {deleted:true};
+  }
+  return request('/api/library/manage',{method:'POST',body:JSON.stringify(operation),timeoutMs:60000});
 }

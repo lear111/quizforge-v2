@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.content.application;
 
+import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
 import cloud.treenewbee.quizforge.content.archive.QbankArchiveReader;
 import cloud.treenewbee.quizforge.content.domain.BankContentHash;
@@ -56,15 +57,18 @@ public class ImportService {
     private final JsonMapper json;
     private final Clock clock;
     private final Path temporaryDirectory;
+    private final QuotaService quotas;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
             BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
             BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
-            @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory) {
+            @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
+            QuotaService quotas) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
         this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
         this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
         this.temporaryDirectory = Path.of(temporaryDirectory);
+        this.quotas = quotas;
     }
 
     public record ImportWarning(String code, String message, int count, List<String> questionIds) {}
@@ -74,7 +78,7 @@ public class ImportService {
     private record Placement(int groupIndex, String groupName, Object outline) {}
     private record Question(Map<String, Object> author, Extension extension, Object outline, BigDecimal maxScore, String hash,
             int groupIndex, String groupName) {}
-    private record Bank(ParsedBank parsed, String hash, Map<String, String> assetHashes, List<Question> questions, List<String> omittedIds) {}
+    private record Bank(ParsedBank parsed, String hash, Map<String, String> assetHashes, List<Question> questions, List<String> omittedIds, long logicalBytes) {}
 
     /** Caller owns the input stream. Parsing and all HTTP calls finish before the business transaction starts. */
     public List<ImportedCollection> importArchive(String userId, String filename, InputStream upload) {
@@ -91,7 +95,10 @@ public class ImportService {
                 }
             }
             QbankPackageParser parser = new QbankPackageParser(blobs::put);
-            QbankArchiveReader.read(temporary, ArchiveLimits.DEFAULT, parser);
+            Map<String, Long> fileSizes = new LinkedHashMap<>();
+            QbankArchiveReader.read(temporary, ArchiveLimits.DEFAULT, (path, bytes) -> {
+                parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
+            });
             var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
             Map<String, Extension> extensions = new LinkedHashMap<>();
             for (ParsedExtension extension : parsed.extensions()) {
@@ -103,7 +110,7 @@ public class ImportService {
                 if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
                 extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
             }
-            List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions)).toList();
+            List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
             return transactions.execute(status -> persist(userId, filename, parsed.manifest().group(), extensions, prepared));
         } catch (IOException error) { throw new UncheckedIOException("无法读取上传的题库包", error); }
         finally {
@@ -113,7 +120,7 @@ public class ImportService {
     }
 
     @SuppressWarnings("unchecked")
-    private Bank prepare(ParsedBank bank, Map<String, Extension> extensions) {
+    private Bank prepare(ParsedBank bank, Map<String, Extension> extensions, Map<String, Long> fileSizes) {
         Map<String, String> assetHashes = new LinkedHashMap<>();
         bank.assets().forEach((path, asset) -> {
             if (path.codePointCount(0, path.length()) > 255) throw new ImportFailure("INVALID_QUESTION_BANK", "题库「" + bank.folderName() + "」资源路径超过存储上限");
@@ -180,7 +187,14 @@ public class ImportService {
         Map<String, Question> byId = new LinkedHashMap<>();
         prepared.forEach(question -> byId.put((String) question.author().get("id"), question));
         List<String> omitted = byId.keySet().stream().filter(id -> !placements.containsKey(id)).toList();
-        return new Bank(bank, hash, Map.copyOf(assetHashes), placements.keySet().stream().map(byId::get).toList(), omitted);
+        var boundPaths = new java.util.HashSet<String>(groups.keySet());
+        if (bank.bank().get("extension") instanceof Map<?, ?> fallback) boundPaths.add((String) fallback.get("path"));
+        long logicalBytes = fileSizes.getOrDefault("quizforge-package.json", 0L);
+        for (var file : fileSizes.entrySet()) {
+            if (file.getKey().startsWith(bank.bankKey()) || boundPaths.stream().anyMatch(path -> file.getKey().startsWith(path + "/")))
+                logicalBytes = Math.addExact(logicalBytes, file.getValue());
+        }
+        return new Bank(bank, hash, Map.copyOf(assetHashes), placements.keySet().stream().map(byId::get).toList(), omitted, logicalBytes);
     }
 
     private BigDecimal maxScore(JsonNode value) {
@@ -242,6 +256,7 @@ public class ImportService {
             String id = Ids.uuidV7(), bankId = ids.get(bank.hash()), title = bank.parsed().folderName();
             collections.insert(new PracticeCollectionRow(id, userId, bankId, title, group,
                     encode(Map.of("type", "upload", "filename", filename)), null, null, bank.parsed().bankKey(), null, "current", now, null));
+            quotas.setStorage(userId, "import", id, id, bank.logicalBytes());
             List<ImportWarning> warnings = bank.omittedIds().isEmpty() ? List.of() : List.of(new ImportWarning(
                     "QUESTIONS_NOT_IN_OUTLINE", bank.omittedIds().size() + " 道题未出现在大纲中，不会显示",
                     bank.omittedIds().size(), bank.omittedIds()));

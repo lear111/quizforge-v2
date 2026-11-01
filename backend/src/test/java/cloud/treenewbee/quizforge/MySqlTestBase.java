@@ -13,7 +13,12 @@ import org.testcontainers.mysql.MySQLContainer;
  * each test class while Spring keeps the cached application context, so the next test class
  * would talk to a dead database.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "management.server.port=0")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "management.server.port=0",
+        // Cached test contexts share one MySQL; do not retain ten idle connections per context.
+        "spring.datasource.hikari.minimum-idle=0",
+        "spring.datasource.hikari.maximum-pool-size=4"
+})
 public abstract class MySqlTestBase {
 
     @ServiceConnection

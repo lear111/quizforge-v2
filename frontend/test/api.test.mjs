@@ -96,7 +96,7 @@ for(const [route,expected] of [
   ['/practice/../admin/',null],['/practice-lookalike/',null],['javascript:alert(1)',null],
 ])test(`account return URL stays inside practice: ${route}`,async()=>{
   const source=await readFile(new URL('../public/auth.js',import.meta.url),'utf8');
-  const helper=source.slice(0,source.indexOf('const byId'));
+  const helper=source.slice(source.indexOf('function practiceReturn'),source.indexOf('const byId'));
   const result=vm.runInNewContext(helper+'practiceReturn()',{
     URL,URLSearchParams,location:{origin:'https://quiz.example',search:'?returnTo='+encodeURIComponent(route)},
   });
