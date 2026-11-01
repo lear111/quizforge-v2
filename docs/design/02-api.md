@@ -267,6 +267,39 @@ practice/
 | API-3 | 设备接口与管理接口的字段级定义（遗留契约 V-1） |
 | ~~API-4~~ | ~~拓展示例是否保留~~ **已决定**：示例文件保留在拓展包中（审核与导出需要），在线版不展示、不可练习；前端隐藏示例入口 |
 
+## 8. L1.8 用户配额与删除题库
+
+### GET /api/account/quota
+
+浏览器会话认证；只返回当前用户，响应 `Cache-Control: no-store`：
+
+```json
+{
+  "storage": {"usedBytes": 1024, "limitBytes": 268435456, "overrideBytes": null},
+  "dailyDownload": {"usedBytes": 0, "limitBytes": 268435456, "overrideBytes": null},
+  "day": "2026-11-01",
+  "resetsAt": "2026-11-01T16:00:00Z"
+}
+```
+
+字节使用二进制单位。`day` 是北京时间日期；下载量按该日期读取，跨日为零。普通练习、读题、读图和静态资源不扣下载流量。
+
+### PUT /api/admin/users/{id}/quota
+
+会话认证、Origin 校验，并从数据库检查当前操作者的管理员身份。请求：
+
+```json
+{"storageBytes": 268435456, "dailyDownloadBytes": null}
+```
+
+两个值为非负整数或 `null`（跟随持久化的站点默认值，初始均为 256 MiB）；这是完整替换，省略等同 `null`。返回该用户上述配额结构。调低额度不删除数据、不重置已用量；允许读取、删除及缩减占用。记录操作者、目标用户、前后覆盖值和时间。普通用户 403 `FORBIDDEN`，目标不存在 404 `NOT_FOUND`，负数 400 `VALIDATION_FAILED`。
+
+### DELETE /api/collections/bank/{id}
+
+会话认证、Origin 校验，只允许删除自己的实例。一个事务内删除该实例的练习状态、白板、轮次与题目快照、存档，软删除实例并释放账本占用。共享不可变内容保留待引用感知 GC。成功 204；他人、不存在或已删除的实例均 404 `NOT_FOUND`。
+
+存储增长超额：413 `STORAGE_QUOTA_EXCEEDED`；每日题库文件下载超额：429 `DOWNLOAD_QUOTA_EXCEEDED`。后者由统一记账服务提供，接入以后的题库导出/下载接口；当前没有这两类后端路由。
+
 ## 变更记录
 
 | 版本 | 日期 | 说明 |

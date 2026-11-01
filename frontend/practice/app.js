@@ -582,10 +582,10 @@ async function applyLibraryChange(result,operation){
       anyChanged=true;pane.closed=true;clearTimeout(pane.inkTimer);pane.sizeObserver?.disconnect();pane.worldObserver?.disconnect();disposeScoreSummary(pane);pane.plugin?.destroy();pane.whiteboard?.destroy();pane.node.remove();collections.delete(pane.key);
     }
     if(anyChanged||!collections.has(activeKey)){questionsCache.clear();pagesCache.clear();}
-    if(!collections.has(activeKey)){activeKey=null;const first=(listMode==='bank'?catalog.banks:catalog.extensions).find(row=>!row.error);if(first)await openCollection(first.kind||listMode,first.id);else activate(null);}
+    if(!collections.has(activeKey)){activeKey=null;const first=(listMode==='bank'?catalog.banks:catalog.extensions).find(row=>!row.error&&row.availability?.available!==false);if(first)await openCollection(first.kind||listMode,first.id);else activate(null);}
     else if(activeChanged)await activateReady(activeKey);
     updateChrome();
-    notice(operation.action==='delete'?`已移入回收目录：${result.archivedTo}${operation.kind==='bank'?'；配套拓展文件已保留。':''}`:'目录已更新。');
+    notice(result.deleted?'题库及其作答、历史记录和笔记已删除，存储空间已释放。':operation.action==='delete'?`已移入回收目录：${result.archivedTo}${operation.kind==='bank'?'；配套拓展文件已保留。':''}`:'目录已更新。');
 }
 const libraryManager=bindLibraryManagement({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,
   onExport:(row,target)=>target==='item'?libraryTransfer.exportBank(row,{throwOnError:true}):libraryTransfer.exportGroup(row,{throwOnError:true}),

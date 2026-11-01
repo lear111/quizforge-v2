@@ -4,4 +4,4 @@
 .artifacts
 **/.generated-sdk
 samples/*.qbank
-tools/qbank-upgrade/local
+tools/**/local

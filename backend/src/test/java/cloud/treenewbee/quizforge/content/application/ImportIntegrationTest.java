@@ -287,10 +287,11 @@ class ImportIntegrationTest extends MySqlTestBase {
     @Test
     void concurrentImportOfIdenticalContentCommitsOneBankAndTwoInstances() throws Exception {
         byte[] archive = archive(List.of("单选题"), "bank");
+        String firstUser = userId(), secondUser = userId();
         CountDownLatch start = new CountDownLatch(1);
         try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
-            var first = threads.submit(() -> { start.await(); return imports.importArchive(Ids.uuidV7(), "one.qbank", new ByteArrayInputStream(archive)); });
-            var second = threads.submit(() -> { start.await(); return imports.importArchive(Ids.uuidV7(), "two.qbank", new ByteArrayInputStream(archive)); });
+            var first = threads.submit(() -> { start.await(); return imports.importArchive(firstUser, "one.qbank", new ByteArrayInputStream(archive)); });
+            var second = threads.submit(() -> { start.await(); return imports.importArchive(secondUser, "two.qbank", new ByteArrayInputStream(archive)); });
             start.countDown();
             var a = first.get(60, TimeUnit.SECONDS).getFirst();
             var b = second.get(60, TimeUnit.SECONDS).getFirst();
@@ -548,10 +549,10 @@ class ImportIntegrationTest extends MySqlTestBase {
         files.keySet().removeIf(path->path.startsWith(ImportArchives.bank("判断题")+"/"));
         ImportArchives.edit(files,visiblePath,bank->bank.put("questions",List.of(((List<?>)bank.get("questions")).getFirst(),unused)));
         byte[] originalBankJson=files.get(visiblePath).clone();
-        var first=imports.importArchive(Ids.uuidV7(),"one.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        var first=imports.importArchive(userId(),"one.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
         String rulePath=ImportArchives.extension("判断题")+"/rules.js";
         files.put(rulePath,(new String(files.get(rulePath),StandardCharsets.UTF_8)+"\n// unreferenced extension revision\n").getBytes(StandardCharsets.UTF_8));
-        var second=imports.importArchive(Ids.uuidV7(),"two.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        var second=imports.importArchive(userId(),"two.qbank",new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
         assertThat(files.get(visiblePath)).isEqualTo(originalBankJson);
         assertThat(second.bankId()).isNotEqualTo(first.bankId());
         assertThat(jdbc.queryForList("SELECT DISTINCT HEX(content_sha256) FROM content_question",String.class)).hasSize(1);
@@ -563,6 +564,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).header("Cookie",cookie).GET().build(),HttpResponse.BodyHandlers.ofString());
     }
 
+    private String userId() { return auth.register(Ids.uuidV7()+"@example.test", "导入测试", "pass12345", null).userId(); }
     private String cookie() { return "__Host-qf_session=" + auth.register(Ids.uuidV7()+"@example.test", "导入测试", "pass12345", null).token(); }
     private URI url() { return URI.create("http://127.0.0.1:" + port + "/api/library/import"); }
     private byte[] archive(List<String> types, String scope) throws Exception { return ImportArchives.zip(ImportArchives.files(types, scope)); }

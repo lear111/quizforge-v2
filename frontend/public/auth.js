@@ -1,3 +1,5 @@
+import {quotaCards} from './quota.js';
+
 function practiceReturn() {
   const raw=new URLSearchParams(location.search).get('returnTo');
   if(!raw)return null;
@@ -9,6 +11,7 @@ const registerForm = byId('register-form');
 const feedback = byId('feedback');
 let pending = false;
 let mode = 'login';
+let quotaGeneration = 0;
 
 class RequestError extends Error {
   constructor(code, message, status = 0) {
@@ -87,6 +90,7 @@ function showError(error, form) {
 }
 
 function showView(view) {
+  if (view !== 'signed-in') quotaGeneration++;
   byId('checking-view').hidden = view !== 'checking';
   byId('forms-view').hidden = view !== 'forms';
   byId('signed-in-view').hidden = view !== 'signed-in';
@@ -122,7 +126,32 @@ function showAccount(data) {
   document.title = '账号 · QuizForge';
   loginForm.reset();
   registerForm.reset();
+  void loadQuota();
 }
+
+async function loadQuota() {
+  const generation = ++quotaGeneration;
+  const status = byId('quota-status'); status.textContent = '正在读取资源用量…';
+  byId('quota-cards').replaceChildren();
+  try {
+    const cards = quotaCards(await request('/api/account/quota'));
+    if (generation !== quotaGeneration) return;
+    for (const card of cards) {
+      const section = document.createElement('section'); section.className = 'quota-card';
+      const heading = document.createElement('h3'); heading.textContent = card.title;
+      const amount = document.createElement('div'); amount.className = 'quota-number'; amount.textContent = card.text;
+      const progress = document.createElement('progress'); progress.max = card.max; progress.value = card.value;
+      progress.setAttribute('aria-label', `${card.title}使用量`);
+      const caption = document.createElement('p'); caption.textContent = card.caption;
+      section.append(heading, amount, progress, caption); byId('quota-cards').append(section);
+    }
+    status.textContent = '正常练习、读题读图和页面资源不扣下载流量。';
+  } catch (error) {
+    if (generation === quotaGeneration) status.textContent = error instanceof RequestError ? error.message : '暂时无法读取资源用量，请重试。';
+  }
+}
+
+byId('quota-refresh').addEventListener('click', () => { if (!pending) void loadQuota(); });
 
 async function checkSession() {
   if (pending) return;

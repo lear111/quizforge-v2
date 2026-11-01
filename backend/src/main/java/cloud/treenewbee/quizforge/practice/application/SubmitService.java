@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.practice.application;
 
+import cloud.treenewbee.quizforge.quota.application.PracticeStorage;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -39,12 +40,13 @@ public class SubmitService {
     private final TransactionTemplate tx;
     private final Clock clock;
     private final JsonMapper json;
+    private final PracticeStorage storage;
 
     // 构造器
     public SubmitService(PracticeReadService reads, DraftService drafts, SubmitGrader grader,
                         QuestionStateMapper states, PracticeContextMapper contexts, PracticeRoundMapper rounds,
                         ReceiptMapper receipts, RoundSnapshots snapshots, TransactionTemplate tx,
-                        Clock clock, JsonMapper json) {
+                        Clock clock, JsonMapper json, PracticeStorage storage) {
         this.reads = reads;
         this.drafts = drafts;
         this.grader = grader;
@@ -56,6 +58,7 @@ public class SubmitService {
         this.tx = tx;
         this.clock = clock;
         this.json = json;
+        this.storage = storage;
     }
 
     public String submit(String userId, String requestId, String collectionId, String questionId,
@@ -131,6 +134,7 @@ public class SubmitService {
                 saved.put("revision", revision + 1);
                 String response = json.writeValueAsString(saved);
                 receipts.insert(userId, requestId, hash, response);
+                storage.context(userId, contextId, questionId, roundId);
                 return response;
             });
         } catch (DuplicateKeyException e) {
