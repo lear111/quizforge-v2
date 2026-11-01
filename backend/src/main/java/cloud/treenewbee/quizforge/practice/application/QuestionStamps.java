@@ -12,7 +12,9 @@ import org.springframework.stereotype.Component;
 public class QuestionStamps {
     private final byte[] key = new byte[32];
     public QuestionStamps() { new SecureRandom().nextBytes(key); }
-    public record Stamp(long revision, String contentVersion, String packageVersion) {}
+    public record Stamp(long revision, String contentVersion, String packageVersion, String practicePhase) {
+        public Stamp(long revision,String contentVersion,String packageVersion) { this(revision,contentVersion,packageVersion,"active"); }
+    }
     public Stamp stamp(String context, String qid, long revision, byte[] content, byte[] extension) {
         return new Stamp(revision, opaque(context + "\0" + qid, content), opaque("package", extension));
     }

@@ -17,10 +17,12 @@ public class DraftService {
 
     private final QuestionStateMapper states;
     private final Clock clock;
+    private final cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper contexts;
 
-    public DraftService(QuestionStateMapper states, Clock clock) {
+    public DraftService(QuestionStateMapper states, Clock clock, cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper contexts) {
         this.states = states;
         this.clock = clock;
+        this.contexts = contexts;
     }
 
     /**
@@ -33,6 +35,7 @@ public class DraftService {
     @Transactional
     public long saveDraft(String userId, String contextId, String questionId,
                           long clientRevision, String answerJson, byte[] contentSha256) {
+        PracticeWrites.requireActive(contexts.lockForShare(contextId,userId).orElseThrow(DraftService::revisionConflict));
         Instant now = clock.instant();
 
         if (clientRevision == 0) {

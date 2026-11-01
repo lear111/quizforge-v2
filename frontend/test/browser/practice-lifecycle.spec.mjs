@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
-test('real short-answer submit, retry, resubmit, manual review, summary and restart survive reload',async({page},info)=>{
+test('real practice finish, frozen history, append-only notes and deletion survive reload',async({page},info)=>{
   test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','Requires an explicitly isolated Compose fixture');
   test.setTimeout(180000);
   const project=process.env.QF_COMPOSE_PROJECT;
@@ -20,7 +20,6 @@ test('real short-answer submit, retry, resubmit, manual review, summary and rest
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
   const open=async()=>{
     await page.goto('/practice/');
-    await expect(page.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
     await expect(page.locator('#collection-loading')).toBeHidden();
     if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
     await page.locator(`.library-item[data-item-id="${collection.id}"]`).click();
@@ -56,14 +55,45 @@ test('real short-answer submit, retry, resubmit, manual review, summary and rest
   await page.locator('#next').click();
   await expect(page.locator('.practice-summary-card')).toBeVisible();
   await expect(page.locator('.practice-summary-earned')).toHaveText('5');
-  await expect(page.getByRole('button',{name:'完成练习（尚未开放）',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'完成练习',exact:true})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'再练一轮',exact:true})).toBeHidden();
+  const finishing=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/finish'));
+  await page.getByRole('button',{name:'完成练习',exact:true}).click();expect((await finishing).status()).toBe(202);
+  await expect(page.getByRole('button',{name:'再练一次',exact:true})).toBeEnabled();
   await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-summary.png`),fullPage:true});
   page.once('dialog',dialog=>dialog.accept());
   const restarted=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/restart'));
-  await page.getByRole('button',{name:'再练一轮',exact:true}).click();expect((await restarted).status()).toBe(200);
+  await page.getByRole('button',{name:'再练一次',exact:true}).click();expect((await restarted).status()).toBe(202);
   await expect(frame.locator('.answer-field')).toHaveText('点击作答');
   await expect(frame.getByRole('button',{name:'重做',exact:true})).toBeHidden();
   await open();await expect(frame.locator('.answer-field')).toHaveText('点击作答');
+  await page.locator('#history-open').click();
+  await expect(page.locator('.history-row')).toHaveCount(1);await page.locator('.history-row').click();
+  await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
+  await expect(frame.getByRole('slider',{name:'人工评分',exact:true})).toBeDisabled();
+  await expect(frame.getByRole('button',{name:'重做',exact:true})).toBeHidden();
+  await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-history.png`),fullPage:true});
+  await page.locator('#draft-toggle').click();
+  const pane=page.locator('.question-pane:not([hidden]):not([inert])');
+  await expect(pane.getByLabel('白板层',{exact:true})).toHaveValue('notes');
+  const tools=pane.locator('.qf-whiteboard-toolbar');
+  if(await tools.getAttribute('data-collapsed')==='true')await tools.getByRole('button',{name:/展开白板工具/}).click();
+  await tools.getByRole('button',{name:'画笔，选中后再次点击选择颜色',exact:true}).click();
+  const rect=await pane.locator('.question-viewport').boundingBox();
+  const saved=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/annotations'));
+  await page.mouse.move(rect.x+rect.width*.35,rect.y+rect.height*.45);await page.mouse.down();
+  await page.mouse.move(rect.x+rect.width*.60,rect.y+rect.height*.5,{steps:10});await page.mouse.up();
+  expect((await saved).status()).toBe(200);
+  await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-notes.png`),fullPage:true});
+  await open();await expect(frame.locator('.answer-field')).toHaveText('点击作答');
+  await page.locator('#history-open').click();await expect(page.locator('.history-row')).toHaveCount(1);
+  const reloadedHistory=page.waitForResponse(response=>new URL(response.url()).pathname.startsWith(`/api/collections/bank/${collection.id}/history/`));
+  await page.locator('.history-row').click();
+  expect((await(await reloadedHistory).json()).questions[0].payload.whiteboard.notes.strokes).toHaveLength(1);
+  await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
+  await page.locator('#history-choose').click();await page.locator('.history-delete').click();
+  await page.locator('#history-delete-dialog').getByRole('button',{name:/删除/}).click();
+  await expect(page.locator('.history-row')).toHaveCount(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

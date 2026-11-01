@@ -29,10 +29,10 @@
 | 提交 | POST Q/actions，action=submit | 已接入 | 5 | app.js / Bridge；requestId/revision/data.answer；返回提交后投影与状态，重放不重新判分 |
 | 人工评分 / 重做本题 | POST Q/actions，action=review / retry | 已接入 | L1.1 | review 使用 data.review（score / targetId / feedback）；retry 使用 data:{}；均带 requestId / revision / contentVersion |
 | 本轮分值汇总 | GET C/summary | 已实现 | L1.2 | app.js:showScoreSummary、practice-summary.js；SQL 聚合，无规则调用 |
-| 再练一轮 | POST C/restart | 已实现 | L1.2 | app.js:restartPractice；roundId（无轮次时 null）、summaryVersion、requestId；允许归档进行中的轮次 |
-| 完成本轮 | POST C/finish | 未实现 | L1.3 | canFinish=false，按钮明确显示尚未开放；不伪造批量提交或 AI 完成 |
-| 历史列表 / 冻结快照 | GET C/history、C/history/{historyId} | 未实现 | 其余 | app.js、history/history-view.js |
-| 删除历史 | DELETE C/history/{historyId} | 未实现 | 其余 | app.js:renderHistoryList；未实现错误不伪装成删除成功 |
+| 再练一轮 | POST C/restart | 已实现 | L1.2 | app.js:restartPractice；roundId（无轮次时 null）、summaryVersion、requestId；仅 completed；202 + jobs 进度，归档成功后重置 |
+| 完成本轮 | POST C/finish | 已实现 | L1.3 | 202 后轮询 C/jobs/{jobId}；刷新可继续查看进度，pending 不阻止完成 |
+| 历史列表 / 冻结快照 | GET C/history、C/history/{historyId} | 已实现 | L1.4 | app.js、history/history-view.js |
+| 删除历史 | DELETE C/history/{historyId} | 已实现 | L1.4 | app.js:renderHistoryList；删除后从列表移除 |
 | 题库实例管理 / 分组 | POST /api/library/manage | 未实现 | 其余 | library-management.js；仅保留管理入口，不新增服务端逻辑 |
 | 导出题库 / 分组 | POST /api/library/export | 未实现 | 其余 | library-transfer.js；返回 Blob，失败仍显示友好提示 |
 | 考试列表 / 开始 | GET / POST C/exams | 未实现 | 其余 | exam/exam-mode.js |
@@ -62,7 +62,7 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - extension/type 包含 id/version/name/pageId；pageId 使用确切审核摘要。页面响应兼容旧 apiVersion/html/script/style/dependencies/contentApi/assets。答题区组件通过共同的 page-assets 适配加载受保护的 quizforge.answer-area/1.4.1 SDK；旧冻结页面自带组件时保持原样。
 - SDK JSON 在 frontend 构建时由固定的组件源码生成，不提交构建产物；后端复核用户的可用题库引用，Nginx internal 路径发送。题库图片、听力同样先鉴权再 X-Accel-Redirect，blobs 在 Nginx 只读挂载；所有响应 private/no-store，以便下一次请求重新检查撤销状态。公开路径不能绕过 internal 限制。
 - 题库听力材料只公开 id/title/revision，隐藏存储路径；GET/HEAD 发送音频，Range 由 Nginx 处理。
-- 未提交题目 canSave=true、canSubmit=true；已提交题目两项均为 false。当前轮次 in_progress 的已提交题可重做；声明 manual-review 的拓展可人工评分，completed 轮次仍允许改分、禁止重做。canAiGrade / canWhiteboard=false。概览含有未提交题目时 readOnly=false，全部已提交时为 true。历史查看、考试、资源上传、审核流程与完整练习限流仍待后续切片。
+- 未提交题目 canSave=true、canSubmit=true；已提交题目两项均为 false。当前轮次 in_progress 的已提交题可重做；声明 manual-review 的拓展可人工评分，completed 轮次仍允许改分、禁止重做。canAiGrade / canWhiteboard=false。概览 readOnly 按轮次阶段决定：active 可写、finishing/completed/archiving 只读；单题能力仍按状态限制。考试、审核流程与完整练习限流待后续切片。
 
 ## 切片 4：草稿 HTTP 与回执
 
@@ -85,12 +85,13 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 
 ## L1.1 / L1.2：重做、人工评分、汇总与再练一轮
 
-- `retry` 发送 `{requestId,revision,action:"retry",data:{},contentVersion?}`，仅允许当前进行中轮次的已提交题。作答清为 unanswered，answer / answer_state / result / score / max_score / outline_states / projection 清空，revision / submission_generation / grading_generation 各加 1。原单题轮次快照保留；再次提交时更新本轮快照。
-- `review` 发送 `{requestId,revision,action:"review",data:{review:{score,targetId?,feedback?}},contentVersion?}`。作答来自服务端的 submitted 状态。事务外依次调用 review 和 scoreBatch（getScore）；事务内按 revision 条件更新得分、状态、投影，revision / grading_generation 各加 1，同时更新当前轮次的单题快照。已完成轮次允许改分，并同步其汇总。分数及满分按 HALF_UP 四位小数保存，result.gradingSource 为 manual，反馈结构沿用拓展。
+- `retry` 发送 `{requestId,revision,action:"retry",data:{},contentVersion?}`，仅允许当前进行中轮次的已提交题。作答清为 unanswered，answer / answer_state / result / score / max_score / outline_states / projection 清空，revision / submission_generation / grading_generation 各加 1。此时不生成历史快照；再练一次时只冻结最后一次尝试。
+- `review` 发送 `{requestId,revision,action:"review",data:{review:{score,targetId?,feedback?}},contentVersion?}`。作答来自服务端的 submitted 状态。事务外依次调用 review 和 scoreBatch（getScore）；事务内按 revision 条件更新得分、状态、投影，revision / grading_generation 各加 1，此时不写历史单题快照。已完成轮次允许改分，汇总实时按状态计算，再练一次时才冻结。分数及满分按 HALF_UP 四位小数保存，result.gradingSource 为 manual，反馈结构沿用拓展。
 - 2026-11-01 产品确认：并发人工评分继续使用乐观锁；同一 revision 恰好一个成功，另一个 409，刷新后可重新评分。FR-14 的人工评分中断 AI 通过 grading_generation 预留，AI 任务本身不属于 L1。
 - `GET C/summary` 在一致的读事务中按数据库设计 §5.4 聚合，另返回按题序的 questions。未评分的单题 score 保持 null，在总分中按 0 计；pendingCount 单列展示。返回 questionCount / submittedCount / gradedCount / pendingCount / answeredUnsubmittedCount / score / maxScore / finished / status / roundId / historyId / summaryVersion。版本戳覆盖 progress_version 和每题 revision（草稿不增加 progress_version），防止其他标签页刚保存的草稿被旧汇总无提示重置。
-- `POST C/restart` 接收 `{requestId,roundId,summaryVersion}`；事务内锁 context → 锁作答行并检查最新汇总版本 → 原地清空状态并增加版本及两种 generation → 清空白板两层并递增白板版本 → 将进行中轮次置为 completed 并冻结重置前汇总 → 清空 current_round_id、progress_version+1 → 写回执。不删除状态行、不清理历史或旧回执。无当前轮次时也可重置已有草稿。
-- 本任务明确允许 restart 将进行中的轮次完成并归档，取代旧接口错误码表中“未完成时 PRACTICE_NOT_FINISHED”的限制。尚未实现的 `finish` 是单独的 L1.3；summary 的 canFinish=false / canRestart=true 使前端禁用批量完成，同时提供独立的再练一轮入口。
+- `POST C/finish` / `POST C/restart` 接收 `{requestId,roundId,summaryVersion}`，返回 202 任务；前端轮询 `GET C/jobs/{jobId}`，不重复加载整库。summary 返回 processing/jobId，刷新后继续轮询。finish 失败恢复作答；archive 失败保留已完成轮次，不重置。
+- 仅完成练习后允许再练一次，否则 PRACTICE_NOT_FINISHED；pending/null 允许完成，总分按 0 计。历史只在 restart 生成，不在单题提交、读题、草稿或 review 中构造。
+- 历史列表只含摘要；打开详情才加载冻结投影与固定摘要的页面。历史白板宿主笔记通过 `POST C/history/{historyId}/questions/{qid}/annotations`（requestId/revision/notes）追加；冲突读取的是历史笔记，不能误读当前练习。
 - 新增写操作均在同一事务中保存完整响应回执；相同请求逐字重放，不重置、不重评，换内容则 400 REQUEST_ID_REUSED。冲突/唯一键竞争后在新事务中重查回执，保持已有写接口的一致性规则。只取会话身份，归属、审核及题目定位均由服务端验证。
 
 ## L1.5：两层白板与私有答题资源
@@ -103,3 +104,9 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 - 私人题库以外的练习数据和资源不计存储额度；V8 释放既有非 import 练习账目，不删除业务数据。
 
 - 再练一轮保留白板空行和递增版本，避免删除后版本回到 0 导致旧标签页覆盖新轮白板。历史单题 payload 不变。
+
+### L1.3 / L1.4 补充
+
+- 历史只使用冻结 features/题序/分组；与当前题库改名、更新及可用性无关。听力改用历史专属路径。
+- 条件读题 stamp 增加 practicePhase，完成轮次的未作答题不会在新一轮误用旧只读能力。
+- 后台一次占用一个 runner 名额，priority=background，默认 Java 舱壁 8 中为前台保留 4 个；前台仍按原来的超时、限流、重试规则执行。

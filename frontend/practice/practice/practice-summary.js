@@ -56,12 +56,11 @@ export function mountPracticeSummary(container, summary, {onFinish,onRestart,rea
     pending.textContent=`未提交 ${count-done} 题`;
     grading.hidden=!awaiting;grading.textContent=`待评分 ${awaiting} 题`;
     scoreLabel.textContent=awaiting?'已评分得分 / 总分':exam?'考试得分 / 总分':'本轮得分 / 总分';
-    note.textContent=exam?`交卷后答案已锁定。${awaiting?'部分题目仍待评分。':''}`:readonly?'此页为只读历史汇总。':current?.finished?(current.historyId?'本轮结果已保存到历史记录。':'本轮练习已完成，结果仅在当前会话保留。'):current?.completionPending?(current.completionError||'答案已提交，AI 评分尚未完成。可返回题目查看进度或人工评分，再完成练习。'):awaiting?'答案已提交，部分题目待评分。请返回题目重试 AI 或人工评分，再完成练习。':current?.answeredUnsubmittedCount?`还有 ${current.answeredUnsubmittedCount} 道已作答题目未提交，完成练习时统一提交评分；未作答题目计 0 分。`:!history?'结果仅在当前会话保留，刷新或关闭页面后清除。':'完成练习后保留本轮结果。';
-    if(!readonly&&!exam&&current?.canFinish===false)note.textContent=`${awaiting?`另有 ${awaiting} 题待评分，汇总按 0 分计。`:''}可返回题目人工评分或重做；再练一轮会保留本轮历史并清空当前作答。批量完成练习尚未开放。`;
+    note.textContent=readonly?'此页为只读历史汇总。':current?.processing?`后台正在处理 ${current.jobProgress||''}，本轮作答已锁定，刷新后可继续查看进度。`:current?.finished?`本轮练习已完成。${awaiting?'待评分题按 0 分计，可返回题目人工核对。':''}点击再练一次时冻结本轮历史。`:current?.answeredUnsubmittedCount?`还有 ${current.answeredUnsubmittedCount} 道已作答题目未提交，完成练习时异步提交评分；未作答题目保持未作答。`:`完成练习后作答锁定，${awaiting?'待评分题按 0 分计，仍可人工评分。':'可人工核对评分，再练一次时保存历史。'}`;
     if(button){
-      button.disabled=busy||(current?.finished?typeof onRestart!=='function':current?.canFinish===false||awaiting>0&&!current?.answeredUnsubmittedCount||typeof onFinish!=='function');
+      button.disabled=busy||current?.processing||(current?.finished?typeof onRestart!=='function':current?.canFinish===false||typeof onFinish!=='function');
       button.textContent=current?.finished?(busy?'正在开始…':typeof onRestart==='function'?'再练一次':'练习已完成'):(busy?'正在完成…':'完成练习');
-      if(!current?.finished&&current?.canFinish===false)button.textContent='完成练习（尚未开放）';
+      if(current?.processing)button.textContent='后台处理中…';
       button.classList.toggle('is-busy',busy);
       button.setAttribute('aria-busy',String(busy));
     }
@@ -69,7 +68,7 @@ export function mountPracticeSummary(container, summary, {onFinish,onRestart,rea
   }
   async function perform(restarting) {
     const action=restarting?onRestart:onFinish;
-    if(destroyed||busy||(!restarting&&(current?.canFinish===false||current?.pendingCount>0&&!current?.answeredUnsubmittedCount))||typeof action!=='function')return;
+    if(destroyed||busy||(!restarting&&(current?.canFinish===false||current?.processing))||typeof action!=='function')return;
     busy=true;error.hidden=true;render();
     try {
       const next=await action(current);

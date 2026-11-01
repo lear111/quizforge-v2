@@ -11,7 +11,7 @@ import org.apache.ibatis.annotations.Update;
 public interface PracticeContextMapper {
     /** The caller must keep a transaction open until all dependent writes finish. */
     @Select("""
-            SELECT id, current_round_id, progress_version FROM practice_context
+            SELECT id, current_round_id, progress_version, completion_status, lifecycle_job_id FROM practice_context
             WHERE id = #{contextId} AND user_id = #{userId} FOR UPDATE
             """)
     Optional<PracticeContextRow> lockForUpdate(@Param("contextId") String contextId, @Param("userId") String userId);
@@ -30,4 +30,16 @@ public interface PracticeContextMapper {
             WHERE id = #{contextId} AND user_id = #{userId}
             """)
     int bumpProgressVersion(@Param("contextId") String contextId, @Param("userId") String userId, @Param("now") Instant now);
+    @Select("""
+            SELECT id, current_round_id, progress_version, completion_status, lifecycle_job_id FROM practice_context
+            WHERE id = #{contextId} AND user_id = #{userId} FOR SHARE
+            """)
+    Optional<PracticeContextRow> lockForShare(@Param("contextId") String contextId, @Param("userId") String userId);
+
+    @Update("""
+            UPDATE practice_context SET completion_status=#{phase}, lifecycle_job_id=#{jobId}, updated_at=#{now}
+            WHERE id=#{contextId} AND user_id=#{userId}
+            """)
+    int phase(@Param("contextId") String contextId,@Param("userId") String userId,
+            @Param("phase") String phase,@Param("jobId") String jobId,@Param("now") Instant now);
 }

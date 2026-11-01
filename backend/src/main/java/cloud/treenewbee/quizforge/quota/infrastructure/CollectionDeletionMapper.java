@@ -48,4 +48,10 @@ public interface CollectionDeletionMapper {
 
     @Update("UPDATE practice_collection SET deleted_at = #{now} WHERE id = #{id} AND user_id = #{userId} AND deleted_at IS NULL")
     int markDeleted(@Param("userId") String userId, @Param("id") String id, @Param("now") Instant now);
+    @Delete("DELETE a FROM practice_history_annotation a JOIN practice_round r ON r.id=a.history_id WHERE r.user_id=#{userId} AND r.collection_id=#{id}")
+    int annotations(@Param("userId") String userId,@Param("id") String id);
+    @Delete("DELETE a FROM practice_history_asset a JOIN practice_round r ON r.id=a.history_id WHERE r.user_id=#{userId} AND r.collection_id=#{id}")
+    int historyAssets(@Param("userId") String userId,@Param("id") String id);
+    @Delete("DELETE FROM practice_lifecycle_job WHERE user_id=#{userId} AND collection_id=#{id}")
+    int jobs(@Param("userId") String userId,@Param("id") String id);
 }

@@ -44,10 +44,11 @@ public class WhiteboardService {
         try {
             return tx.execute(status -> {
                 // Same order as restart/deletion. No context, answer or round mutation is performed.
-                contexts.lockForUpdate(target.contextId(),userId).orElseThrow(cloud.treenewbee.quizforge.content.application.ContentPages::notFound);
+                var context=contexts.lockForUpdate(target.contextId(),userId).orElseThrow(cloud.treenewbee.quizforge.content.application.ContentPages::notFound);
                 var old=mapper.lock(target.contextId(),qid,userId).orElse(null);
                 var replay=receipt(userId,requestId,hash);
                 if(replay!=null)return replay;
+                if ("archiving".equals(context.completionStatus())) throw new ApiException(HttpStatus.CONFLICT,"PRACTICE_BUSY","正在保存历史，请稍后重试");
                 if ((old==null?0:old.revision())!=revision) throw conflict();
                 String roundStatus=readMapper.roundStatus(target.contextId(),userId).orElse(null);
                 var before=views.view(old,roundStatus);

@@ -92,8 +92,8 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
   }
   function time(value){const seconds=Math.floor(Number.isFinite(value)?value:0);return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
   function render(){
-    const listening=pane?.collection.questions.find(row=>row.id===pane.questionId)?.listening;
-    const allowed=pane?.view==='practice'&&!pane.summaryShown&&(!exam||pane.exam?.status==='in-progress')&&!!selected;
+    const listening=(pane?.view==='history'?pane.historyView?.questions:pane?.collection.questions)?.find(row=>row.id===(pane.view==='history'?pane.historyQuestionId:pane.questionId))?.listening;
+    const allowed=['practice','history'].includes(pane?.view)&&!pane.summaryShown&&(!exam||pane.exam?.status==='in-progress')&&!!selected;
     root.hidden=!(allowed&&(listening||exam&&examStarted));root.dataset.compact=String(collapsed||!listening&&!ordinaryExpanded);root.dataset.exam=String(exam);
     if(!allowed||!listening&&!exam)player.pause();
     if(root.hidden)closeMenus();
@@ -107,7 +107,7 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
     pendingSeek=progress.get(`${scope}:${id}`)||0;updateMaterialMenu();render();
     const controller=new AbortController();abort=controller;
     try{
-      const source=`/api/collections/${encodeURIComponent(pane.kind)}/${encodeURIComponent(pane.id)}/listening/${encodeURIComponent(id)}`;
+      const source=`/api/collections/${encodeURIComponent(pane.kind)}/${encodeURIComponent(pane.id)}${pane.view==='history'?`/history/${encodeURIComponent(pane.historyEntry.id)}`:''}/listening/${encodeURIComponent(id)}`;
       await request(source,{method:'HEAD',responseType:'response',headers:{Accept:'audio/*'},signal:controller.signal});
       if(destroyed||version!==generation||owner!==pane)return;
       loadedKey=key;loading=false;player.setSource(source);player.setSpeed(1);render();
@@ -120,9 +120,9 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
     if(next!==pane){motion?.cancel();motion?.stopSettle();remember();save();cancel();release();observer?.disconnect();pane=next;scope=pane?.key||null;questionId=null;selected=null;examStarted=false;config=null;error=null;
       if(!pane){root.hidden=true;return;}pane.node.append(root);const saved=geometries.get(scope);if(saved){position=saved.position;width=saved.width;anchor=saved.anchor;}observer=new window.ResizeObserver(()=>{motion?.cancel();motion?.stopSettle();place();});observer.observe(pane.viewport);
     }
-    config=pane.collection.listening;exam=pane.kind==='exam';
-    if(!config||pane.view!=='practice'||pane.summaryShown||exam&&pane.exam?.status!=='in-progress'){motion?.cancel();motion?.stopSettle();remember();player.pause();cancel();root.hidden=true;questionId=null;return;}
-    const question=pane.collection.questions.find(row=>row.id===pane.questionId),changed=questionId!==pane.questionId;questionId=pane.questionId;if(changed)ordinaryExpanded=false;
+    config=(pane.view==='history'?pane.historyEntry.collection:pane.collection).listening;exam=pane.kind==='exam';
+    if(!config||!['practice','history'].includes(pane.view)||pane.summaryShown||exam&&pane.exam?.status!=='in-progress'){motion?.cancel();motion?.stopSettle();remember();player.pause();cancel();root.hidden=true;questionId=null;return;}
+    const nextId=pane.view==='history'?pane.historyQuestionId:pane.questionId,question=(pane.view==='history'?pane.historyView.questions:pane.collection.questions).find(row=>row.id===nextId),changed=questionId!==nextId;questionId=nextId;if(changed)ordinaryExpanded=false;
     if(!question?.listening&&!exam){remember();player.pause();if(loading){cancel();selected=null;}render();return;}
     const desired=exam?(selected||config.examMaterialId):changed||!selected?question?.listening?.materialId:selected;
     if(!desired){player.pause();selected=null;root.hidden=true;return;}
