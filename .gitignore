@@ -33,3 +33,6 @@ loadtest/profiling/**/__pycache__/
 # Private upgrade inputs, converted banks, reports and browser screenshots.
 tools/qbank-upgrade/local/
 tools/qbank-upgrade/**/__pycache__/
+# 账号迁移：真实旧库副本、报告与已知密码文件只放在这里
+tools/migration/local/
+tools/migration/target/

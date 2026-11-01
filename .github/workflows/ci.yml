@@ -75,6 +75,11 @@ jobs:
         working-directory: backend
         run: mvn -B -ntp verify
 
+      # 账号迁移工具（L7）：合成 SQLite 旧库 + Testcontainers MySQL，表结构来自 backend 的 Flyway 脚本。
+      - name: Test account migration tool (synthetic legacy databases only)
+        working-directory: tools/migration
+        run: mvn -B -ntp verify
+
   smoke:
     name: Compose smoke test (Nginx -> Java -> MySQL)
     runs-on: ubuntu-latest
