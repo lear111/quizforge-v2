@@ -48,7 +48,7 @@ public interface PracticeLifecycleMapper {
             @Param("userId") String userId);
 
     @Select("""
-            SELECT id, current_round_id, progress_version FROM practice_context
+            SELECT id, current_round_id, progress_version, completion_status, lifecycle_job_id FROM practice_context
             WHERE id = #{contextId} AND user_id = #{userId}
             """)
     Optional<PracticeContextRow> context(@Param("contextId") String contextId, @Param("userId") String userId);
@@ -83,7 +83,7 @@ public interface PracticeLifecycleMapper {
     @Update("""
             UPDATE practice_question_state SET result = #{result}, score = #{score}, max_score = #{maxScore},
                 grading_status = #{gradingStatus}, outline_states = #{outlineStates}, projection = #{projection},
-                revision = revision + 1, grading_generation = grading_generation + 1, updated_at = #{now}
+                revision = revision + 1, grading_generation = grading_generation + 1, grading_source='manual', updated_at = #{now}
             WHERE context_id = #{contextId} AND question_id = #{qid} AND user_id = #{userId}
               AND revision = #{revision} AND status = 'submitted'
             """)
@@ -96,7 +96,7 @@ public interface PracticeLifecycleMapper {
             UPDATE practice_question_state SET status = 'unanswered', answer = NULL, answer_state = NULL,
                 result = NULL, score = NULL, max_score = NULL, grading_status = 'none', outline_states = NULL,
                 projection = NULL, revision = revision + 1, grading_generation = grading_generation + 1,
-                submission_generation = submission_generation + 1, updated_at = #{now}
+                submission_generation = submission_generation + 1, attempt_count=0, first_correct=NULL, grading_source=NULL, updated_at = #{now}
             WHERE context_id = #{contextId} AND user_id = #{userId}
             """)
     int reset(@Param("contextId") String contextId, @Param("userId") String userId, @Param("now") Instant now);

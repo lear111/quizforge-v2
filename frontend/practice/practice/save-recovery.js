@@ -1,6 +1,6 @@
 // Discarding failed input must not call the extension's save barrier: its
 // onFlush hook may be precisely the operation that cannot be completed.
-export function bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline=()=>{},confirm=globalThis.confirm,cancel=clearTimeout}){
+export function bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline=()=>{},loadHistory,confirm=globalThis.confirm,cancel=clearTimeout}){
   async function retry(){
     const pane=active();if(!pane||pane.closed)return;
     return transitionTo(async()=>{
@@ -27,9 +27,10 @@ export function bindSaveRecovery({document,active,transitionTo,loadQuestion,show
         // Drain writes already accepted by the host before reading their result.
         // The old frame remains available until the replacement is ready.
         await pane.writes.settled();
-        const payload=await loadQuestion(pane,qid,{fresh:true});
-        if(pane.closed)return;
-        await showQuestion(pane,qid,{payload});
+        if(pane.view==='history'&&loadHistory)await loadHistory(pane);
+        else{const payload=await loadQuestion(pane,qid,{fresh:true});
+          if(pane.closed)return;
+          await showQuestion(pane,qid,{payload});}
         pane.ink.clear();pane.writes.clear();pane.answerPreviews?.clear();pane.answerStateSnapshots?.clear();renderOutline();
         notice(collectionFeature(pane,'history')?'已读取已保存的内容。':'已读取当前会话状态。');
       }finally{

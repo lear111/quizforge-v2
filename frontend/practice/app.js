@@ -1,3 +1,4 @@
+import {waitLifecycleJob} from './practice/lifecycle-jobs.js';
 import {loadLibraryIndex} from './shared/online.js';
 import {createListeningPlayer} from './listening/listening-player.js';
 import {createLibraryIndexClient} from './library/library-index-client.js';
@@ -45,7 +46,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。白板可切换草稿与追加笔记；批量完成练习尚未开放。':'';
+const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。白板可切换草稿与追加笔记；完成练习后核对评分，再练一次时保存历史。':'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -69,10 +70,11 @@ async function loadQuestion(pane,qid,{fresh=false}={}){
 
 function makeWriteQueue(pane){return createWriteQueue({
     makeRequestId,revisionFor:(qid,action)=>action==='whiteboard'?(pane.boardVersions?.get(qid)||0):stateFor(pane,qid).revision,
-    send:(qid,body)=>{if(pane.closed)throw new Error('题库页面已关闭');return request(`${questionPath(pane.kind,pane.id,qid)}/actions`,{method:'POST',body:JSON.stringify(body)});},
+    send:(qid,body)=>{if(pane.closed)throw new Error('题库页面已关闭');if(pane.view==='history'){if(body.action!=='whiteboard')throw new Error('历史作答不能修改');return request(`${historyPath(pane)}/${encodeURIComponent(pane.historyEntry.id)}/questions/${encodeURIComponent(qid)}/annotations`,{method:'POST',body:JSON.stringify({requestId:body.requestId,revision:body.revision,notes:body.data.draft})});}return request(`${questionPath(pane.kind,pane.id,qid)}/actions`,{method:'POST',body:JSON.stringify(body)});},
     onBusy:busy=>{pendingWrites+=busy?1:-1;if(busy&&active()===pane)saveStatus(collectionFeature(pane,'history')?'保存中…':'当前会话','saving');},
     onSaved:(qid,action,value)=>{
       if(action==='whiteboard'){
+        if(pane.view==='history'){pane.boardVersions.set(qid,value.whiteboard.revision);const payload=pane.historyView.entry(qid).payload;payload.whiteboard=value.whiteboard;payload.draft=value.whiteboard.draft;pane.whiteboard.protectStrokes(protectedInk(value.whiteboard,'notes'));saveStatus('历史笔记已追加');return;}
         (pane.boardVersions??=new Map()).set(qid,value.whiteboard.revision);
         const key=questionCacheKey(pane,qid),cached=questionsCache.get(key);
         if(cached)questionsCache.set(key,mergeWhiteboard(cached,value));
@@ -86,12 +88,13 @@ function makeWriteQueue(pane){return createWriteQueue({
       if(active()===pane){renderOutline();updateChrome();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');renderRecovery();}
     },
     onFailed:async(qid,_action,error)=>{
-      if(error.status===409){try{const latest=await loadQuestion(pane,qid,{fresh:true});pane.collection.states[qid]=latest.state;if(pane.questionId===qid)pane.payload=latest;if(active()===pane)renderOutline();}catch{/* Keep the failed input locally until a confirmed retry. */}}
+      if(error.status===409&&pane.view!=='history'){try{const latest=await loadQuestion(pane,qid,{fresh:true});pane.collection.states[qid]=latest.state;if(pane.questionId===qid)pane.payload=latest;if(active()===pane)renderOutline();}catch{/* 确认重试前保留本地未保存输入。 */}}
       if(active()===pane){saveStatus('保存失败','error');failure(error);renderRecovery();}
     }
   });}
 async function mutate(pane,action,data,options={}){
   if(action==='whiteboard'&&!collectionFeature(pane,'whiteboard'))throw Object.assign(new Error('题库未开放草稿白板'),{code:'FEATURE_DISABLED'});
+  if(pane.view==='history'){if(action!=='whiteboard'||pane.whiteboardLayer!=='notes')throw new Error('历史只能追加笔记');const value=await pane.writes.enqueue(pane.historyQuestionId,action,data);return {ok:true,data:{revision:value.whiteboard.revision}};}
   const qid=pane.questionId,contentVersion=pane.renderedContentVersion,answerState=action==='draft'?answerStateForSave(pane,qid,options.answerStateId):null,preview=action==='draft'?previewDraftAnswer(pane,qid,options.answerStateId):null;
   if(preview&&active()===pane){renderOutline();saveStatus('保存中…','saving');}
   if(action==='submit'||action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){pane.whiteboard.flush();await saveInk(pane);}
@@ -109,7 +112,7 @@ function renderRecovery(){
   $('#recovery-message').textContent=failed.some(value=>value.error.code==='CONTENT_CONFLICT')?'题目内容已更改，当前输入仍保留。请读取已保存内容后重新作答。':failed.some(value=>value.error.status===409)?'保存状态发生冲突。当前输入仍保留，可重试，或读取已保存的内容。':pane?.development?'仍有内容未保存，当前输入保留。可以切题后返回重试。':'仍有内容未保存，切题已暂停。当前输入仍保留。';
 }
 function enqueueInk(pane,value){
-  if(pane.loading||pane.recovering||pane.closed||!pane.questionId||pane.view!=='practice'||!collectionFeature(pane,'whiteboard'))return;
+  if(pane.loading||pane.recovering||pane.closed||!(pane.view==='history'?pane.historyQuestionId:pane.questionId)||!['practice','history'].includes(pane.view)||!collectionFeature(pane,'whiteboard'))return;
   resizeStage(pane,value.viewport);
   pane.ink.replace(value);
   clearTimeout(pane.inkTimer);
@@ -119,7 +122,7 @@ async function saveInk(pane){
   clearTimeout(pane.inkTimer);pane.inkTimer=null;
   if(!collectionFeature(pane,'whiteboard')){pane.ink.clear();return;}
   const snapshot=pane.ink.take();if(!snapshot)return;
-  try{await mutate(pane,'whiteboard',layerPayload(pane.payload?.whiteboard,pane.whiteboardLayer||'draft',snapshot.value));}
+  try{await mutate(pane,'whiteboard',layerPayload(boardFor(pane),pane.whiteboardLayer||'draft',snapshot.value));}
   catch(error){pane.ink.restore(snapshot);throw error;}
 }
 async function flushPane(pane){
@@ -127,6 +130,7 @@ async function flushPane(pane){
   if(pane.exam&&!examActive(pane)){await pane.writes.settled();return true;}
   pane.node.inert=true;
   await pane.plugin?.flush();
+  if(pane.view==='history'){pane.whiteboard?.flush();await saveInk(pane);await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('历史笔记尚未保存');return true;}
   if(pane.view!=='practice')return true;
   pane.whiteboard?.flush();await saveInk(pane);await pane.writes.settled();
   if(pane.writes.hasFailures)throw Object.assign(new Error('保存未完成，当前输入已保留。请重试保存，或读取已保存内容。'),{code:'SAVE_FAILED'});
@@ -290,8 +294,23 @@ pane.loading=true;updateChrome();
     pane.node.classList.remove('is-edit','is-draft');pane.node.classList.add('is-summary');pane.tools.hidden=true;
     pane.whiteboard.load(null);pane.whiteboard.setMode('practice');pane.viewport.scrollTop=0;pane.viewport.scrollLeft=0;
     pane.summaryCard=mountPracticeSummary(pane.frameHost,summary,{readonly:history||!!pane.exam,history:collectionFeature(pane,'history'),exam:!!pane.exam,onFinish:value=>finishPractice(pane,value),onRestart:value=>restartPractice(pane,value)});
-    syncPracticeCamera(pane);renderOutline();saveStatus(pane.exam?'':history?'只读汇总':summary.finished?(collectionFeature(pane,'history')?'练习已完成':'当前会话 · 已完成'):'');
+    syncPracticeCamera(pane);renderOutline();saveStatus(pane.exam?'':history?'只读汇总':summary.finished?'练习已完成':'');
+    if(!history&&summary.processing&&summary.jobId)resumeLifecycle(pane,summary.jobId);
   }finally{pane.loading=false;updateChrome();}
+}
+async function awaitLifecycle(pane,accepted){
+  if(!accepted?.jobId)return accepted;
+  return waitLifecycleJob(collectionPath(pane.kind,pane.id),accepted.jobId,{request,onProgress:job=>{
+    pane.summaryCard?.update({...pane.scoreSummary,processing:true,jobProgress:`${job.completed} / ${job.total}`});
+    if(active()===pane)saveStatus(`后台处理 ${job.completed} / ${job.total}`,'saving');
+  }});
+}
+async function resumeLifecycle(pane,jobId){
+  try{
+    const result=await awaitLifecycle(pane,{jobId});questionsCache.deleteCollection(`${pane.key}:`);
+    if(result.restarted){pane.needsRefresh=true;await returnToPractice(pane);}
+    else{pane.scoreSummary=result;pane.summaryCard?.update(result);pane.collection=await request(collectionPath(pane.kind,pane.id));renderOutline();saveStatus('练习已完成，可人工核对评分');}
+  }catch(error){pane.scoreSummary=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.summaryCard?.update(pane.scoreSummary);failure(error);}
 }
 async function finishPractice(pane,summary){
   if (summary.answeredUnsubmittedCount > 0 && !confirm(`还有 ${summary.answeredUnsubmittedCount} 道已作答题目未提交，完成练习将统一提交评分。是否继续？`)) return summary;
@@ -299,13 +318,14 @@ async function finishPractice(pane,summary){
     pane.loading=true;pendingWrites++;pane.node.inert=true;updateChrome();saveStatus(collectionFeature(pane,'history')?'保存中…':'当前会话 · 正在完成','saving');
     try{
       if(!pane.finishRequest||pane.finishRequest.summaryVersion!==summary.summaryVersion)pane.finishRequest={requestId:makeRequestId(),roundId:summary.roundId,summaryVersion:summary.summaryVersion};
-      const value=await request(`${collectionPath(pane.kind,pane.id)}/finish`,{method:'POST',body:JSON.stringify(pane.finishRequest),timeoutMs:135000});
+      const accepted=await request(`${collectionPath(pane.kind,pane.id)}/finish`,{method:'POST',body:JSON.stringify(pane.finishRequest)});
+      const value=await awaitLifecycle(pane,accepted);
       questionsCache.deleteCollection(`${pane.key}:`);pane.scoreSummary=value;pane.historyRecords=[];pane.finishRequest=null;
       pane.collection=await request(collectionPath(pane.kind,pane.id));renderOutline();
-      saveStatus(value.completionPending?'答案已提交，部分题目待评分；可返回题目重试 AI 或人工评分':value.historyId?'练习已完成':'当前会话 · 已完成');return value;
+      saveStatus(value.pendingCount?'练习已完成，待评分按 0 分计，可人工核对':'练习已完成，再练一次时保存历史');return value;
     }catch(error){
-      if(error.status===409){
-        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard.update(value);pane.finishRequest=null;error.message='练习数据已更新，已刷新分值，请再次确认完成。';}catch{/* Keep the displayed summary until the server can be read. */}
+      {
+        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard.update(value);pane.finishRequest=null;if(error.status===409)error.message='练习数据已更新，已刷新分值，请再次确认完成。';}catch{/* 服务器恢复可读之前保留已显示的汇总。 */}
       }
       saveStatus('完成练习未保存','error');throw error;
     }finally{pane.loading=false;pendingWrites--;}
@@ -319,7 +339,8 @@ async function restartPractice(pane,summary){
     try{
       if(!pane.restartApplied){
         if(!pane.restartRequest||pane.restartRequest.summaryVersion!==summary.summaryVersion)pane.restartRequest={requestId:makeRequestId(),roundId:summary.roundId,summaryVersion:summary.summaryVersion};
-        await request(`${collectionPath(pane.kind,pane.id)}/restart`,{method:'POST',body:JSON.stringify(pane.restartRequest),timeoutMs:135000});
+        const accepted=await request(`${collectionPath(pane.kind,pane.id)}/restart`,{method:'POST',body:JSON.stringify(pane.restartRequest)});
+        await awaitLifecycle(pane,accepted);
         pane.restartApplied=true;pane.finishRequest=null;pane.historyRecords=[];pane.answerPreviews?.clear();pane.answerStateSnapshots?.clear();
       }
       // Retry a failed load without resetting a round that already started on the server.
@@ -329,8 +350,8 @@ async function restartPractice(pane,summary){
       pane.draftMode=false;await showQuestion(pane,first,{collection});
       pane.scoreSummary=null;pane.restartRequest=null;pane.restartApplied=false;saveStatus('新一轮练习');
     }catch(error){
-      if(!pane.restartApplied&&error.status===409){
-        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard?.update(value);pane.restartRequest=null;error.message='练习数据已更新，请重新确认后再开始新一轮。';}catch{/* Keep the displayed summary until the server can be read. */}
+      if(!pane.restartApplied&&(error.status===409||error.jobFailed)){
+        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard?.update(value);pane.restartRequest=null;if(error.status===409)error.message='练习数据已更新，请重新确认后再开始新一轮。';}catch{/* 服务器恢复可读之前保留已显示的汇总。 */}
       }
       saveStatus(pane.restartApplied?'新一轮已开始，题卡加载失败':'未能开始新一轮','error');throw error;
     }finally{pane.loading=false;pendingWrites--;}
@@ -389,7 +410,7 @@ function renderHistoryList(pane){
     });
     item.append(button,remove);list.append(item);
   }
-  if(!pane.historyRecords.length)list.append(el('p','list-empty','还没有历史记录。练习提交后或考试完成后，会在这里保存记录。'));
+  if(!pane.historyRecords.length)list.append(el('p','list-empty','还没有历史记录。完成练习后点击再练一次，会在这里保存本轮记录。'));
 }
 async function openHistoryList(pane){
   if(!pane||!collectionFeature(pane,'history'))return;await flushPane(pane);
@@ -424,7 +445,7 @@ async function showHistoryQuestion(pane,qid,{historyEntry=pane.historyEntry,hist
     pane.view='history';pane.historyEntry=historyEntry;pane.historyView=historyView;pane.historyDraftMode=historyDraftMode;pane.editState=null;pane.historyQuestion=historyQuestion;pane.historyQuestionId=qid;pane.outlineItemId=null;
     const draft=draftViewActive(pane);
     pane.node.classList.remove('is-edit');pane.node.classList.toggle('is-draft',draft);pane.tools.hidden=!draft;pane.viewport.scrollTop=0;pane.viewport.scrollLeft=0;
-    pane.whiteboard.setReadOnly(true);pane.whiteboard.load(entry.payload.draft);pane.whiteboard.setMode(draft?'draft':'practice');
+    pane.whiteboardLayer='notes';(pane.boardVersions??=new Map()).set(qid,entry.payload.whiteboard?.revision||0);pane.whiteboard.load(layerDocument(entry.payload.whiteboard,'notes'));configureBoardLayer(pane);pane.whiteboard.setMode(draft?'draft':'practice');
     pane.plugin=candidatePlugin;syncPracticeCamera(pane);saveStatus('只读快照');renderOutline();
   }catch(error){if(pane.plugin!==candidatePlugin){candidatePlugin?.destroy();candidateHost?.remove();}throw error;
   }finally{pane.loading=false;updateChrome();}
@@ -469,12 +490,13 @@ async function openCollection(kind,id){
   }
 }
 function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice(practiceNotice(selected?.collection));for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
+function boardFor(pane){return pane.view==='history'?pane.historyQuestion?.payload?.whiteboard:pane.payload?.whiteboard;}
 function configureBoardLayer(pane){
-  const layer=pane.whiteboardLayer||'draft',board=pane.payload?.whiteboard;
+  const layer=pane.whiteboardLayer||'draft',board=boardFor(pane);
   pane.whiteboard.protectStrokes(protectedInk(board,layer));
   pane.whiteboard.setAppendOnly(layer==='notes');
-  pane.whiteboard.setAnswerInkEnabled(layer==='draft'&&!board?.draftLocked);
-  pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane)||layer==='draft'&&board?.draftLocked===true);
+  pane.whiteboard.setAnswerInkEnabled(pane.view!=='history'&&layer==='draft'&&!board?.draftLocked);
+  pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
   if(pane.layerControl){pane.layerControl.value=layer;pane.layerControl.title=board?.draftLocked?'本轮草稿已锁定，只能追加笔记':'笔记保存后只能追加，不能擦除';}
 }
 function attachRuntime(pane){
@@ -485,7 +507,7 @@ function attachRuntime(pane){
   label.append(control);pane.tools.append(label);pane.layerControl=control;
   control.addEventListener('change',async()=>{
     const next=control.value;control.disabled=true;
-    try{pane.whiteboard.flush();await saveInk(pane);await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('请先保存当前白板');pane.whiteboardLayer=next;pane.whiteboard.load(layerDocument(pane.payload?.whiteboard,next));configureBoardLayer(pane);}
+    try{pane.whiteboard.flush();await saveInk(pane);await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('请先保存当前白板');pane.whiteboardLayer=next;pane.whiteboard.load(layerDocument(boardFor(pane),next));configureBoardLayer(pane);}
     catch(error){control.value=pane.whiteboardLayer||'draft';failure(error);}finally{control.disabled=false;}
   });
   pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);
@@ -536,7 +558,7 @@ function updateChrome(){
   draftFullscreen.sync();
   $('#document-group').hidden=true;
   const pane=active(),view=pane?.view,draft=draftViewActive(pane),draftButton=$('#draft-toggle');draftButton.hidden=!canViewDraft(pane);draftButton.disabled=!!pane?.loading;draftButton.setAttribute('aria-pressed',String(draft));draftButton.replaceChildren(el('span','','✎'),document.createTextNode(draft?(view==='history'?' 返回练习':' 返回作答'):' 草稿'));
-  $('#history-open').hidden=!pane?.payload||pane?.exam?.status==='in-progress'||!collectionFeature(pane,'history')||!!pane.summaryShown&&!pane.scoreSummary?.historyId;$('#history-open').disabled=!!pane?.loading;
+  $('#history-open').hidden=!pane?.payload||pane?.exam?.status==='in-progress'||!collectionFeature(pane,'history');$('#history-open').disabled=!!pane?.loading;
   $('#mode-bar').hidden=!pane||['practice','summary'].includes(view);
   $('#history-choose').hidden=!collectionFeature(pane,'history')||!['history','history-deleted'].includes(view);$('#return-practice').hidden=!['history','history-deleted'].includes(view);
   $('#mode-label').textContent=view==='history'?`只读历史 · ${pane.historyEntry.mode==='exam'?'考试 · ':''}${historyProgress(pane.historyEntry)} · ${historyTime(pane.historyEntry.createdAt)}`:view==='history-deleted'?'记录已删除，请选择其他记录或返回作答。':'';
@@ -630,7 +652,7 @@ const libraryTransfer=bindLibraryTransfer({request,getContext:()=>({kind:listMod
     notice(`已导入 ${result.collections?.length??result.importedBanks??0} 本题库。已有题库与进度保留。${warnings.join('；')}`);
   })});
 $('#library-new-group').addEventListener('click',()=>libraryManager.open('group',null,'create'));
-bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline});
+bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline,loadHistory:async pane=>{const entry=await request(`${historyPath(pane)}/${encodeURIComponent(pane.historyEntry.id)}`);const historyView=createHistoryView(entry);await showHistoryQuestion(pane,pane.historyQuestionId,{historyEntry:entry,historyView});}});
 $('#draft-toggle').addEventListener('click',()=>transitionTo(()=>toggleDraftMode()));
 const questionStepper=createQuestionStepper(take=>transitionTo(async()=>{
   const offset=take(),pane=active();if(!pane)return;

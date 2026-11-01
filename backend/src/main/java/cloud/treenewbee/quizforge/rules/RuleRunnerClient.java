@@ -46,6 +46,16 @@ public class RuleRunnerClient {
     private final HttpClient http;
     private final Semaphore permits;
     private final MeterRegistry meters;
+    private final ThreadLocal<Boolean> background = ThreadLocal.withInitial(() -> false);
+    public static final class BackgroundBusy extends RuleRunnerException {
+        public BackgroundBusy() { super("后台规则任务等待前台请求释放名额"); }
+    }
+    /** 仅作用于当前工作线程；所有请求仍共用原有舱壁。 */
+    public <T> T background(java.util.function.Supplier<T> action) {
+        boolean previous=background.get(); background.set(true);
+        try { return action.get(); } finally { background.set(previous); }
+    }
+
 
     public RuleRunnerClient(RuleRunnerProperties properties, JsonMapper json) {
         this(properties, json, new SimpleMeterRegistry());
@@ -82,8 +92,14 @@ public class RuleRunnerClient {
         HttpRequest request = buildRequest(op, rulePackage, input, deadline);
 
         String operation = metricOp(op);
+        boolean acquired;
+        synchronized (permits) {
+            // 后台让出前台保留名额，交给任务调度器稍后重试。
+            if (background.get() && permits.availablePermits() <= properties.maxConcurrency()/2)
+                throw new BackgroundBusy();
+            acquired = permits.tryAcquire();
+        }
         Timer.Sample timing = Timer.start(meters);
-        boolean acquired = permits.tryAcquire();
         try {
             if (!acquired) {
                 meters.counter("qf.rule.runner.bulkhead.rejected").increment();
@@ -161,6 +177,7 @@ public class RuleRunnerClient {
         body.put("deadlineMs", deadline.toMillis());
         body.put("package", rulePackage);
         body.put("input", input);
+        if (background.get()) body.put("priority", "background");
         return HttpRequest.newBuilder(properties.baseUrl().resolve("/v1/execute"))
                 .timeout(deadline.plus(RESPONSE_GRACE))
                 .header("Content-Type", "application/json")

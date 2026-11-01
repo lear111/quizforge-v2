@@ -89,7 +89,8 @@ class SubmitInfrastructureMapperTest extends MySqlTestBase {
                 "{\"title\":\"冻结题库😀\",\"questions\":[\"q-1\"]}", "{\"score\":1.25}", NOW, LATER, LATER, LATER);
         assertThat(rounds.insertRound(row)).isEqualTo(1);
         var saved = jdbc.queryForMap("SELECT * FROM practice_round WHERE id=?", id);
-        assertThat(saved).hasSize(12).containsEntry("id", id).containsEntry("user_id", user)
+        assertThat(saved).hasSize(13).containsEntry("history_frozen_at", null)
+                .containsEntry("id", id).containsEntry("user_id", user)
                 .containsEntry("context_id", context).containsEntry("collection_id", collection)
                 .containsEntry("mode", "practice").containsEntry("status", state);
         sameJson(saved.get("collection_snapshot"), row.collectionSnapshot()); sameJson(saved.get("summary"), row.summary());

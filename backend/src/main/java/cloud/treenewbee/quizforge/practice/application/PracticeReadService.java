@@ -81,7 +81,7 @@ public class PracticeReadService {
         String revision = stamps.stamp(context, "bank", 0, collection.contentSha256(), collection.contentSha256()).contentVersion();
         return new Overview(id, "bank", collection.title(), revision, collection.description(), features(collection),
                 listeningMetadata(collection), List.copyOf(questions), java.util.Collections.unmodifiableMap(states),
-                new Availability(true, null, null), states.values().stream().allMatch(state -> "submitted".equals(state.status())));
+                new Availability(true, null, null), !"active".equals(reads.completionStatus(context,userId).orElse("active")));
     }
 
     public Object question(String userId, String id, String qid, String knownStamp) {
@@ -91,7 +91,7 @@ public class PracticeReadService {
         String context = context(userId, id);
         var row = reads.state(context, qid, userId).orElse(null);
         var stamp = stamps.stamp(context, qid, row == null ? 0 : row.revision(), question.contentSha256(), question.extensionDigest());
-        if (matches(knownStamp, stamp) && whiteboardMatches(knownStamp,context,qid,userId)) return new Unchanged(true, stamp);
+        if (matches(knownStamp, stamp) && "active".equals(reads.completionStatus(context,userId).orElse("active")) && whiteboardMatches(knownStamp,context,qid,userId)) return new Unchanged(true, stamp);
         return renderQuestion(userId, qid, collection, question, context, row, stamp);
     }
 
@@ -146,7 +146,7 @@ public class PracticeReadService {
         }
     }
 
-    /** Freeze the collection only when a round is created, using the same ownership and approval checks as reads. */
+    /** 仅在再练一次归档时冻结题库结构，复用读题的归属与审核检查。 */
     public String collectionSnapshot(String userId, String collectionId) {
         var collection = collection(userId, collectionId);
         return collectionSnapshot(collection, context(userId, collectionId), userId);
@@ -203,6 +203,9 @@ public class PracticeReadService {
                 : new State(row.status(), decode(row.answer()), submitted ? SubmissionResults.result(json, row.result(), row.score(), row.maxScore(), row.gradingStatus()) : null, row.revision(),
                         decode(row.answerState()), decode(row.outlineStates()));
         String roundStatus = reads.roundStatus(context, userId).orElse(null);
+        String completion=reads.completionStatus(context,userId).orElse("active");
+        boolean editable="active".equals(completion);
+        boolean reviewable=editable||"completed".equals(completion);
         boolean boardEnabled=features(collection).path("whiteboard").asBoolean(false);
         var whiteboard=boardEnabled?whiteboards.read(context,qid,userId,roundStatus):null;
         boolean manualReview = false;
@@ -210,10 +213,10 @@ public class PracticeReadService {
             if ("manual-review".equals(capability.asString())) manualReview = true;
         }
         return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
-                whiteboard==null?null:whiteboard.draft(), stamp,
+                whiteboard==null?null:whiteboard.draft(), new QuestionStamps.Stamp(stamp.revision(),stamp.contentVersion(),stamp.packageVersion(),completion),
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
-                features(collection), new Capabilities(!submitted, !submitted,
-                        submitted && "in_progress".equals(roundStatus), submitted && roundStatus != null && manualReview,
+                features(collection), new Capabilities(!submitted && editable, !submitted && editable,
+                        submitted && editable && "in_progress".equals(roundStatus), submitted && reviewable && roundStatus != null && manualReview,
                         false, boardEnabled), null, whiteboard);
     }
 
@@ -227,7 +230,8 @@ public class PracticeReadService {
             }
             if (result.data() == null || !result.data().hasNonNull("projected")) throw unavailable();
             return json.writeValueAsString(result.data().get("projected"));
-        } catch (RuleRunnerException error) { throw unavailable(); }
+        } catch (RuleRunnerClient.BackgroundBusy busy) { throw busy; }
+        catch (RuleRunnerException error) { throw unavailable(); }
     }
 
     public ContentPages.FileResponse listening(String userId, String id, String materialId) throws java.io.IOException {
@@ -286,7 +290,8 @@ public class PracticeReadService {
                 || !stamp.path("contentVersion").isString() || !stamp.path("packageVersion").isString()) throw invalidStamp();
         return stamp.path("revision").asLong() == actual.revision()
                 && stamp.path("contentVersion").asString().equals(actual.contentVersion())
-                && stamp.path("packageVersion").asString().equals(actual.packageVersion());
+                && stamp.path("packageVersion").asString().equals(actual.packageVersion())
+                && stamp.path("practicePhase").asString("active").equals(actual.practicePhase());
     }
 
     private boolean whiteboardMatches(String known,String context,String qid,String userId) {

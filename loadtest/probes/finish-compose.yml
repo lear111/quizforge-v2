@@ -1,0 +1,26 @@
+# 仅本机性能复验；四个被测服务合计 4 核、8 GiB。
+services:
+  app:
+    cpus: 1.5
+    mem_limit: 3g
+    environment:
+      QF_PUBLIC_ORIGIN: http://127.0.0.1:8106
+      QF_PRACTICE_JOBS_INTERVAL_MS: "250"
+      QF_VERIFICATION_MODE: fake
+      QF_AUTH_RATE_LIMIT_PER_MINUTE: "1000"
+      QF_VERIFICATION_IP_LIMIT_10MIN: "1000"
+      QF_VERIFICATION_IP_LIMIT_DAILY: "10000"
+      QF_EMAIL_DAILY_LIMIT: "10000"
+  mysql:
+    cpus: 1
+    mem_limit: 2g
+  rule-runner:
+    cpus: 1.25
+    mem_limit: 2g
+    environment:
+      QF_RULE_WORKER_LIMIT: "8"
+  nginx:
+    cpus: 0.25
+    mem_limit: 1g
+    ports: !override
+      - "127.0.0.1:8106:80"

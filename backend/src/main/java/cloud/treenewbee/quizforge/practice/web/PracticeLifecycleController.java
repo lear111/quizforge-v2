@@ -18,8 +18,9 @@ public class PracticeLifecycleController {
             @NotBlank @Size(max = 64) String summaryVersion) {}
     private final PracticeLifecycleService lifecycle;
     private final PracticeSummaryService summaries;
-    public PracticeLifecycleController(PracticeLifecycleService lifecycle, PracticeSummaryService summaries) {
-        this.lifecycle = lifecycle; this.summaries = summaries;
+    private final cloud.treenewbee.quizforge.practice.application.PracticeLifecycleJobs jobs;
+    public PracticeLifecycleController(PracticeLifecycleService lifecycle, PracticeSummaryService summaries, cloud.treenewbee.quizforge.practice.application.PracticeLifecycleJobs jobs) {
+        this.lifecycle = lifecycle; this.summaries = summaries;this.jobs=jobs;
     }
 
     @GetMapping("/api/collections/bank/{id}/summary")
@@ -32,8 +33,20 @@ public class PracticeLifecycleController {
         if (body.roundId() == null || (!body.roundId().isNull() && (!body.roundId().isString()
                 || body.roundId().asString().length() > 36)))
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "缺少有效的 roundId（尚无轮次时为 null）");
-        return noStore(lifecycle.restart(principal.getName(), id, body.requestId(),
+        return ResponseEntity.accepted().cacheControl(org.springframework.http.CacheControl.noStore()).body(lifecycle.restart(principal.getName(), id, body.requestId(),
                 body.roundId().isNull() ? null : body.roundId().asString(), body.summaryVersion()));
+    }
+
+    @PostMapping("/api/collections/bank/{id}/finish")
+    public ResponseEntity<JsonNode> finish(Principal principal,@PathVariable String id,@Valid @RequestBody Restart body) {
+        if(body.roundId()==null || (!body.roundId().isNull() && (!body.roundId().isString() || body.roundId().asString().length()>36)))
+            throw new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","缺少有效的 roundId");
+        return ResponseEntity.accepted().cacheControl(org.springframework.http.CacheControl.noStore()).body(jobs.begin(
+                principal.getName(),id,body.requestId(),body.roundId().isNull()?null:body.roundId().asString(),body.summaryVersion(),"finish"));
+    }
+    @GetMapping("/api/collections/bank/{id}/jobs/{jobId}")
+    public ResponseEntity<JsonNode> progress(Principal principal,@PathVariable String id,@PathVariable String jobId) {
+        return noStore(jobs.progress(principal.getName(),id,jobId));
     }
 
     private static ResponseEntity<JsonNode> noStore(JsonNode value) {

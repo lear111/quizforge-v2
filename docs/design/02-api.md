@@ -114,8 +114,8 @@
 | `GET .../questions/{qid}/stamp` | 只读版本戳 | `practice_question_state` | |
 | `POST .../questions/{qid}/actions` | `draft` / `submit` / `review` / `retry` / `whiteboard` | `practice_question_state`、`practice_whiteboard`、`practice_round*`、`practice_request_receipt` | 流程见数据库设计 5.1、5.2 节 |
 | `GET /api/collections/{kind}/{id}/summary` | 本轮汇总 | `practice_question_state`、`practice_context` | |
-| `POST .../finish` | 完成本轮，冻结历史 | `practice_round`、`practice_context` | |
-| `POST .../restart` | 再练一次 | 同上 | |
+| `POST .../finish` | 异步完成本轮，不生成历史 | `practice_round`、`practice_context` | |
+| `POST .../restart` | 完成后异步冻结历史并再练一次 | 同上 | |
 | `GET .../history`、`GET .../history/{historyId}` | 历史列表与快照 | `practice_round`、`practice_round_question` | 冻结页面通过拓展摘要取回，不再读取复制的页面文件 |
 | `DELETE .../history/{historyId}` | 删除历史记录 | `practice_round` | 软删除 |
 
@@ -225,9 +225,30 @@
 
 旧前端已经在使用的错误码（`CONFLICT`、`CONTENT_CONFLICT`、`PENDING_REVIEW` 等）**名称保持不变**，前端的处理逻辑无需修改。
 
-L1.2（2026-11-01）明确允许 restart 归档进行中的轮次，不再返回旧契约的 PRACTICE_NOT_FINISHED；仍需匹配 roundId / summaryVersion。L1.1 / L1.2 的请求和响应字段详见[前端接口映射](07-frontend-api-map.md#l11--l12重做人工评分汇总与再练一轮)。
+L1.3/L1.4 按验收清单恢复顺序限制：先 finish 完成，再 restart 归档并重置；未完成返回 409 PRACTICE_NOT_FINISHED。两者均匹配 roundId / summaryVersion。L1.1 / L1.2 的请求和响应字段详见[前端接口映射](07-frontend-api-map.md#l11--l12重做人工评分汇总与再练一轮)。
 
 ---
+
+
+### L1.3 / L1.4 异步完成与历史（2026-11-01）
+
+`C=/api/collections/bank/{id}`，身份只取 Cookie 会话。
+
+| 请求 | 成功响应 | 行为 |
+| --- | --- | --- |
+| POST C/finish | 202 `{jobId,status,total,completed}` | body `{requestId,roundId,summaryVersion}`；立即锁作答与重做，事务外逐题提交已保存答案；未作答不判分 |
+| POST C/restart | 202，同上 | 同形 body；仅 completed 允许；冻结全库最后状态（含未作答与两层白板）后，原子发布历史并重置 |
+| GET C/jobs/{jobId} | 200 `{jobId,kind,status,total,completed,result?,error?}` | 状态 queued/running/completed/failed；只读一条所属用户的任务记录；客户端可刷新恢复进度 |
+| GET C/history | 200 `{records:[摘要]}` | 不含完整题目或快照；仅已归档且未删除的历史 |
+| GET C/history/{historyId} | 200 冻结 collection / questions / pages / summary | snapshotVersion=1；历史模式；不重新执行规则或读当前题目 |
+| POST C/history/{historyId}/questions/{qid}/annotations | 200 `{whiteboard}` | `{requestId,revision,notes}`；只追加，独立版本，合计 2 MiB，冲突 409 |
+| GET/HEAD C/history/{historyId}/listening/{materialId} | Nginx 音频 | 来源为冻结配置与历史资源授权，不依赖当前题库 |
+| DELETE C/history/{historyId} | 204 | 所属用户软删除历史、删除追加笔记，资源授权随之失效 |
+
+完成允许 pending/null（按 0 计总分并单列待评分数），之后可人工评分；宿主保留拓展的 score/gradingStatus。失败恢复可编辑，已经成功的提交保留，新的 finish 请求只处理剩余草稿。归档失败恢复 completed，当前状态与白板不清空，未完成的历史不可见。相同 requestId 重放同一 202 与 jobId；已失败任务使用新 requestId 重试。网络断开不取消任务。
+
+写入阶段若正在 finishing/archiving，返回 409 PRACTICE_LOCKED/PRACTICE_BUSY。历史不可改答案、重做或人工评分；只允许追加宿主笔记。历史中被管理员移除的拓展显示替代提示，其余冻结信息仍可读取。
+
 
 ## 5. 后端代码结构约定
 

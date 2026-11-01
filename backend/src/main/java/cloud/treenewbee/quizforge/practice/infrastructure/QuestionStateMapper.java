@@ -57,6 +57,9 @@ public interface QuestionStateMapper {
                 projection = #{projection},
                 revision = revision + 1,
                 submission_generation = submission_generation + 1,
+                first_correct = CASE WHEN attempt_count = 0 AND #{gradingStatus} = 'graded' THEN #{score} = #{maxScore} ELSE first_correct END,
+                attempt_count = attempt_count + 1,
+                grading_source = 'rule',
                 updated_at = #{updatedAt}
             WHERE context_id = #{contextId}
               AND question_id = #{questionId}

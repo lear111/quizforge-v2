@@ -231,7 +231,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
                 SELECT ?,question_id,?,'submitted','{"final":true}','{"frozen":true}',4,content_sha256,NOW(3) FROM content_question WHERE bank_id=?
                 """, owner.context(), owner.user(), owner.bank());
         assertThat(json(get(owner.path(), owner.cookie())).path("capabilities").path("canSave").asBoolean()).isFalse();
-        assertThat(json(get("/api/collections/bank/" + owner.collection(), owner.cookie())).path("readOnly").asBoolean()).isTrue();
+        assertThat(json(get("/api/collections/bank/" + owner.collection(), owner.cookie())).path("readOnly").asBoolean()).isFalse();
         error(post(owner, draft("submitted", 4, "overwrite")), 409, "REVISION_CONFLICT");
         assertThat(receipts(owner)).isZero();
     }

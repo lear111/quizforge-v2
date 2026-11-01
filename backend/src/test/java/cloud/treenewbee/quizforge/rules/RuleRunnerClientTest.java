@@ -74,6 +74,42 @@ class RuleRunnerClientTest {
     }
 
     @Test
+    void backgroundPriorityIsScopedAndRestoredEvenAfterFailure() throws Exception {
+        try(var peer=new FakeRuleRunner()) {
+            var client=client(peer.uri(),4);
+            client.background(()->execute(client));
+            assertThat(JSON.readTree(peer.requests().getFirst().body()).path("priority").asString()).isEqualTo("background");
+            assertThatThrownBy(()->client.background(()->{throw new IllegalStateException("same");})).isInstanceOf(IllegalStateException.class);
+            execute(client);
+            assertThat(JSON.readTree(peer.requests().getLast().body()).has("priority")).isFalse();
+        }
+    }
+
+    @Test
+    void backgroundYieldsWhenOnlyForegroundReserveRemainsWithoutLeakingPermits() throws Exception {
+        try(var peer=new FakeRuleRunner();var pool=Executors.newFixedThreadPool(3)) {
+            var client=client(peer.uri(),2);var gate=peer.block(1);
+            var running=pool.submit(()->client.background(()->execute(client)));gate.awaitEntered();
+            try {
+                for(int n=0;n<20;n++)assertThatThrownBy(()->client.background(()->execute(client))).isInstanceOf(RuleRunnerClient.BackgroundBusy.class);
+                peer.respond(200,FakeRuleRunner.SUCCESS);
+                assertThat(execute(client).ok()).isTrue();
+                assertThat(peer.requests()).hasSize(2);
+            } finally {gate.close();}
+            assertThat(running.get(10,TimeUnit.SECONDS).ok()).isTrue();
+            assertThat(client.background(()->execute(client)).ok()).isTrue();
+            peer.assertHealthy();
+        }
+    }
+
+    @Test
+    void backgroundCanMakeProgressWithSinglePermitConfiguration() throws Exception {
+        try(var peer=new FakeRuleRunner()) {
+            var client=client(peer.uri(),1);assertThat(client.background(()->execute(client)).ok()).isTrue();
+        }
+    }
+
+    @Test
     void explicitDeadlineIsSerializedInMilliseconds() throws Exception {
         try (var peer = new FakeRuleRunner()) {
             client(peer.uri(), 2).execute("submit", PACKAGE, INPUT, Duration.ofMillis(1234));
