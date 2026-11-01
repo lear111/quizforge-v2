@@ -9,6 +9,7 @@ import http.client
 import json
 import math
 import os
+import re
 from pathlib import Path
 import secrets
 import subprocess
@@ -33,6 +34,7 @@ def main():
     cli.add_argument("--project", default="qf-practice-finish-history-v4")
     cli.add_argument("--runs", type=int, default=3)
     cli.add_argument("--vus", type=int, default=4)
+    cli.add_argument("--client", choices=("container","host"), default="container")
     cli.add_argument("--output", type=Path, default=ROOT / ".artifacts/finish-submit-latency.json")
     args = cli.parse_args()
     if not args.project.startswith("qf-practice-finish-") or not 1 <= args.runs <= 3 or not 1 <= args.vus <= 4:
@@ -42,6 +44,9 @@ def main():
     if not host.startswith(("npipe://", "unix://")):
         cli.error("local Docker Engine required")
     compose = ["docker", "compose", "-p", args.project, "-f", str(ROOT / "deploy/docker-compose.yml")]
+    published=subprocess.check_output(compose+["port","nginx","80"],text=True).strip()
+    if published!="127.0.0.1:"+str(urllib.parse.urlsplit(args.base_url).port or 80):
+        cli.error("base URL must match this dedicated project's loopback nginx port")
     archive = ROOT / "samples/loadtest-300.qbank"
     template = next(iter(sample_banks(archive).values()))["answers"]
     question_ids = list(template)
@@ -49,7 +54,24 @@ def main():
     api = api_client(args.base_url)
 
     def register(label):
-        status, body, headers = api("/api/auth/register", {"email": secrets.token_hex(8)+"@example.test", "name":label, "password":secrets.token_urlsafe(24)})
+        email="probe@"+secrets.token_hex(12)+".example.test"
+        status, config, _=api("/api/config");require(status,config)
+        policy=config["authPolicy"]
+        if policy["registrationCaptchaRequired"] or policy["invitationRequired"]:
+            raise RuntimeError("独立性能环境不能启用真实人机验证或邀请码")
+        registration={"identifier":email,"name":label,"password":secrets.token_urlsafe(24)}
+        if policy["registrationCodeRequired"]:
+            status,body,_=api("/api/auth/email-code",{"identifier":email});require(status,body)
+            # 只读取独立容器为本次合成账号输出的假验证码，不输出日志或验证码。
+            marker="[开发验证码] p***@"+email.split("@",1)[1]+" 注册验证码："
+            until=time.monotonic()+15
+            while True:
+                logs=subprocess.check_output(compose+["logs","app","--no-color","--since","1m"],encoding="utf-8")
+                codes=re.findall(re.escape(marker)+r"(\d{6})",logs)
+                if codes:registration["code"]=codes[-1];break
+                if time.monotonic()>until:raise RuntimeError("独立环境必须使用 fake 验证码实现")
+                time.sleep(.1)
+        status, body, headers = api("/api/auth/register",registration)
         require(status, body)
         return headers["Set-Cookie"].split(";", 1)[0]
 
@@ -75,6 +97,30 @@ def main():
         return body
 
     def submit_phase(cookie, base, ids):
+        if args.client=="container":
+            # 计时在同一 Docker 网络内进行，不经过 Windows 的端口转发。
+            script="""
+                let text='';for await(const chunk of process.stdin)text+=chunk;
+                const input=JSON.parse(text),latencies=[];let next=0;
+                await Promise.all(Array.from({length:input.vus},async()=>{
+                    for(;;){const index=next++;if(index>=input.ids.length)return;
+                        const id=input.ids[index],start=performance.now();
+                        const response=await fetch('http://nginx'+input.base+'/questions/'+id+'/actions',{
+                            method:'POST',redirect:'error',headers:{Cookie:input.cookie,Origin:input.origin,'Content-Type':'application/json'},
+                            body:JSON.stringify({requestId:crypto.randomUUID(),revision:0,action:'submit',data:{answer:input.answers[id]}}),
+                            signal:AbortSignal.timeout(180000)});
+                        const body=await response.json();
+                        if(response.status!==200||body.state?.status!=='submitted'||body.state.result.score!==body.state.result.maxScore)
+                            throw new Error('Submit assertion failed, HTTP '+response.status);
+                        latencies.push(performance.now()-start);
+                    }
+                }));console.log(JSON.stringify(latencies));
+                """
+            data={"cookie":cookie,"origin":args.base_url,"base":base,"ids":ids,"answers":template,"vus":args.vus}
+            result=subprocess.run(["docker","run","--rm","-i","--read-only","--user","node","--cpus","0.25","--memory","128m",
+                "--network",args.project+"_public","node:22-bookworm-slim","node","--input-type=module","-e",script],
+                input=json.dumps(data),text=True,capture_output=True,check=True)
+            return json.loads(result.stdout)
         # 每个虚拟用户复用 HTTP/1.1 连接，与浏览器/k6 相同，排除本机端口转发的新连接噪声。
         local=threading.local();connections=[];origin=urllib.parse.urlsplit(args.base_url)
         def init():
@@ -132,7 +178,7 @@ def main():
                 "backgroundProgress":[before["completed"],after["completed"]],"errors":0}
         results.append(result)
         print(json.dumps({"run":run+1,"p95Ms":{key:round(percentile(value,.95),3) for key,value in (("baseline",baseline),("during",during),("after",post))},"backgroundProgress":result["backgroundProgress"]}),flush=True)
-    report={"foregroundVus":args.vus,"backgroundWorkers":1,"backgroundIntervalMs":250,"questionsPerBackgroundJob":300,"initialWarmupSubmits":300,"warmupSubmitsPerRun":30,"runs":results}
+    report={"client":args.client,"foregroundVus":args.vus,"backgroundWorkers":1,"backgroundIntervalMs":250,"questionsPerBackgroundJob":300,"initialWarmupSubmits":300,"warmupSubmitsPerRun":30,"runs":results}
     report["aggregateP95Ms"]={key:round(percentile([v for run in results for v in run[key+"Ms"]],.95),3) for key in ("baseline","during","after")}
     args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report["aggregateP95Ms"]))

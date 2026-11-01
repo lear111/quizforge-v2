@@ -12,7 +12,7 @@ class PracticeCompletionMigrationTest {
         try (var mysql=new MySQLContainer("mysql:8.4").withDatabaseName("practice_upgrade").withUsername("test").withPassword("test")) {
             mysql.start();
             var source=new DriverManagerDataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword());
-            Flyway.configure().dataSource(source).target("9").load().migrate();
+            Flyway.configure().dataSource(source).target("10").load().migrate();
             var jdbc=new JdbcTemplate(source);
             jdbc.update("INSERT INTO practice_context(id,user_id,collection_id,kind,scope_key,current_round_id,created_at,updated_at) VALUES('context','user','collection','practice','default','current',NOW(3),NOW(3))");
             for(String id:new String[]{"current","past"})jdbc.update("INSERT INTO practice_round(id,user_id,collection_id,context_id,mode,status,collection_snapshot,summary,created_at,updated_at,completed_at) VALUES(?,'user','collection','context','practice','completed','{}','{}',NOW(3),NOW(3),NOW(3))",id);
