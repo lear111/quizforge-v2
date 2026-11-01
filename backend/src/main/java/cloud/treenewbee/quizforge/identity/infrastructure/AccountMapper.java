@@ -39,13 +39,6 @@ public interface AccountMapper {
     int insertPhone(@Param("userId") String userId, @Param("phone") String phone,
                     @Param("verifiedAt") Instant verifiedAt);
 
-    @Update("""
-            UPDATE account_user_phone SET phone = #{phone}, verified = TRUE, verified_at = #{verifiedAt}
-             WHERE user_id = #{userId}
-            """)
-    int replacePhone(@Param("userId") String userId, @Param("phone") String phone,
-                     @Param("verifiedAt") Instant verifiedAt);
-
     // 已验证的号码保留原验证时间。
     @Update("""
             UPDATE account_user_phone SET verified = TRUE, verified_at = #{verifiedAt}
@@ -54,11 +47,12 @@ public interface AccountMapper {
     int markPhoneVerified(@Param("userId") String userId, @Param("phone") String phone,
                           @Param("verifiedAt") Instant verifiedAt);
 
+    // 只能补绑：邮箱仍为空时才写入。
     @Update("""
             UPDATE account_user SET email = #{email}, updated_at = #{now}, version = version + 1
-             WHERE id = #{userId}
+             WHERE id = #{userId} AND email IS NULL
             """)
-    int updateEmail(@Param("userId") String userId, @Param("email") String email, @Param("now") Instant now);
+    int bindEmail(@Param("userId") String userId, @Param("email") String email, @Param("now") Instant now);
 
     // 带上旧哈希作为条件：并发修改密码时只有一个成功。
     @Update("""

@@ -16,6 +16,8 @@ public record VerificationProperties(
         String smsPepper,
         int smsDailyLimit,
         int emailDailyLimit,
+        int ipLimitTenMinutes,
+        int ipLimitDaily,
         Tencent tencent,
         Aliyun aliyun,
         Turnstile turnstile) {
@@ -31,6 +33,9 @@ public record VerificationProperties(
         smsPepper = smsPepper == null ? "" : smsPepper;
         if (smsDailyLimit < 1 || smsDailyLimit > 10000) throw new IllegalArgumentException("Invalid SMS daily limit");
         if (emailDailyLimit < 1 || emailDailyLimit > 10000) throw new IllegalArgumentException("Invalid email daily limit");
+        if (ipLimitTenMinutes < 1 || ipLimitDaily < ipLimitTenMinutes) {
+            throw new IllegalArgumentException("Invalid verification IP limits");
+        }
         tencent = tencent == null ? new Tencent(false, "", "", "", "", "ap-hongkong") : tencent;
         aliyun = aliyun == null ? new Aliyun(false, "", "", "", "") : aliyun;
         turnstile = turnstile == null ? new Turnstile("", "") : turnstile;

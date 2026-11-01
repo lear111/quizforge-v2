@@ -52,12 +52,18 @@ services:
       QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
       QF_BLOB_DIR: /data/blobs
       QF_PUBLIC_ORIGIN: ${QF_PUBLIC_ORIGIN:-http://localhost:8088}
-      # 邮件 / 短信验证码与人机验证（L4）。密钥只放在 git 忽略的 deploy/.env 中；
-      # 未配置时对应服务不可用。本机开发可设 QF_VERIFICATION_MODE=fake（验证码写入应用日志）。
-      QF_VERIFICATION_MODE: ${QF_VERIFICATION_MODE:-provider}
+      # 邮件 / 短信验证码与人机验证（L4）。本机开发与 CI 默认使用假实现（验证码写入应用日志，
+      # 只允许本机或 .test 来源）；正式部署设 QF_VERIFICATION_MODE=provider，密钥只放在 git 忽略的
+      # deploy/.env 中，provider 模式下两个摘要密钥缺失时启动失败。
+      QF_VERIFICATION_MODE: ${QF_VERIFICATION_MODE:-fake}
       QF_EMAIL_CODE_PEPPER: ${QF_EMAIL_CODE_PEPPER:-}
       QF_SMS_CODE_PEPPER: ${QF_SMS_CODE_PEPPER:-}
       QF_SMS_DAILY_LIMIT: ${QF_SMS_DAILY_LIMIT:-100}
+      QF_EMAIL_DAILY_LIMIT: ${QF_EMAIL_DAILY_LIMIT:-100}
+      # 按 IP 的上限（旧平台规则）；只在自动化浏览器测试中调高。
+      QF_AUTH_RATE_LIMIT_PER_MINUTE: ${QF_AUTH_RATE_LIMIT_PER_MINUTE:-12}
+      QF_VERIFICATION_IP_LIMIT_10MIN: ${QF_VERIFICATION_IP_LIMIT_10MIN:-5}
+      QF_VERIFICATION_IP_LIMIT_DAILY: ${QF_VERIFICATION_IP_LIMIT_DAILY:-20}
       QF_TENCENT_SES_ENABLED: ${QF_TENCENT_SES_ENABLED:-false}
       QF_TENCENT_SECRET_ID: ${QF_TENCENT_SECRET_ID:-}
       QF_TENCENT_SECRET_KEY: ${QF_TENCENT_SECRET_KEY:-}

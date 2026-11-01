@@ -328,7 +328,7 @@ function showError(error, form) {
   feedback.textContent = error instanceof RequestError ? error.message : '请求未能完成，请稍后重试';
   const fieldName = {
     INVALID_CREDENTIALS: 'password', WRONG_PASSWORD: 'password', EMPTY_PASSWORD: 'password',
-    EMAIL_TAKEN: 'identifier', PHONE_TAKEN: 'identifier', CONTACT_TAKEN: 'identifier', CONTACT_UNCHANGED: 'identifier',
+    EMAIL_TAKEN: 'identifier', PHONE_TAKEN: 'identifier', CONTACT_TAKEN: 'identifier', CONTACT_ALREADY_BOUND: 'identifier',
     EMPTY_IDENTIFIER: 'identifier', INVALID_IDENTIFIER: 'identifier',
     PASSWORD_LENGTH: 'password', PASSWORD_MISMATCH: 'confirm',
     VERIFICATION_CODE_INVALID: 'code', VERIFICATION_CODE_MISMATCH: 'code', EMPTY_CODE: 'code',
@@ -394,6 +394,11 @@ function showAccount(data) {
   byId('unverified').hidden = unverified.length === 0;
   byId('unverified').textContent = unverified.length
     ? `${unverified.map((channel) => channel === 'phone' ? '手机号' : '邮箱').join('、')}尚未验证，下次用验证码登录或重新绑定时会完成验证。` : '';
+  // 只能补绑缺少的那一种联系方式；已绑定的不能更换（与旧版一致）。
+  const missing = user.email == null ? '邮箱' : user.phone == null ? '手机号' : null;
+  byId('contact-section').hidden = missing === null;
+  byId('contact-summary').textContent = missing ? `绑定${missing}` : '绑定联系方式';
+  contactForm.elements.namedItem('identifier').placeholder = missing === '邮箱' ? '要绑定的邮箱' : '要绑定的中国大陆手机号';
   document.title = '账号 · QuizForge';
   for (const form of [loginForm, registerForm, resetForm, contactForm]) form.reset();
   void loadQuota();
@@ -545,7 +550,7 @@ contactForm.addEventListener('submit', async (event) => {
     setBusy(true);
     showAccount(await request('/api/account/contact', 'POST', { identifier, password, code }));
     byId('contact-section').open = false;
-    showNotice('联系方式已更新。');
+    showNotice('联系方式已绑定。');
   } catch (error) {
     setBusy(false);
     showError(error, contactForm);

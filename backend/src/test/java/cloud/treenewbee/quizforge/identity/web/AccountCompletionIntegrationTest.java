@@ -403,7 +403,7 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
     // ================================================================ 绑定与更换联系方式
 
     @Test
-    void bindingAndChangingContactsNeedPasswordCaptchaAndCode() throws Exception {
+    void bindingAMissingContactNeedsPasswordCaptchaAndCode() throws Exception {
         String email = email();
         String cookie = cookie(post("/api/auth/register", registration(email), null));
         String phone = phone();
@@ -420,22 +420,42 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         request.put("code", fake.lastCode(normalized(phone)));
         HttpResponse<String> boundResponse = post("/api/account/contact", request, cookie);
         assertOk200(boundResponse);
-        JsonNode bound = user(boundResponse);
-        assertThat(bound.path("phone").asString()).isEqualTo(normalized(phone));
+        assertThat(user(boundResponse).path("phone").asString()).isEqualTo(normalized(phone));
         assertOk(login(phone, PASSWORD, null, null));
+        assertOk(login(email, PASSWORD, null, null));
+    }
 
-        // 更换邮箱：旧邮箱不能再登录，新邮箱可以。
-        resetRateLimits();
-        String next = email();
-        Map<String, Object> change = new LinkedHashMap<>(Map.of("identifier", next, "password", PASSWORD,
+    @Test
+    void boundContactsCannotBeChanged() throws Exception {
+        // 已有邮箱的账号不能再绑定（更换）邮箱；补绑手机号后也不能更换手机号（作者决定 D-2，与旧版一致）。
+        String email = email();
+        String cookie = cookie(post("/api/auth/register", registration(email), null));
+        Map<String, Object> change = new LinkedHashMap<>(Map.of("identifier", email(), "password", PASSWORD,
                 "captchaToken", CAPTCHA));
-        assertThat(post("/api/account/contact-code", change, cookie).statusCode()).isEqualTo(200);
-        change.put("code", fake.lastCode(next));
-        HttpResponse<String> changed = post("/api/account/contact", change, cookie);
-        assertOk200(changed);
-        assertThat(user(changed).path("email").asString()).isEqualTo(next);
-        assertError(login(email, PASSWORD, null, null), 401, "INVALID_CREDENTIALS");
-        assertOk(login(next, PASSWORD, null, null));
+        assertError(post("/api/account/contact-code", change, cookie), 409, "CONTACT_ALREADY_BOUND");
+        assertThat(JSON.readTree(post("/api/account/contact-code", change, cookie).body()).path("error")
+                .path("message").asString()).isEqualTo("此类联系方式已绑定，暂不支持换绑");
+
+        String phone = phone();
+        String phoneCookie = cookie(post("/api/auth/register", registration(phone), null));
+        Map<String, Object> other = new LinkedHashMap<>(Map.of("identifier", phone(), "password", PASSWORD,
+                "captchaToken", CAPTCHA));
+        assertError(post("/api/account/contact-code", other, phoneCookie), 409, "CONTACT_ALREADY_BOUND");
+        assertThat(fake.sent()).isEmpty();
+
+        // 发码后、确认前账号已经绑定了同类联系方式：确认时仍被拒绝，不覆盖。
+        Map<String, Object> bind = new LinkedHashMap<>(Map.of("identifier", email, "password", PASSWORD,
+                "captchaToken", CAPTCHA));
+        String phoneOnlyId = user(get("/api/me", phoneCookie)).path("id").asString();
+        String target = email();
+        bind.put("identifier", target);
+        assertThat(post("/api/account/contact-code", bind, phoneCookie).statusCode()).isEqualTo(200);
+        jdbc.update("UPDATE account_user SET email = ? WHERE id = ?", email(), phoneOnlyId);
+        bind.remove("captchaToken");
+        bind.put("code", fake.lastCode(target));
+        assertError(post("/api/account/contact", bind, phoneCookie), 409, "CONTACT_ALREADY_BOUND");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM account_user WHERE email = ?", Long.class, target))
+                .isZero();
     }
 
     @Test
@@ -613,14 +633,23 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         String admin = admin();
         setPolicy(false, false, false, false, true);
         String code = createInvitations(admin, 1).getFirst();
-        // 密码哈希最多同时计算两个（PasswordHasher），并发注册用两个线程。
-        List<Integer> statuses = concurrently(2, () -> {
+        // 密码哈希超过并发数时排队等待（D-12），4 个并发注册都会进入最终事务。
+        List<Integer> statuses = concurrently(4, () -> {
             Map<String, Object> body = registration(email());
             body.put("invitationCode", code);
             return post("/api/auth/register", body, null).statusCode();
         });
         assertThat(statuses.stream().filter(status -> status == 200)).hasSize(1);
         assertThat(statuses).containsOnly(200, 400);
+    }
+
+    @Test
+    void concurrentLoginsQueueForPasswordHashingInsteadOfFailing() throws Exception {
+        String identifier = email();
+        registerOk(identifier);
+        // 6 个并发登录、哈希并发数为 2：超出的请求排队等待，全部成功，不返回 503。
+        List<Integer> statuses = concurrently(6, () -> login(identifier, PASSWORD, null, null).statusCode());
+        assertThat(statuses).containsOnly(200);
     }
 
     // ================================================================ 服务器维护命令

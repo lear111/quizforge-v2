@@ -39,7 +39,7 @@ import cloud.treenewbee.quizforge.shared.web.ApiException;
  *   <li>六位数字，十分钟有效，最多五次错误；重发替换旧码并清零错误次数；只消费一次。</li>
  *   <li>用途隔离：摘要的主体是 HMAC(用途 + 绑定对象 + 联系方式)，注册、登录、绑定、找回密码互不通用；
  *       登录与找回密码的验证码还绑定账号与当前密码版本。</li>
- *   <li>发送频率：同一地址 60 秒 1 次、24 小时 5 次；同一 IP 10 分钟 5 次、24 小时 20 次；
+ *   <li>发送频率：同一地址 60 秒 1 次、24 小时 5 次；同一 IP 10 分钟 5 次、24 小时 20 次（IP 上限可配置）；
  *       全站每通道 24 小时上限（短信默认 100，可配置）。超出时发送预留不退还。</li>
  *   <li>数据库只存 HMAC 摘要，不存验证码、联系方式与 IP 的明文。</li>
  * </ul>
@@ -190,8 +190,10 @@ public class VerificationCodeService {
     private void checkLimits(Keys keys, Instant now) {
         if (mapper.countByAddress(keys.channel(), keys.addressKey(), now.minus(Duration.ofSeconds(60))) >= 1
                 || mapper.countByAddress(keys.channel(), keys.addressKey(), now.minus(Duration.ofDays(1))) >= 5
-                || mapper.countByIp(keys.channel(), keys.ipKey(), now.minus(Duration.ofMinutes(10))) >= 5
-                || mapper.countByIp(keys.channel(), keys.ipKey(), now.minus(Duration.ofDays(1))) >= 20) {
+                || mapper.countByIp(keys.channel(), keys.ipKey(), now.minus(Duration.ofMinutes(10)))
+                        >= properties.ipLimitTenMinutes()
+                || mapper.countByIp(keys.channel(), keys.ipKey(), now.minus(Duration.ofDays(1)))
+                        >= properties.ipLimitDaily()) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "VERIFICATION_RATE_LIMITED",
                     "验证码发送太频繁，请稍后重试");
         }

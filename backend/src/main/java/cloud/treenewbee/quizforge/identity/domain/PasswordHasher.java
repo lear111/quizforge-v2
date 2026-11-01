@@ -3,10 +3,12 @@ package cloud.treenewbee.quizforge.identity.domain;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.bouncycastle.crypto.generators.SCrypt;
@@ -22,8 +24,21 @@ public class PasswordHasher {
     private static final String DUMMY_STORED = "0".repeat(32) + ":" + "0".repeat(128);
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    // 限制同时进行的哈希计算数量，防止过载
-    private final Semaphore hashing = new Semaphore(2);
+    static final int PERMITS = 2;
+    static final Duration MAX_WAIT = Duration.ofSeconds(2);
+
+    // 限制同时进行的哈希计算数量，防止过载（每次约 16 MiB 内存）；超出时排队等待，最长 MAX_WAIT
+    private final Semaphore hashing;
+    private final Duration maxWait;
+
+    public PasswordHasher() {
+        this(PERMITS, MAX_WAIT);
+    }
+
+    PasswordHasher(int permits, Duration maxWait) {
+        this.hashing = new Semaphore(permits, true);
+        this.maxWait = maxWait;
+    }
 
     // 将字符串编码为 UTF-8 字节数组，替换无法编码的字符为 U+FFFD
     private static byte[] utf8(String value) {
@@ -55,10 +70,10 @@ public class PasswordHasher {
 
     // 计算 scrypt 哈希值，使用给定的密码和盐值
     private byte[] derive(String password, String salt) {
-        if (!hashing.tryAcquire()){
+        if (!acquire()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_BUSY", "登录服务繁忙，请稍后再试");
         }
-        
+
         byte[] bytes = utf8(password);
         try {
             return SCrypt.generate(bytes, utf8(salt), 16384, 8, 1, 64);
@@ -66,6 +81,21 @@ public class PasswordHasher {
             Arrays.fill(bytes, (byte) 0);
             hashing.release();
         }
+    }
+
+    // 公平排队等待计算名额；等不到（或线程被中断）返回 false
+    private boolean acquire() {
+        try {
+            return hashing.tryAcquire(maxWait.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    // 测试用：占用或归还计算名额
+    Semaphore permits() {
+        return hashing;
     }
 
     // 将密码哈希为带盐的字符串，格式为 "salt:hash"

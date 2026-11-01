@@ -39,6 +39,7 @@ public class SecurityConfig {
             HttpSecurity http,
             @Value("${qf.security.allowed-origin}") String allowedOrigin,
             SessionMapper sessions,
+            AuthRateLimiter rateLimiter,
             Clock clock) throws Exception {
         http
                 // 会话由 auth_session 持久化。
@@ -59,6 +60,8 @@ public class SecurityConfig {
                 // 认证失败也使用统一 JSON 错误格式。
                 .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))
                 .addFilterBefore(new OriginCheckFilter(allowedOrigin), UsernamePasswordAuthenticationFilter.class)
+                // 来源校验之后按 IP 限制匿名认证接口。
+                .addFilterBefore(new AuthRateLimitFilter(rateLimiter), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SessionAuthenticationFilter(sessions, clock),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
