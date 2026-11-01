@@ -1,0 +1,49 @@
+{
+  "id": "collection",
+  "kind": "bank",
+  "title": "标题\"中文😀",
+  "description": null,
+  "features": {"draft": true, "history": true},
+  "listening": {
+    "materials": [{"id": "intro", "title": "听力材料", "revision": "listening-version"}],
+    "examMaterialId": "intro"
+  },
+  "questions": [
+    {
+      "id": "q-z",
+      "title": "第一题",
+      "contentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "type": {"id": "basic", "version": "1.0", "name": "基础题型", "pageId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "outline": {"level": "question", "label": "1"},
+      "listening": {"materialId": "intro"},
+      "outlineLabel": "1",
+      "outlineItems": null,
+      "outlineGroupIndex": 0,
+      "outlineGroupName": "同名"
+    },
+    {
+      "id": "q-a",
+      "title": "第二题",
+      "contentSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "type": {"id": "basic", "version": "1.0", "name": "基础题型", "pageId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "outline": {"level": "parts", "items": [{"id": "p1", "label": "(1)"}]},
+      "listening": null,
+      "outlineLabel": null,
+      "outlineItems": [{"id": "p1", "label": "(1)"}],
+      "outlineGroupIndex": 1,
+      "outlineGroupName": "同名"
+    },
+    {
+      "id": "q-none",
+      "title": "第三题",
+      "contentSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "type": {"id": "basic", "version": "1.0", "name": "基础题型", "pageId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "outline": null,
+      "listening": null,
+      "outlineLabel": null,
+      "outlineItems": null,
+      "outlineGroupIndex": 2,
+      "outlineGroupName": null
+    }
+  ]
+}

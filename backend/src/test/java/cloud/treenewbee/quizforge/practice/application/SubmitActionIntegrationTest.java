@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -63,6 +64,7 @@ import cloud.treenewbee.quizforge.content.application.ImportService;
 import cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper;
 import cloud.treenewbee.quizforge.content.infrastructure.QuestionRow;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeReadMapper;
 import cloud.treenewbee.quizforge.rules.RuleRunnerClient;
 import cloud.treenewbee.quizforge.rules.RuleRunnerException;
 import cloud.treenewbee.quizforge.shared.id.Ids;
@@ -102,8 +104,9 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
     final HttpClient http = HttpClient.newHttpClient();
     String seedUser, cookie;
     final Map<String, Sample> seeds = new HashMap<>();
-    @Autowired PracticeReadService reads;
-    @Autowired RoundSnapshots snapshots;
+    @MockitoSpyBean PracticeReadService reads;
+    @MockitoSpyBean RoundSnapshots snapshots;
+    @MockitoSpyBean PracticeReadMapper readMapper;
     @Autowired QuestionMapper questions;
     @Autowired JdbcTemplate jdbc;
     @MockitoSpyBean RuleRunnerClient runner;
@@ -282,6 +285,7 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             entered.countDown(); assertThat(release.await(30,TimeUnit.SECONDS)).isTrue(); return invocation.callRealMethod();
         }).when(runner).execute(eq("submit"),any(),anyMap());
+        clearInvocations(reads, snapshots, readMapper);
         try {
             try(var pool=Executors.newFixedThreadPool(2)) {
                 var a=pool.submit(()->send(first,"submit","round-a",0,answer("单选题",true)));
@@ -303,7 +307,41 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
             assertThat(frozen.path("questions").get(1).path("outlineGroupIndex").asInt()).isEqualTo(1);
             assertThat(frozen.path("questions").get(1).path("contentSha256").asString()).isEqualTo(HexFormat.of().formatHex(q.contentSha256()));
             assertThat(frozen.toString()).doesNotContain("correctOptionId");
+            verify(snapshots, times(1)).collection(user, first.collection());
+            verify(reads, times(1)).collectionSnapshot(user, first.collection());
+            verify(readMapper, times(1)).questions(eq(q.bankId()), anyString(), eq(user));
         } finally { release.countDown(); jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),secondId); }
+    }
+
+    @Test void onlyFirstSubmissionInRoundComputesCollectionSnapshot() throws Exception {
+        var first = samples.get("单选题"); var q = first.question();
+        String secondId = "later-" + Ids.uuidV7();
+        var secondQuestion = new QuestionRow(q.bankId(), secondId, 1, "第二题", q.extensionDigest(), q.outline(),
+                q.listening(), q.data(), q.maxScore(), q.contentSha256(), 1, "同名分组");
+        questions.insert(secondQuestion);
+        clearInvocations(reads, snapshots, readMapper);
+        try {
+            var initial = send(first, "submit", "first-in-round", 0, answer("单选题", true));
+            assertThat(initial.statusCode()).as(initial.body()).isEqualTo(200);
+            String frozen = jdbc.queryForObject("SELECT collection_snapshot FROM practice_round WHERE user_id=?", String.class, user);
+            verify(snapshots, times(1)).collection(user, first.collection());
+            verify(reads, times(1)).collectionSnapshot(user, first.collection());
+            verify(readMapper, times(1)).questions(eq(q.bankId()), anyString(), eq(user));
+
+            jdbc.update("UPDATE practice_collection SET title='轮中改名' WHERE id=?", first.collection());
+            clearInvocations(reads, snapshots, readMapper);
+            var later = send(new Sample(first.collection(), secondQuestion), "submit", "later-in-round", 0, answer("单选题", false));
+            assertThat(later.statusCode()).as(later.body()).isEqualTo(200);
+            verify(snapshots, never()).collection(anyString(), anyString());
+            verify(reads, never()).collectionSnapshot(anyString(), anyString());
+            verify(readMapper, never()).questions(anyString(), anyString(), anyString());
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?", Integer.class, user)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?", Integer.class, user)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT collection_snapshot FROM practice_round WHERE user_id=?", String.class, user)).isEqualTo(frozen);
+            assertThat(JSON.readTree(frozen).path("title").asString()).isEqualTo("单选题");
+        } finally {
+            jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?", q.bankId(), secondId);
+        }
     }
 
     @Test
@@ -319,11 +357,11 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
         } finally { jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),id); }
     }
 
-    @Test void collectionSnapshotKeepsPreparedTitleAndExcludesAnswers() {
+    @Test void collectionSnapshotKeepsCreationTitleAndExcludesAnswers() {
         var sample=samples.get("单选题");
-        var prepared=reads.prepareDraft(user,sample.collection(),sample.question().questionId());
+        String snapshot = snapshots.collection(user, sample.collection());
         jdbc.update("UPDATE practice_collection SET title='改名后' WHERE id=?",sample.collection());
-        var frozen=JSON.readTree(snapshots.collection(prepared));
+        var frozen=JSON.readTree(snapshot);
         assertThat(frozen.path("title").asString()).isEqualTo("单选题");
         assertThat(frozen.path("questions").size()).isEqualTo(1);
         var question=frozen.path("questions").get(0);
