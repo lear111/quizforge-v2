@@ -25,6 +25,8 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   const {collections}=await response.json();expect(collections).toHaveLength(5);
   const usage=async()=>{const r=await page.request.get('/api/account/quota');expect(r.status()).toBe(200);return r.json();};
   const before=await usage();expect(before.storage.usedBytes).toBeGreaterThan(0);expect(before.dailyDownload.usedBytes).toBe(0);
+  const catalog=await page.request.get('/api/catalog');expect(catalog.status()).toBe(200);
+  const opensBank=(await catalog.json()).banks.some(bank=>!bank.error&&bank.availability?.available!==false);
   await page.locator('#quota-refresh').click();
   await expect(page.locator('.quota-number').first()).not.toHaveText('0 B / 256.00 MiB');
   await expect(page.locator('.quota-number').last()).toHaveText('0 B / 256.00 MiB');
@@ -33,7 +35,14 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   await page.screenshot({path:resolve(screenshots,`quota-${info.project.name}.png`),fullPage:true});
   await page.getByRole('link',{name:'进入练习空间'}).click();
   await expect(page.locator('#library-list')).toContainText(collections[0].title);
+  // Approved sample digests may already exist from another test. Initial bank loading
+  // closes the mobile drawer, so wait for that transition before opening it ourselves.
+  if(opensBank){
+    await expect(page.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame')).toHaveCount(1);
+    await expect(page.locator('#collection-loading')).toBeHidden();
+  }
   if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
+  await expect(page.locator('.library')).toHaveAttribute('aria-hidden','false');
   const row=page.locator('.library-row').filter({has:page.locator(`.library-item[data-item-id="${collections[0].id}"]`)});
   await row.getByRole('button',{name:`编辑 ${collections[0].title}`,exact:true}).click();
   await page.locator('#library-manage-delete').click();
