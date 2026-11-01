@@ -123,7 +123,13 @@ public class SubmitService {
                     throw new IllegalStateException("更新汇总版本失败");
                 }
 
-                String response = "{\"revision\":" + (revision + 1) + "}";
+                // Freeze the HTTP response with the submission. A later review/retry/restart
+                // must not change what replaying this request returns. This read uses the
+                // persisted submitted projection and never executes extension code.
+                var saved = (tools.jackson.databind.node.ObjectNode) json.valueToTree(
+                        reads.question(userId, collectionId, questionId, null));
+                saved.put("revision", revision + 1);
+                String response = json.writeValueAsString(saved);
                 receipts.insert(userId, requestId, hash, response);
                 return response;
             });

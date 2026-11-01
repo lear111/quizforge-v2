@@ -1,7 +1,7 @@
 # 练习空间接口映射
 
-> 版本：v0.3；日期：2026-10-30；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
-> 后端盘点基线：main@40a6a52，加本次切片 5 的提交 HTTP 接线。以当前 Controller 为准。
+> 版本：v0.4；日期：2026-11-01；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
+> 后端盘点基线：main@2a443e0，加 L1.1 / L1.2 练习闭环。以当前 Controller 为准。
 
 本次是 ADR-006 方案 C 的源码分叉。切片顺序：**1 导入与题库列表；2 打开题库；3 读题与渲染；4 保存草稿；5 提交；其余功能后续接入。** 一个页面可能跨多个切片；接口出现并不代表对应业务已经可用。
 
@@ -27,9 +27,10 @@
 | 白板墨迹 | POST Q/actions，action=whiteboard | 501 FEATURE_NOT_AVAILABLE | 后续 | capabilities.canWhiteboard=false；不把墨迹写入作答草稿 |
 | 上传答题资源 / 截图 | POST /api/resources | 未实现 | 4 | app.js:pageRequest；无历史场景仍带 X-QuizForge-Transient-Resource |
 | 提交 | POST Q/actions，action=submit | 已接入 | 5 | app.js / Bridge；requestId/revision/data.answer；返回提交后投影与状态，重放不重新判分 |
-| 人工评分 / 重做本题 | POST Q/actions，action=review / retry | 501 FEATURE_NOT_AVAILABLE | 其余 | 保留拓展动作负载 |
-| 本轮分值汇总 | GET C/summary | 未实现 | 5 | app.js:showScoreSummary、practice-summary.js |
-| 完成本轮 / 再练一轮 | POST C/finish、C/restart | 未实现 | 其余 | app.js:finishPractice / restartPractice；保留 roundId、summaryVersion、requestId |
+| 人工评分 / 重做本题 | POST Q/actions，action=review / retry | 已接入 | L1.1 | review 使用 data.review（score / targetId / feedback）；retry 使用 data:{}；均带 requestId / revision / contentVersion |
+| 本轮分值汇总 | GET C/summary | 已实现 | L1.2 | app.js:showScoreSummary、practice-summary.js；SQL 聚合，无规则调用 |
+| 再练一轮 | POST C/restart | 已实现 | L1.2 | app.js:restartPractice；roundId（无轮次时 null）、summaryVersion、requestId；允许归档进行中的轮次 |
+| 完成本轮 | POST C/finish | 未实现 | L1.3 | canFinish=false，按钮明确显示尚未开放；不伪造批量提交或 AI 完成 |
 | 历史列表 / 冻结快照 | GET C/history、C/history/{historyId} | 未实现 | 其余 | app.js、history/history-view.js |
 | 删除历史 | DELETE C/history/{historyId} | 未实现 | 其余 | app.js:renderHistoryList；未实现错误不伪装成删除成功 |
 | 题库实例管理 / 分组 | POST /api/library/manage | 未实现 | 其余 | library-management.js；仅保留管理入口，不新增服务端逻辑 |
@@ -61,7 +62,7 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - extension/type 包含 id/version/name/pageId；pageId 使用确切审核摘要。页面响应兼容旧 apiVersion/html/script/style/dependencies/contentApi/assets。答题区组件通过共同的 page-assets 适配加载受保护的 quizforge.answer-area/1.4.1 SDK；旧冻结页面自带组件时保持原样。
 - SDK JSON 在 frontend 构建时由固定的组件源码生成，不提交构建产物；后端复核用户的可用题库引用，Nginx internal 路径发送。题库图片、听力同样先鉴权再 X-Accel-Redirect，blobs 在 Nginx 只读挂载；所有响应 private/no-store，以便下一次请求重新检查撤销状态。公开路径不能绕过 internal 限制。
 - 题库听力材料只公开 id/title/revision，隐藏存储路径；GET/HEAD 发送音频，Range 由 Nginx 处理。
-- 未提交题目 canSave=true、canSubmit=true；已提交题目两项均为 false；其余写能力仍为 false。概览含有未提交题目时 readOnly=false，全部已提交时为 true。前端提示草稿自动保存、可提交判分，白板尚未开放。生产投影缓存已由 Caffeine 提供（PR #54）；历史、汇总、人工评分、重做、考试、资源上传、审核流程与完整练习限流仍待后续切片。
+- 未提交题目 canSave=true、canSubmit=true；已提交题目两项均为 false。当前轮次 in_progress 的已提交题可重做；声明 manual-review 的拓展可人工评分，completed 轮次仍允许改分、禁止重做。canAiGrade / canWhiteboard=false。概览含有未提交题目时 readOnly=false，全部已提交时为 true。历史查看、考试、资源上传、审核流程与完整练习限流仍待后续切片。
 
 ## 切片 4：草稿 HTTP 与回执
 
@@ -69,7 +70,7 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - userId 来自会话；实例归属、题目精确 ID、contextId、内容哈希、审核可用性由服务端解析。客户端 contextId/userId/contentSha256 不参与定位或入库。可选 contentVersion 校验使用服务端不透明版本戳，不作为客户端提供的内容哈希。
 - IdempotentDraftService 在同一事务中保存草稿和 `{revision:N}` 回执。HTTP 适配按回执的 revision 与通过幂等检查的请求答案构造完整读题响应（另带顶层 revision），满足 onSaved 对 question/state/stamp/extension/features/capabilities 的需要；不重新读取可能已前进到 N+1 的作答状态。投影在事务前加载，仍然只使用未提交投影缓存；提交态答案不会进入草稿响应。
 - 不同 requestId 的旧 revision 返回 409 REVISION_CONFLICT。前端保留 iframe 内输入，并重读最新版本，显示重试/读取已保存内容的恢复入口。相同 ID 不同答案返回 400 REQUEST_ID_REUSED；作者在 ac90283 修复状态码，契约测试已启用，见 [本切片报告](../reports/m3-draft-actions.md)。
-- 白板、人工评分、重做等操作返回明确的 501 FEATURE_NOT_AVAILABLE，不产生回执或草稿。请求和响应仍经同源 Cookie、Origin 检查和 no-store 传输。
+- 白板操作返回明确的 501 FEATURE_NOT_AVAILABLE，不产生回执或草稿。人工评分和重做已由 L1.1 接入。请求和响应仍经同源 Cookie、Origin 检查和 no-store 传输。
 
 ## 当前验证边界
 
@@ -78,6 +79,16 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 ## 切片 5：提交判分与轮次快照
 
 - `action=submit` 复用写队列的 `requestId/revision/data.answer/contentVersion`；身份只取会话，题目指纹和上下文由服务端解析。作者的 SubmitService 先保存草稿、在事务外判分，再在一个事务中检查 revision、提交状态、轮次快照和回执。
-- 回执保持 `{revision:N}`；HTTP 返回完整 question/state/stamp 等字段。重放从已提交状态和通过幂等检查的请求答案构造响应，使用持久化投影，不调用判分或写入投影缓存。
+- 提交回执现在保存完整 HTTP 响应（包含 revision / question / state / stamp 等），在提交事务内冻结；重放不受后续人工评分、重做或 restart 影响，不调用判分或投影缓存。旧版仅保存 `{revision:N}` 的存量回执仍可读取，但缺少的信息无法追溯还原成首次响应。
 - `RoundSnapshots.collection` 冻结标题、题序、大纲及分组、题目指纹；`question` 冻结 GradeOutcome 的提交后投影、作答、结果与状态，不保存原始题目 data。
 - 判分语义由拓展决定：普通简答题返回 graded/0，后续由 review 改分；答题区简答题返回 pending/null。宿主保留 gradingStatus 与空分数；数值列按提交服务既有 HALF_UP 四位小数规则存储，HTTP 和快照使用相同数值。
+
+## L1.1 / L1.2：重做、人工评分、汇总与再练一轮
+
+- `retry` 发送 `{requestId,revision,action:"retry",data:{},contentVersion?}`，仅允许当前进行中轮次的已提交题。作答清为 unanswered，answer / answer_state / result / score / max_score / outline_states / projection 清空，revision / submission_generation / grading_generation 各加 1。原单题轮次快照保留；再次提交时更新本轮快照。
+- `review` 发送 `{requestId,revision,action:"review",data:{review:{score,targetId?,feedback?}},contentVersion?}`。作答来自服务端的 submitted 状态。事务外依次调用 review 和 scoreBatch（getScore）；事务内按 revision 条件更新得分、状态、投影，revision / grading_generation 各加 1，同时更新当前轮次的单题快照。已完成轮次允许改分，并同步其汇总。分数及满分按 HALF_UP 四位小数保存，result.gradingSource 为 manual，反馈结构沿用拓展。
+- 2026-11-01 产品确认：并发人工评分继续使用乐观锁；同一 revision 恰好一个成功，另一个 409，刷新后可重新评分。FR-14 的人工评分中断 AI 通过 grading_generation 预留，AI 任务本身不属于 L1。
+- `GET C/summary` 在一致的读事务中按数据库设计 §5.4 聚合，另返回按题序的 questions。未评分的单题 score 保持 null，在总分中按 0 计；pendingCount 单列展示。返回 questionCount / submittedCount / gradedCount / pendingCount / answeredUnsubmittedCount / score / maxScore / finished / status / roundId / historyId / summaryVersion。版本戳覆盖 progress_version 和每题 revision（草稿不增加 progress_version），防止其他标签页刚保存的草稿被旧汇总无提示重置。
+- `POST C/restart` 接收 `{requestId,roundId,summaryVersion}`；事务内锁 context → 锁作答行并检查最新汇总版本 → 原地清空状态并增加版本及两种 generation → 删除白板 → 将进行中轮次置为 completed 并冻结重置前汇总 → 清空 current_round_id、progress_version+1 → 写回执。不删除状态行、不清理历史或旧回执。无当前轮次时也可重置已有草稿。
+- 本任务明确允许 restart 将进行中的轮次完成并归档，取代旧接口错误码表中“未完成时 PRACTICE_NOT_FINISHED”的限制。尚未实现的 `finish` 是单独的 L1.3；summary 的 canFinish=false / canRestart=true 使前端禁用批量完成，同时提供独立的再练一轮入口。
+- 新增写操作均在同一事务中保存完整响应回执；相同请求逐字重放，不重置、不重评，换内容则 400 REQUEST_ID_REUSED。冲突/唯一键竞争后在新事务中重查回执，保持已有写接口的一致性规则。只取会话身份，归属、审核及题目定位均由服务端验证。

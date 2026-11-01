@@ -17,7 +17,10 @@ public class SubmitActionService {
     public DraftResponse submit(String userId, String collectionId, String qid, String requestId, long revision,
             JsonNode answer, String contentVersion) {
         reads.validateContentVersion(userId, collectionId, qid, contentVersion);
-        long saved = json.readTree(submits.submit(userId, requestId, collectionId, qid, revision, answer)).path("revision").asLong();
+        var receipt = json.readTree(submits.submit(userId, requestId, collectionId, qid, revision, answer));
+        if (receipt.has("question")) return json.treeToValue(receipt, DraftResponse.class);
+        // Compatibility for receipts created before complete responses were stored.
+        long saved = receipt.path("revision").asLong();
         // A submitted read uses the persisted projection; neither first response nor receipt replay re-grades.
         var response = (QuestionResponse) reads.question(userId, collectionId, qid, null);
         var state = response.state();

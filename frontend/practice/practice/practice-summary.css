@@ -17,6 +17,7 @@
 .practice-summary-finish{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:160px;min-height:44px;padding:10px 24px;border:0;border-radius:10px;background:#8255c5;color:#fff;font-size:14px;font-weight:600;touch-action:manipulation}
 .practice-summary-finish:hover:not(:disabled){background:#7045b1}
 .practice-summary-finish:disabled{background:#d4c8e5;opacity:1}
+.practice-summary-restart{margin:8px}
 .practice-summary-finish.is-busy::before{content:"";width:13px;height:13px;border:2px solid #ffffff60;border-top-color:#fff;border-radius:50%;animation:practice-summary-spin .7s linear infinite}
 @keyframes practice-summary-spin{to{transform:rotate(360deg)}}
 @media(max-width:520px){.practice-summary-header{padding:20px 18px 16px}.practice-summary-title{font-size:22px}.practice-summary-body{padding:28px 18px}.practice-summary-earned{font-size:48px}.practice-summary-maximum{font-size:26px}.practice-summary-footer{padding:18px}.practice-summary-finish{width:100%}}
