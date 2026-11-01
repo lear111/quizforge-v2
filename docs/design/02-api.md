@@ -212,7 +212,8 @@
 | `CONTENT_CONFLICT` | 409 | `contentVersion` 不匹配 |
 | `SUMMARY_CONFLICT` | 409 | `summaryVersion` 不匹配 |
 | `PENDING_REVIEW` | 409 | 有待评分的提交，不能完成本轮 |
-| `PRACTICE_NOT_FINISHED` | 409 | 本轮未完成，不能再练一次 |
+| `PRACTICE_COMPLETED` | 409 | 本轮已完成，不能单题重做；仍允许人工评分 |
+| `REVIEW_UNAVAILABLE` | 409 | 当前轮次没有该题提交快照，或题型不支持人工评分 |
 | `EXAM_COMPLETED` / `EXAM_DELETED` / `EXAM_DEADLINE_PASSED` | 409 | 考试状态不允许该操作 |
 | `UNSUPPORTED_LIBRARY_ARCHIVE` | 422 | 题库包不是格式 3 |
 | `CLOUD_EXTENSION_REVIEW_REQUIRED` | 422 | 拓展未审核或审核已撤销 |
@@ -223,6 +224,8 @@
 | `INTERNAL_ERROR` | 500 | 未预期错误，附 `X-Request-Id` |
 
 旧前端已经在使用的错误码（`CONFLICT`、`CONTENT_CONFLICT`、`PENDING_REVIEW` 等）**名称保持不变**，前端的处理逻辑无需修改。
+
+L1.2（2026-11-01）明确允许 restart 归档进行中的轮次，不再返回旧契约的 PRACTICE_NOT_FINISHED；仍需匹配 roundId / summaryVersion。L1.1 / L1.2 的请求和响应字段详见[前端接口映射](07-frontend-api-map.md#l11--l12重做人工评分汇总与再练一轮)。
 
 ---
 

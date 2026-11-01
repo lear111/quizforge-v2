@@ -28,6 +28,13 @@ public interface PracticeReadMapper {
             """)
     Optional<String> context(@Param("userId") String userId, @Param("collectionId") String collectionId);
 
+    @Select("""
+            SELECT r.status FROM practice_context c JOIN practice_round r ON r.id = c.current_round_id
+            WHERE c.id = #{contextId} AND c.user_id = #{userId} AND r.user_id = c.user_id
+              AND r.context_id = c.id AND r.deleted_at IS NULL
+            """)
+    Optional<String> roundStatus(@Param("contextId") String contextId, @Param("userId") String userId);
+
     // INSERT first: no UPDATE of a missing row and no gap-lock upgrade (database design 5.1).
     @Insert("""
             INSERT INTO practice_context (id, user_id, collection_id, kind, scope_key, created_at, updated_at)

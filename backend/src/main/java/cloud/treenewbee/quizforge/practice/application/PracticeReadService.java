@@ -94,6 +94,13 @@ public class PracticeReadService {
 
     public record SubmitTarget(String contextId, byte[] contentSha256, byte[] extensionDigest) {}
 
+    public record CollectionTarget(String contextId, String bankId) {}
+
+    public CollectionTarget resolveCollection(String userId, String collectionId) {
+        var collection = collection(userId, collectionId);
+        return new CollectionTarget(context(userId, collectionId), collection.bankId());
+    }
+
     /** Resolve the owned, approved question and practice context without executing extension code. */
     public SubmitTarget resolveTarget(String userId, String collectionId, String questionId) {
         var source = source(userId, collectionId, questionId);
@@ -180,10 +187,17 @@ public class PracticeReadService {
         State state = row == null ? new State("unanswered", null, null, 0, null, null)
                 : new State(row.status(), decode(row.answer()), submitted ? SubmissionResults.result(json, row.result(), row.score(), row.maxScore(), row.gradingStatus()) : null, row.revision(),
                         decode(row.answerState()), decode(row.outlineStates()));
+        String roundStatus = submitted ? reads.roundStatus(context, userId).orElse(null) : null;
+        boolean manualReview = false;
+        for (var capability : json.readTree(extension.manifest()).path("requiresApi").path("capabilities")) {
+            if ("manual-review".equals(capability.asString())) manualReview = true;
+        }
         return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
                 reads.whiteboard(context, qid, userId).map(json::readTree).orElse(null), stamp,
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
-                features(collection), new Capabilities(!submitted, !submitted, false, false, false, false), null);
+                features(collection), new Capabilities(!submitted, !submitted,
+                        submitted && "in_progress".equals(roundStatus), submitted && roundStatus != null && manualReview,
+                        false, false), null);
     }
 
     private String project(ExtensionPackageRow extension, String data) {

@@ -44,7 +44,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?(collection.readOnly?'当前题库没有可保存的未提交题目。':'草稿会自动保存；可提交判分，白板功能尚未开放。'):'';
+const practiceNotice=collection=>collection?.kind==='bank'?'草稿自动保存；提交后可重做，简答题可人工评分。汇总中可再练一轮；白板与批量完成练习尚未开放。':'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -300,6 +300,7 @@ async function finishPractice(pane,summary){
   });
 }
 async function restartPractice(pane,summary){
+  if(!confirm('再练一轮会清空当前作答并保留本轮历史，是否继续？'))return;
   return transitionTo(async()=>{
     if(pane.closed||pane.view!=='summary')return;
     pane.loading=true;pendingWrites++;pane.node.inert=true;updateChrome();saveStatus('正在开始新一轮…','saving');

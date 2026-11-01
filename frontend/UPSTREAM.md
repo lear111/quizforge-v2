@@ -72,3 +72,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - `practice/outline/outline-groups.js` 改用服务端的 outlineGroupIndex / outlineGroupName，不再按拓展题型分组；相邻同名组不合并。
 - `practice/outline/outline-view.js` 只在作者提供分组名时显示标题，状态、高亮和跳转逻辑保留。
 - `practice/app.js` 展示导入响应 warnings 中未引用题的数量与 ID。
+
+## 2026-11-01：L1.1 / L1.2 练习闭环
+
+- `practice/app.js` 更新练习能力提示，再练一轮前确认清空当前作答；继续沿用原 Bridge、写队列的 retry / review 字段。
+- `practice/practice/practice-summary.js` 与 CSS 支持 V2 的 canFinish / canRestart：批量完成尚未开放时禁用该按钮，进行中轮次可使用独立的“再练一轮”。待评分数量与按 0 汇总的提示按 FR-14 更新，历史只读行为保留。
+- 新增纯前端卡片/能力测试和真实 iframe 闭环浏览器测试；拓展源码、SDK 和依赖均未修改。

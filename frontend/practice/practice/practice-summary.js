@@ -31,12 +31,14 @@ export function mountPracticeSummary(container, summary, {onFinish,onRestart,rea
   const error=element('p','practice-summary-error');
   error.setAttribute('role','alert');
   error.hidden=true;
-  let button=null,busy=false,destroyed=false,current=summary;
+  let button=null,restartButton=null,busy=false,destroyed=false,current=summary;
   footer.append(note,error);
   if(!readonly){
     button=element('button','practice-summary-finish');
     button.type='button';
     footer.append(button);
+    restartButton=element('button','practice-summary-finish practice-summary-restart','再练一轮');
+    restartButton.type='button';footer.append(restartButton);
   }
   card.append(header,body,footer);
   container.append(card);
@@ -55,16 +57,19 @@ export function mountPracticeSummary(container, summary, {onFinish,onRestart,rea
     grading.hidden=!awaiting;grading.textContent=`待评分 ${awaiting} 题`;
     scoreLabel.textContent=awaiting?'已评分得分 / 总分':exam?'考试得分 / 总分':'本轮得分 / 总分';
     note.textContent=exam?`交卷后答案已锁定。${awaiting?'部分题目仍待评分。':''}`:readonly?'此页为只读历史汇总。':current?.finished?(current.historyId?'本轮结果已保存到历史记录。':'本轮练习已完成，结果仅在当前会话保留。'):current?.completionPending?(current.completionError||'答案已提交，AI 评分尚未完成。可返回题目查看进度或人工评分，再完成练习。'):awaiting?'答案已提交，部分题目待评分。请返回题目重试 AI 或人工评分，再完成练习。':current?.answeredUnsubmittedCount?`还有 ${current.answeredUnsubmittedCount} 道已作答题目未提交，完成练习时统一提交评分；未作答题目计 0 分。`:!history?'结果仅在当前会话保留，刷新或关闭页面后清除。':'完成练习后保留本轮结果。';
+    if(!readonly&&!exam&&current?.canFinish===false)note.textContent=`${awaiting?`另有 ${awaiting} 题待评分，汇总按 0 分计。`:''}可返回题目人工评分或重做；再练一轮会保留本轮历史并清空当前作答。批量完成练习尚未开放。`;
     if(button){
-      button.disabled=busy||(current?.finished?typeof onRestart!=='function':awaiting>0&&!current?.answeredUnsubmittedCount||typeof onFinish!=='function');
+      button.disabled=busy||(current?.finished?typeof onRestart!=='function':current?.canFinish===false||awaiting>0&&!current?.answeredUnsubmittedCount||typeof onFinish!=='function');
       button.textContent=current?.finished?(busy?'正在开始…':typeof onRestart==='function'?'再练一次':'练习已完成'):(busy?'正在完成…':'完成练习');
+      if(!current?.finished&&current?.canFinish===false)button.textContent='完成练习（尚未开放）';
       button.classList.toggle('is-busy',busy);
       button.setAttribute('aria-busy',String(busy));
     }
+    if(restartButton){restartButton.hidden=!!current?.finished||current?.canRestart!==true;restartButton.disabled=busy||typeof onRestart!=='function';restartButton.textContent=busy?'正在开始…':'再练一轮';}
   }
-  async function finish() {
-    const restarting=Boolean(current?.finished),action=restarting?onRestart:onFinish;
-    if(destroyed||busy||(!restarting&&current?.pendingCount>0&&!current?.answeredUnsubmittedCount)||typeof action!=='function')return;
+  async function perform(restarting) {
+    const action=restarting?onRestart:onFinish;
+    if(destroyed||busy||(!restarting&&(current?.canFinish===false||current?.pendingCount>0&&!current?.answeredUnsubmittedCount))||typeof action!=='function')return;
     busy=true;error.hidden=true;render();
     try {
       const next=await action(current);
@@ -79,10 +84,12 @@ export function mountPracticeSummary(container, summary, {onFinish,onRestart,rea
       if(!destroyed)render();
     }
   }
+  const finish=()=>perform(Boolean(current?.finished)),restart=()=>perform(true);
   if(button)button.addEventListener('click',finish);
+  if(restartButton)restartButton.addEventListener('click',restart);
   render();
   return {
     update(next){if(!destroyed){current=next;render();}},
-    destroy(){destroyed=true;if(button)button.removeEventListener('click',finish);card.remove();}
+    destroy(){destroyed=true;if(button)button.removeEventListener('click',finish);if(restartButton)restartButton.removeEventListener('click',restart);card.remove();}
   };
 }
