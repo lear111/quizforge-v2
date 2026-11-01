@@ -62,6 +62,21 @@ python loadtest/seed/verify_answers.py --base-url http://localhost:8099
 
 验证脚本对该用户的全部 305 个 answers 逐个读题、HTTP 保存草稿、HTTP 提交，要求两个写操作均为 200；303 道客观题必须取得题库 data 声明的满分。普通简答题保持拓展的 graded/0，答题区简答保持 pending/null。它会消耗这位用户的未提交状态，不要在准备正式测量的账号上运行；再次验证应换新项目/账号。seed 重跑只复用题库实例，不重置已提交状态。该脚本是串行正确性测试，不是 k6 场景或容量测试；CI 只运行无网络的 Python 单元测试，不运行造数或 HTTP 写入验证。
 
+## 单请求草稿计时
+
+`measure_draft.py` 用于本机简单前后对比：同一位测试用户、同一本 300 题题库、同一道未提交题，50 次预热后串行测量 30 次 HTTP 草稿保存。每次都使用新 requestId 并递增 revision，断言 HTTP 200、revision 与作答正确。登录、首次读题和退出不计时；计时包含 Nginx、后端、数据库及客户端读取响应，不是方法微基准或容量测试。目标只允许本机 loopback，禁用代理和重定向。
+
+在全新可丢弃项目中启动环境；Windows 推荐启动时把 `QF_PUBLIC_ORIGIN` 配成与端口对应的 `http://127.0.0.1:...`，避免 localhost 的 IPv6 回退干扰计时。确认健康后：
+
+```powershell
+python loadtest/seed/seed.py --project $project --base-url $env:QF_PUBLIC_ORIGIN --users 1 --output loadtest/artifacts/lazy-users.json
+python loadtest/measure_draft.py --base-url $env:QF_PUBLIC_ORIGIN --output loadtest/artifacts/lazy-before.json
+# 仅替换 app 镜像，保留同一数据库、seed 文件、配额；等待健康后：
+python loadtest/measure_draft.py --base-url $env:QF_PUBLIC_ORIGIN --output loadtest/artifacts/lazy-after.json
+```
+
+输出包含每次耗时、均值、中位数、最近秩 P95 及实例/题目 ID，不包含密码或 Cookie。前后结果必须是同一实例和题目；保持相同配额、JFR 状态及宿主负载。本脚本不提交题目，不与并发压测或回归测试同时运行；完成后按收尾命令 down。
+
 ## Grafana 与指标
 
 打开 <http://localhost:3000/d/quizforge-loadtest>，账号 `admin`，默认密码 `loadtest-local-only`（可通过 QF_GRAFANA_PASSWORD 替换）。面板和 Prometheus 数据源自动预置；Prometheus 在 <http://localhost:9090/targets> 应显示 quizforge 为 UP。端口可通过上述环境变量调整。

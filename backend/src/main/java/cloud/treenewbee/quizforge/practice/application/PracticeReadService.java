@@ -101,7 +101,7 @@ public class PracticeReadService {
                 source.question().extensionDigest());
     }
 
-    public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId, String collectionSnapshot) {}
+    public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId) {}
 
     /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
     public PreparedDraft prepareDraft(String userId, String id, String qid) {
@@ -111,8 +111,7 @@ public class PracticeReadService {
         String context = context(userId, id);
         var template = renderQuestion(userId, qid, collection, question, context, null,
                 stamps.stamp(context, qid, 0, question.contentSha256(), question.extensionDigest()));
-        return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template, userId,
-                collectionSnapshot(collection, context, userId));
+        return new PreparedDraft(context, question.contentSha256(), question.extensionDigest(), template, userId);
     }
 
     /** Validate the public version without projecting or grading; receipt replay must not execute rules. */
@@ -123,6 +122,12 @@ public class PracticeReadService {
                 source.question().contentSha256(), source.question().extensionDigest()).contentVersion())) {
             throw new ApiException(HttpStatus.CONFLICT, "CONTENT_CONFLICT", "题目内容版本已变化，请刷新后重试");
         }
+    }
+
+    /** Freeze the collection only when a round is created, using the same ownership and approval checks as reads. */
+    public String collectionSnapshot(String userId, String collectionId) {
+        var collection = collection(userId, collectionId);
+        return collectionSnapshot(collection, context(userId, collectionId), userId);
     }
 
     private String collectionSnapshot(PracticeReadRows.Collection collection, String context, String userId) {

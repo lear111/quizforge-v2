@@ -1,10 +1,15 @@
 package cloud.treenewbee.quizforge.practice.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.content.application.ImportService;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
+import cloud.treenewbee.quizforge.practice.infrastructure.PracticeReadMapper;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
@@ -24,6 +29,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -58,6 +64,8 @@ class DraftActionIntegrationTest extends MySqlTestBase {
     @Autowired ImportService imports;
     @Autowired JdbcTemplate jdbc;
     @Autowired DraftSqlGate gate;
+    @MockitoSpyBean PracticeReadMapper readMapper;
+    @MockitoSpyBean PracticeReadService reads;
     @Value("${local.server.port}") int port;
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     final List<Viewer> viewers = new ArrayList<>();
@@ -89,6 +97,16 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertSaved(first, 1, "first"); assertThat(replay.statusCode()).isEqualTo(200);
         assertThat(replay.body()).isEqualTo(first.body()); assertState(owner, 1, "first");
         assertThat(receipts(owner)).isEqualTo(1);
+    }
+
+    @Test void savingDraftNeverLoadsCollectionQuestionsOrBuildsRoundSnapshot() throws Exception {
+        clearInvocations(readMapper, reads);
+        assertSaved(post(owner, draft("no-snapshot-first", 0, "first")), 1, "first");
+        assertSaved(post(owner, draft("no-snapshot-second", 1, "second")), 2, "second");
+        verify(readMapper, never()).questions(anyString(), anyString(), anyString());
+        verify(readMapper, never()).collections(anyString());
+        verify(reads, never()).collectionSnapshot(anyString(), anyString());
+        assertState(owner, 2, "second");
     }
 
     @Test void replayAfterAnotherSaveReturnsOriginalAnswerAndRevision() throws Exception {

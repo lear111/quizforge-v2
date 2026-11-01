@@ -105,7 +105,7 @@ public class SubmitService {
                 if (roundId == null) {
                     roundId = UUID.randomUUID().toString();
                     if (rounds.insertRound(new PracticeRoundRow(roundId, userId, collectionId, contextId, "practice", "in_progress",
-                            snapshots.collection(prepared), null, now, now, null, null)) != 1) {
+                            snapshots.collection(userId, collectionId), null, now, now, null, null)) != 1) {
                         throw new IllegalStateException("创建轮次失败");
                     }
                     if (contexts.setCurrentRound(contextId, userId, roundId, now) != 1) {

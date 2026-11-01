@@ -13,10 +13,11 @@ public class RoundSnapshots {
     private final JsonMapper json;
     private final PracticeReadMapper reads;
     private final QuestionStamps stamps;
-    public RoundSnapshots(JsonMapper json, PracticeReadMapper reads, QuestionStamps stamps) {
-        this.json = json; this.reads = reads; this.stamps = stamps;
+    private final PracticeReadService practice;
+    public RoundSnapshots(JsonMapper json, PracticeReadMapper reads, QuestionStamps stamps, PracticeReadService practice) {
+        this.json = json; this.reads = reads; this.stamps = stamps; this.practice = practice;
     }
-    public String collection(PreparedDraft prepared) { return prepared.collectionSnapshot(); }
+    public String collection(String userId, String collectionId) { return practice.collectionSnapshot(userId, collectionId); }
     public String question(PreparedDraft prepared, JsonNode answer, GradeOutcome outcome) {
         var template = prepared.template(); var question = template.question();
         var saved = reads.state(prepared.contextId(), question.id(), prepared.userId()).orElseThrow();
