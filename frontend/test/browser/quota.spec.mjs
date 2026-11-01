@@ -1,6 +1,7 @@
 import {test,expect as baseExpect} from '@playwright/test';
 import {mkdir,readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {registerByForm} from './accounts.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test('account quota cards reflect real imports and deleting an owned bank releases space',async({page},info)=>{
@@ -8,11 +9,7 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   test.setTimeout(120000);
   await page.goto('/');
   await page.getByRole('tab',{name:'注册',exact:true}).click();
-  await page.locator('#register-email').fill(`quota-${crypto.randomUUID()}@example.test`);
-  await page.locator('#register-name').fill('资源用量验收');
-  await page.locator('#register-password').fill('test-password-123');
-  await page.locator('#register-confirm').fill('test-password-123');
-  await page.getByRole('button',{name:'注册并登录',exact:true}).click();
+  await registerByForm(page,'quota','资源用量验收');
   await expect(page).toHaveURL(/\/practice\/$/);
   await page.goto('/');
   await expect(page.locator('.quota-card')).toHaveCount(1);

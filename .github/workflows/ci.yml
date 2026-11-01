@@ -86,7 +86,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # 浏览器测试从同一 IP 注册多个账号：使用假验证码，并调高按 IP 的认证与发码上限。
       - name: Start stack
+        env:
+          QF_VERIFICATION_MODE: fake
+          QF_AUTH_RATE_LIMIT_PER_MINUTE: "1000"
+          QF_VERIFICATION_IP_LIMIT_10MIN: "1000"
+          QF_VERIFICATION_IP_LIMIT_DAILY: "10000"
+          QF_EMAIL_DAILY_LIMIT: "10000"
         run: docker compose -f deploy/docker-compose.yml up -d --build
 
       - name: Wait for health through Nginx

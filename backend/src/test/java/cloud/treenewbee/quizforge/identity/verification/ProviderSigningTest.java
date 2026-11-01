@@ -67,7 +67,7 @@ class ProviderSigningTest {
 
     @Test
     void unconfiguredProvidersAreUnavailableAndTestTurnstileKeysAreRejected() {
-        var properties = new VerificationProperties("provider", "short", "", 100, 100,
+        var properties = new VerificationProperties("provider", "short", "", 100, 100, 5, 20,
                 new VerificationProperties.Tencent(true, "id", "key", "from@example.test", "1", "ap-hongkong"),
                 null, new VerificationProperties.Turnstile("1x00000000000000000000AA", "1x0000000000000000000000000000000AA"));
         var provider = new ProviderVerification(properties, CLOCK);

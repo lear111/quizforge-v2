@@ -29,8 +29,22 @@ public class VerificationConfig {
             FakeVerification fake = new FakeVerification();
             return new VerificationServices(fake, fake);
         }
+        requirePeppers(properties);
         ProviderVerification provider = new ProviderVerification(properties, clock);
         return new VerificationServices(provider, provider);
+    }
+
+    /**
+     * 生产模式下验证码摘要密钥必须配置（至少 32 个字符），否则启动失败，
+     * 避免用空密钥计算验证码、地址与 IP 的摘要。
+     */
+    static void requirePeppers(VerificationProperties properties) {
+        if (properties.emailPepper().length() < VerificationProperties.MIN_PEPPER_LENGTH
+                || properties.smsPepper().length() < VerificationProperties.MIN_PEPPER_LENGTH) {
+            throw new IllegalStateException("QF_EMAIL_CODE_PEPPER and QF_SMS_CODE_PEPPER must be set "
+                    + "(at least " + VerificationProperties.MIN_PEPPER_LENGTH + " characters) when "
+                    + "qf.verification.mode=provider");
+        }
     }
 
     // 两个接口由同一个对象实现；各自用委托包装注册，避免按类型注入时出现两个候选。

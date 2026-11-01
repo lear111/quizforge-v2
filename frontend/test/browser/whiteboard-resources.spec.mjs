@@ -2,6 +2,7 @@ import {test,expect as baseExpect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {registerByApi} from './accounts.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test('answer text, image and ink are captured before submit; both board layers survive refresh',async({page},info)=>{
@@ -10,8 +11,7 @@ test('answer text, image and ink are captured before submit; both board layers s
   const project=process.env.QF_COMPOSE_PROJECT;
   if(!project?.startsWith('qf-'))throw Error('Use an isolated qf-* Compose project');
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/');const origin=new URL(page.url()).origin;
-  expect((await page.request.post('/api/auth/register',{headers:{Origin:origin},data:{email:`whiteboard-${crypto.randomUUID()}@example.test`,name:'白板资源验收',password:'password123'}})).status()).toBe(200);
+  const {origin}=await registerByApi(page,'whiteboard','白板资源验收');
   const imported=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'basic-types.qbank',mimeType:'application/zip',buffer:await readFile(resolve('../samples/basic-types.qbank'))}}});
   expect(imported.status()).toBe(200);
   const collection=(await imported.json()).collections.find(row=>row.title==='简答题（答题区）');

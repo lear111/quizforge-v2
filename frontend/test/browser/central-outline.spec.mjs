@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {registerByApi} from './accounts.mjs';
 
 test('central outline shows two adjacent author groups with the same name and hides unreferenced questions',async({page},info)=>{
   test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','Requires an isolated Compose fixture');
@@ -9,10 +10,7 @@ test('central outline shows two adjacent author groups with the same name and hi
   const project=process.env.QF_COMPOSE_PROJECT;
   if(!project?.startsWith('qf-'))throw Error('An isolated qf-* Compose project is required');
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/');
-  const origin=new URL(page.url()).origin;
-  const registered=await page.request.post('/api/auth/register',{headers:{Origin:origin},data:{email:`outline-${crypto.randomUUID()}@example.test`,name:'大纲验收',password:'password123'}});
-  expect(registered.status()).toBe(200);
+  const {origin}=await registerByApi(page,'outline','大纲验收');
   const imported=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'central-outline.qbank',mimeType:'application/zip',buffer:await readFile(resolve('../samples/central-outline.qbank'))}}});
   expect(imported.status()).toBe(200);
   const {collections:[collection]}=await imported.json();
