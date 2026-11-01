@@ -124,7 +124,7 @@ public class PracticeLifecycleService {
                     || !summaryVersion.equals(summary.path("summaryVersion").asString()))
                 throw conflict("SUMMARY_CONFLICT", "练习数据已更新，请刷新汇总后再开始新一轮");
             mapper.reset(context.id(), userId, clock.instant());
-            mapper.deleteWhiteboards(context.id(), userId);
+            mapper.resetWhiteboards(context.id(), userId, clock.instant());
             if (context.currentRoundId() != null) {
                 var round = round(context, userId);
                 if ("in_progress".equals(round.status())) {

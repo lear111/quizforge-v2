@@ -20,7 +20,7 @@ export function createWriteQueue({send,revisionFor,makeRequestId,onSaved=()=>{},
     const run=tail.then(async()=>{
       onBusy(true);
       try {
-        const body={requestId,revision:revisionFor(questionId),action,data:snapshot};
+        const body={requestId,revision:revisionFor(questionId,action),action,data:snapshot};
         if(contentVersion)body.contentVersion=contentVersion;
         let value;
         try {value=await send(questionId,body);}

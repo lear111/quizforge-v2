@@ -22,8 +22,20 @@ public final class PracticeViews {
     public record Question(String id, String title, JsonNode data, Integer outlineGroupIndex, String outlineGroupName) {}
     public record Capabilities(boolean canSave, boolean canSubmit, boolean canRetry, boolean canReview, boolean canAiGrade, boolean canWhiteboard) {}
     public record QuestionResponse(Question question, State state, JsonNode draft, Stamp stamp,
-            Extension extension, JsonNode features, Capabilities capabilities, Object aiTask) {}
+            Extension extension, JsonNode features, Capabilities capabilities, Object aiTask,
+            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews.View whiteboard) {
+        public QuestionResponse(Question question, State state, JsonNode draft, Stamp stamp, Extension extension,
+                JsonNode features, Capabilities capabilities, Object aiTask) {
+            this(question,state,draft,stamp,extension,features,capabilities,aiTask,null);
+        }
+    }
     public record Unchanged(boolean unchanged, Stamp stamp) {}
     public record DraftResponse(long revision, Question question, State state, JsonNode draft, Stamp stamp,
-            Extension extension, JsonNode features, Capabilities capabilities, Object aiTask) {}
+            Extension extension, JsonNode features, Capabilities capabilities, Object aiTask,
+            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews.View whiteboard) {
+        public DraftResponse(long revision, Question question, State state, JsonNode draft, Stamp stamp, Extension extension,
+                JsonNode features, Capabilities capabilities, Object aiTask) {
+            this(revision,question,state,draft,stamp,extension,features,capabilities,aiTask,null);
+        }
+    }
 }

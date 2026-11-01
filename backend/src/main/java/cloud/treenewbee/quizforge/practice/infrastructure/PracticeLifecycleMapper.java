@@ -101,8 +101,14 @@ public interface PracticeLifecycleMapper {
             """)
     int reset(@Param("contextId") String contextId, @Param("userId") String userId, @Param("now") Instant now);
 
-    @Delete("DELETE FROM practice_whiteboard WHERE context_id = #{contextId} AND user_id = #{userId}")
-    int deleteWhiteboards(@Param("contextId") String contextId, @Param("userId") String userId);
+    // Clear both layers while retaining the optimistic-lock high-water mark across rounds.
+    @Update("""
+            UPDATE practice_whiteboard SET draft = JSON_OBJECT('schemaVersion',1,'viewport',JSON_OBJECT('x',0,'y',0,'zoom',1),
+                'strokes',JSON_ARRAY(),'paper',JSON_OBJECT('color','#ffffff','pattern','plain')), notes = NULL,
+                size_bytes = 0, revision = revision + 1, updated_at = #{now}
+            WHERE context_id = #{contextId} AND user_id = #{userId}
+            """)
+    int resetWhiteboards(@Param("contextId") String contextId, @Param("userId") String userId, @Param("now") Instant now);
 
     @Update("""
             UPDATE practice_round_question SET payload = #{payload}, updated_at = #{now}

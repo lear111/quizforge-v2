@@ -150,7 +150,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
     @AfterEach void cleanupViewer() { reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper); deleteUser(user); }
     private void deleteUser(String id) {
-        for (String table : List.of("practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
+        for (String table : List.of("practice_user_resource","practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
             jdbc.update("DELETE FROM "+table+" WHERE user_id=?",id);
         jdbc.update("DELETE FROM account_user WHERE id=?",id);
     }
@@ -184,6 +184,62 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isEqualTo(1);
         // Old retry still replays exactly, even after another submission advanced the live state.
         assertThat(lifecycle(type,"retry","retry",2,JSON.createObjectNode()).body()).isEqualTo(response.body());
+    }
+
+    @Test void submissionScreenshotIsBoundToThisAnswerProjectionSnapshotReplayAndReview() throws Exception {
+        String type="简答题（答题区）",image=uploadScreenshot();
+        var answer=answer(type,true);var area=(tools.jackson.databind.node.ObjectNode)answer.path("responses").get(part(type));
+        area.putObject("snapshot").put("type","image").putObject("attrs").put("assetId",image);
+        var submitted=post(type,"submit","image-submit",0,answer);var value=ok(submitted);
+        assertThat(value.path("state").path("result").path("gradingStatus").asString()).isEqualTo("pending");
+        assertThat(value.path("state").path("result").path("score").isNull()).isTrue();
+        assertScreenshot(value,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertThat(post(type,"submit","image-submit",0,answer).body()).isEqualTo(submitted.body());
+        verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
+        var reviewed=ok(lifecycle(type,"review","image-review",2,reviewData(1,part(type))));
+        assertScreenshot(reviewed,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertScreenshot(ok(get(type)),image);
+    }
+
+    @Test void submissionFreezesBoardWrittenWhileGradingWasInFlight() throws Exception {
+        String type="单选题";var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return call.callRealMethod();})
+                .when(grader).grade(eq(user),anyString(),anyString(),any());
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var submitting=pool.submit(()->post(type,"submit","board-in-flight",0,answer(type,true)));
+            try{
+                assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();
+                var doc=JSON.readTree("{\"schemaVersion\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"paper\":{\"color\":\"#ffffff\",\"pattern\":\"plain\"},\"strokes\":[{\"id\":\"during-grading\",\"color\":\"#334155\",\"width\":3,\"points\":[{\"x\":1,\"y\":2,\"pressure\":0.5}]}]}");
+                var body=JSON.valueToTree(Map.of("requestId","board-during-grading","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
+                ok(pool.submit(()->request(path(samples.get(type))+"/actions",body)).get(10,TimeUnit.SECONDS));
+            }finally{release.countDown();}
+            ok(submitting.get(30,TimeUnit.SECONDS));
+        }finally{release.countDown();}
+        var frozen=JSON.readTree(payload());
+        assertThat(frozen.path("whiteboard").path("draft").path("strokes").get(0).path("id").asString()).isEqualTo("during-grading");
+    }
+
+    @Test void oldWhiteboardVersionCannotOverwriteTheNextRoundAfterRestart() throws Exception {
+        String type="单选题";
+        var doc=JSON.readTree("{\"schemaVersion\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"paper\":{\"color\":\"#ffffff\",\"pattern\":\"plain\"},\"strokes\":[]}");
+        var old=JSON.valueToTree(Map.of("requestId","old-board","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
+        ok(request(path(samples.get(type))+"/actions",old));
+        ok(restart(type,"board-restart",ok(summary(type))));
+        var next=JSON.valueToTree(Map.of("requestId","new-board","revision",2,"action","whiteboard","data",Map.of("draft",doc)));
+        assertThat(ok(request(path(samples.get(type))+"/actions",next)).path("whiteboard").path("revision").asLong()).isEqualTo(3);
+        var stale=JSON.valueToTree(Map.of("requestId","stale-board","revision",1,"action","whiteboard","data",Map.of("draft",doc)));
+        error(request(path(samples.get(type))+"/actions",stale),409,"REVISION_CONFLICT");
+        assertThat(ok(get(type)).path("whiteboard").path("revision").asLong()).isEqualTo(3);
+    }
+
+    private String uploadScreenshot() throws Exception {
+        String png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=";
+        return ok(request("/api/resources",JSON.valueToTree(Map.of("mime","image/png","data",png)))).path("id").asString();
+    }
+    private void assertScreenshot(JsonNode value,String image){
+        assertThat(value.path("question").path("data").path("_qfSubmission").path("screenshots").get(0).path("assetId").asString()).isEqualTo(image);
+        assertThat(value.path("state").path("answer").toString()).contains(image);
+        assertThat(value.path("question").path("data").path("_qfSubmission").path("snapshotVersion").asInt()).isEqualTo(1);
     }
 
     @Test void submissionReviewRetryAndRestartDoNotChargePracticeStorage() throws Exception {
@@ -318,7 +374,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         } finally { jdbc.update("DELETE FROM content_question WHERE bank_id=?",bank); jdbc.update("DELETE FROM content_bank WHERE id=?",bank); }
     }
 
-    @Test void restartFreezesInProgressRoundResetsInPlaceDeletesWhiteboardAndReplaysExactly() throws Exception {
+    @Test void restartFreezesInProgressRoundResetsInPlaceClearsWhiteboardAndReplaysExactly() throws Exception {
         String type="单选题";
         ok(post(type,"submit","submit",0,answer(type,true)));
         var before=ok(summary(type)); String frozen=payload();
@@ -330,7 +386,8 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(row.get("status")).isEqualTo("unanswered"); assertThat(((Number)row.get("revision")).longValue()).isEqualTo(3);
         assertThat(((Number)row.get("grading_generation")).intValue()).isEqualTo(1);
         for(var key:List.of("answer","answer_state","result","score","max_score","outline_states","projection")) assertThat(row.get(key)).isNull();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_whiteboard WHERE user_id=?",Integer.class,user)).isZero();
+        assertThat(jdbc.queryForObject("SELECT revision FROM practice_whiteboard WHERE user_id=?",Long.class,user)).isEqualTo(2);
+        assertThat(JSON.readTree(jdbc.queryForObject("SELECT draft FROM practice_whiteboard WHERE user_id=?",String.class,user)).path("strokes").isEmpty()).isTrue();
         assertThat(jdbc.queryForObject("SELECT current_round_id FROM practice_context WHERE user_id=?",String.class,user)).isNull();
         assertThat(jdbc.queryForObject("SELECT progress_version FROM practice_context WHERE user_id=?",Long.class,user)).isEqualTo(2);
         var old=jdbc.queryForMap("SELECT status,summary,completed_at FROM practice_round WHERE user_id=?",user);

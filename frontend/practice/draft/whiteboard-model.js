@@ -2,7 +2,7 @@
 export const DRAFT_LIMITS = Object.freeze({
   coordinate: 1_000_000, minZoom: 0.25, maxZoom: 4,
   minWidth: 0.5, maxWidth: 32, maxStrokes: 2_000,
-  maxPointsPerStroke: 10_000, maxPoints: 100_000, maxBytes: 8 * 1024 * 1024, history: 60,
+  maxPointsPerStroke: 10_000, maxPoints: 100_000, maxBytes: 2 * 1024 * 1024, history: 60,
 });
 
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -134,6 +134,7 @@ export class WhiteboardModel {
 
   load(draft) {
     this.draft = normalizeDraft(draft);
+    this.protectedInk = new Map();
     this.undoStack = [];
     this.redoStack = [];
   }
@@ -142,13 +143,16 @@ export class WhiteboardModel {
   get canUndo() { return this.undoStack.length > 0; }
   get canRedo() { return this.redoStack.length > 0; }
   get strokes() { return this.draft.strokes; }
+  isProtectedStroke(id) { return this.protectedInk.has(id); }
   get viewport() { return { ...this.draft.viewport }; }
   get paper() { return { ...this.draft.paper }; }
   get layout() { return this.draft.layout ? { ...this.draft.layout } : null; }
-  adoptStrokes(strokes) { this.draft=normalizeDraft({...this.draft,strokes}); }
+  protectStrokes(strokes) { this.protectedInk=new Map(strokes.map(stroke=>[stroke.id,clone(stroke)])); }
+  preserveInk(strokes) { return [...this.protectedInk.values(),...strokes.filter(stroke=>!this.protectedInk.has(stroke.id))]; }
+  adoptStrokes(strokes) { this.draft=normalizeDraft({...this.draft,strokes:this.preserveInk(strokes)}); }
 
   mapStrokes(ids, transform) {
-    const map=strokes=>strokes.map(stroke=>ids.has(stroke.id)?normalizeStroke(transform(stroke)):stroke);
+    const map=strokes=>strokes.map(stroke=>ids.has(stroke.id)&&!this.protectedInk.has(stroke.id)?normalizeStroke(transform(stroke)):stroke);
     const strokes=map(this.draft.strokes);normalizeDraft({...this.draft,strokes});
     this.draft.strokes=strokes;
     for(const stack of [this.undoStack,this.redoStack])for(const entry of stack){entry.before=map(entry.before);entry.after=map(entry.after);}
@@ -162,6 +166,8 @@ export class WhiteboardModel {
   }
 
   replaceStrokes(strokes) {
+    strokes=this.preserveInk(strokes);
+    if(JSON.stringify(strokes)===JSON.stringify(this.draft.strokes))return false;
     if (strokes === this.draft.strokes) return false;
     this.undoStack.push({ before: this.draft.strokes, after: strokes });
     if (this.undoStack.length > DRAFT_LIMITS.history) this.undoStack.shift();
@@ -205,7 +211,7 @@ export class WhiteboardModel {
   undo() {
     const change = this.undoStack.pop();
     if (!change) return false;
-    this.draft.strokes = change.before;
+    this.draft.strokes = this.preserveInk(change.before);
     this.redoStack.push(change);
     return true;
   }
@@ -213,7 +219,7 @@ export class WhiteboardModel {
   redo() {
     const change = this.redoStack.pop();
     if (!change) return false;
-    this.draft.strokes = change.after;
+    this.draft.strokes = this.preserveInk(change.after);
     this.undoStack.push(change);
     return true;
   }

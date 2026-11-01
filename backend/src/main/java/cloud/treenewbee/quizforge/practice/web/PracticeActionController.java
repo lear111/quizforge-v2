@@ -22,8 +22,14 @@ public class PracticeActionController {
     private final DraftActionService drafts;
     private final SubmitActionService submits;
     private final PracticeLifecycleService lifecycle;
-    public PracticeActionController(DraftActionService drafts, SubmitActionService submits, PracticeLifecycleService lifecycle) {
+    private final cloud.treenewbee.quizforge.practice.resources.AnswerResources resources;
+    private final cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardService whiteboards;
+    public PracticeActionController(DraftActionService drafts, SubmitActionService submits, PracticeLifecycleService lifecycle,
+            cloud.treenewbee.quizforge.practice.resources.AnswerResources resources,
+            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardService whiteboards) {
         this.drafts = drafts; this.submits = submits; this.lifecycle = lifecycle;
+        this.resources = resources;
+        this.whiteboards = whiteboards;
     }
 
     @PostMapping("/api/collections/bank/{id}/questions/{qid}/actions")
@@ -33,6 +39,8 @@ public class PracticeActionController {
                 || body.revision().asLong() > Long.MAX_VALUE - ("submit".equals(body.action()) ? 2 : 1)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "revision 必须为有效的非负整数");
         }
+        if ("whiteboard".equals(body.action())) return ResponseEntity.ok().header("Cache-Control","no-store")
+                .body(whiteboards.save(principal.getName(),id,qid,body.requestId(),body.revision().asLong(),body.data(),body.contentVersion()));
         if ("retry".equals(body.action()) || "review".equals(body.action())) {
             if (body.data() == null || !body.data().isObject()) throw invalid("操作缺少 data 对象");
             if ("review".equals(body.action()) && (!body.data().path("review").isObject()
@@ -46,11 +54,12 @@ public class PracticeActionController {
         }
         if (!"draft".equals(body.action()) && !"submit".equals(body.action())) {
             throw new ApiException(HttpStatus.NOT_IMPLEMENTED, "FEATURE_NOT_AVAILABLE",
-                    "whiteboard".equals(body.action()) ? "白板保存尚未实现" : "该操作尚未实现");
+                    "该操作尚未实现");
         }
         if (body.data() == null || !body.data().isObject() || !body.data().has("answer")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "操作缺少 data.answer");
         }
+        resources.validate(principal.getName(), body.data().get("answer"));
         if ("submit".equals(body.action())) return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(submits.submit(principal.getName(), id, qid, body.requestId(), body.revision().asLong(),
                         body.data().get("answer"), body.contentVersion()));

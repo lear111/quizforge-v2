@@ -45,11 +45,14 @@ public class PracticeReadService {
     private final QuestionStamps stamps;
     private final Clock clock;
     private final JsonMapper json;
+    private final cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews whiteboards;
 
     public PracticeReadService(PracticeReadMapper reads, QuestionMapper questions, BankAvailability availability,
-            ContentPages pages, RuleRunnerClient runner, ProjectionCache projections, QuestionStamps stamps, Clock clock, JsonMapper json) {
+            ContentPages pages, RuleRunnerClient runner, ProjectionCache projections, QuestionStamps stamps, Clock clock, JsonMapper json,
+            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews whiteboards) {
         this.reads = reads; this.questions = questions; this.availability = availability; this.pages = pages;
         this.runner = runner; this.projections = projections; this.stamps = stamps; this.clock = clock; this.json = json;
+        this.whiteboards = whiteboards;
     }
 
     public Catalog catalog(String userId) {
@@ -88,7 +91,7 @@ public class PracticeReadService {
         String context = context(userId, id);
         var row = reads.state(context, qid, userId).orElse(null);
         var stamp = stamps.stamp(context, qid, row == null ? 0 : row.revision(), question.contentSha256(), question.extensionDigest());
-        if (matches(knownStamp, stamp)) return new Unchanged(true, stamp);
+        if (matches(knownStamp, stamp) && whiteboardMatches(knownStamp,context,qid,userId)) return new Unchanged(true, stamp);
         return renderQuestion(userId, qid, collection, question, context, row, stamp);
     }
 
@@ -106,6 +109,18 @@ public class PracticeReadService {
         var source = source(userId, collectionId, questionId);
         return new SubmitTarget(context(userId, collectionId), source.question().contentSha256(),
                 source.question().extensionDigest());
+    }
+
+    /** Only bounded ownership/content lookups: whiteboard writes never project or enumerate the bank. */
+    public SubmitTarget resolveWhiteboard(String userId, String collectionId, String qid, String contentVersion) {
+        var source=source(userId,collectionId,qid);
+        if (!features(source.collection()).path("whiteboard").asBoolean(false))
+            throw new ApiException(HttpStatus.FORBIDDEN,"FEATURE_DISABLED","题库未开放草稿白板");
+        String context=context(userId,collectionId);
+        var question=source.question();
+        if(contentVersion!=null && !contentVersion.equals(stamps.stamp(context,qid,0,question.contentSha256(),question.extensionDigest()).contentVersion()))
+            throw new ApiException(HttpStatus.CONFLICT,"CONTENT_CONFLICT","题目内容版本已变化，请刷新后重试");
+        return new SubmitTarget(context,question.contentSha256(),question.extensionDigest());
     }
 
     public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId) {}
@@ -187,17 +202,19 @@ public class PracticeReadService {
         State state = row == null ? new State("unanswered", null, null, 0, null, null)
                 : new State(row.status(), decode(row.answer()), submitted ? SubmissionResults.result(json, row.result(), row.score(), row.maxScore(), row.gradingStatus()) : null, row.revision(),
                         decode(row.answerState()), decode(row.outlineStates()));
-        String roundStatus = submitted ? reads.roundStatus(context, userId).orElse(null) : null;
+        String roundStatus = reads.roundStatus(context, userId).orElse(null);
+        boolean boardEnabled=features(collection).path("whiteboard").asBoolean(false);
+        var whiteboard=boardEnabled?whiteboards.read(context,qid,userId,roundStatus):null;
         boolean manualReview = false;
         for (var capability : json.readTree(extension.manifest()).path("requiresApi").path("capabilities")) {
             if ("manual-review".equals(capability.asString())) manualReview = true;
         }
         return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
-                reads.whiteboard(context, qid, userId).map(json::readTree).orElse(null), stamp,
+                whiteboard==null?null:whiteboard.draft(), stamp,
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
                 features(collection), new Capabilities(!submitted, !submitted,
                         submitted && "in_progress".equals(roundStatus), submitted && roundStatus != null && manualReview,
-                        false, false), null);
+                        false, boardEnabled), null, whiteboard);
     }
 
     private String project(ExtensionPackageRow extension, String data) {
@@ -270,6 +287,14 @@ public class PracticeReadService {
         return stamp.path("revision").asLong() == actual.revision()
                 && stamp.path("contentVersion").asString().equals(actual.contentVersion())
                 && stamp.path("packageVersion").asString().equals(actual.packageVersion());
+    }
+
+    private boolean whiteboardMatches(String known,String context,String qid,String userId) {
+        var stamp=json.readTree(known);
+        var value=stamp.get("whiteboardRevision");
+        if(value!=null && (!value.isIntegralNumber()||!value.canConvertToLong()||value.asLong()<0))throw invalidStamp();
+        long revision=whiteboards.read(context,qid,userId,null).revision();
+        return revision==(value==null?0:value.asLong());
     }
 
     private JsonNode decode(String value) { return value == null ? null : json.readTree(value); }

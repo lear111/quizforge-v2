@@ -31,7 +31,7 @@ public class DraftActionService {
         var template = prepared.template();
         // Do not re-read live state: replaying revision N after N+1 must return the saved answer/revision N.
         return new DraftResponse(saved, template.question(), new State("draft", answer, null, saved, null, null),
-                null, stamps.stamp(prepared.contextId(), qid, saved, prepared.contentSha256(), prepared.extensionDigest()),
-                template.extension(), template.features(), template.capabilities(), null);
+                template.draft(), stamps.stamp(prepared.contextId(), qid, saved, prepared.contentSha256(), prepared.extensionDigest()),
+                template.extension(), template.features(), template.capabilities(), null, template.whiteboard());
     }
 }

@@ -36,7 +36,7 @@ public class ReviewGrader {
         if (!Set.of("graded", "pending").contains(status) || !score.path("maxScore").isNumber()
                 || ("pending".equals(status) ? !score.path("score").isNull() : !score.path("score").isNumber())
                 || (score.has("outlineStates") && !score.get("outlineStates").isArray())) throw invalid();
-        return new GradeOutcome(json.writeValueAsString(reviewed.get("result")), json.writeValueAsString(reviewed.get("projected")),
+        return new GradeOutcome(json.writeValueAsString(reviewed.get("result")), cloud.treenewbee.quizforge.practice.resources.SubmissionImages.freeze(json,reviewed.get("projected"),answer),
                 "pending".equals(status) ? null : new BigDecimal(score.get("score").toString()),
                 new BigDecimal(score.get("maxScore").toString()), status,
                 score.has("outlineStates") ? json.writeValueAsString(score.get("outlineStates")) : null);

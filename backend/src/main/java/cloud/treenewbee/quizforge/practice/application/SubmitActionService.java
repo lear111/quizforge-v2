@@ -27,6 +27,6 @@ public class SubmitActionService {
         return new DraftResponse(saved, response.question(), new State(state.status(), answer, state.result(), saved,
                 state.answerState(), state.outlineStates()), response.draft(),
                 new QuestionStamps.Stamp(saved, response.stamp().contentVersion(), response.stamp().packageVersion()),
-                response.extension(), response.features(), response.capabilities(), response.aiTask());
+                response.extension(), response.features(), response.capabilities(), response.aiTask(),response.whiteboard());
     }
 }
