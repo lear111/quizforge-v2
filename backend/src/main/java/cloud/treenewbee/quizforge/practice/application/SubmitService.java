@@ -16,7 +16,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundMapper;
-import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundQuestionRow;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeRoundRow;
 import cloud.treenewbee.quizforge.practice.infrastructure.QuestionStateMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.ReceiptMapper;
@@ -35,7 +34,6 @@ public class SubmitService {
     private final PracticeContextMapper contexts;
     private final PracticeRoundMapper rounds;
     private final ReceiptMapper receipts;
-    private final RoundSnapshots snapshots;
     private final TransactionTemplate tx;
     private final Clock clock;
     private final JsonMapper json;
@@ -43,7 +41,7 @@ public class SubmitService {
     // 构造器
     public SubmitService(PracticeReadService reads, DraftService drafts, SubmitGrader grader,
                         QuestionStateMapper states, PracticeContextMapper contexts, PracticeRoundMapper rounds,
-                        ReceiptMapper receipts, RoundSnapshots snapshots, TransactionTemplate tx,
+                        ReceiptMapper receipts, TransactionTemplate tx,
                         Clock clock, JsonMapper json) {
         this.reads = reads;
         this.drafts = drafts;
@@ -52,7 +50,6 @@ public class SubmitService {
         this.contexts = contexts;
         this.rounds = rounds;
         this.receipts = receipts;
-        this.snapshots = snapshots;
         this.tx = tx;
         this.clock = clock;
         this.json = json;
@@ -75,7 +72,7 @@ public class SubmitService {
                     target.contentSha256());
 
             // 答案已保存，接下来才做可能失败的外部调用（生成投影、判分）
-            var prepared = reads.prepareDraft(userId, collectionId, questionId);
+            // 只需提交后投影，不提前计算未提交投影或题库快照。
 
             // 2. 事务外判分
             GradeOutcome outcome = grader.grade(userId, collectionId, questionId, answer);   // 内含 result、score、maxScore、outlineStates、projection
@@ -86,6 +83,7 @@ public class SubmitService {
                 var context = contexts.lockForUpdate(contextId, userId)
                         .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "题库不存在"));
 
+                PracticeWrites.requireActive(context);
                 int updated = states.submit(
                         outcome.resultJson(),
                         outcome.gradingStatus(),
@@ -105,18 +103,12 @@ public class SubmitService {
                 if (roundId == null) {
                     roundId = UUID.randomUUID().toString();
                     if (rounds.insertRound(new PracticeRoundRow(roundId, userId, collectionId, contextId, "practice", "in_progress",
-                            snapshots.collection(userId, collectionId), null, now, now, null, null)) != 1) {
+                            "{}", null, now, now, null, null)) != 1) {
                         throw new IllegalStateException("创建轮次失败");
                     }
                     if (contexts.setCurrentRound(contextId, userId, roundId, now) != 1) {
                         throw new IllegalStateException("设置当前轮次失败");
                     }
-                }
-
-                // upsert：插入时返回 1，更新时返回 2，所以判断 < 1
-                if (rounds.upsertRoundQuestion(new PracticeRoundQuestionRow(roundId, questionId, userId,
-                        snapshots.question(prepared, answer, outcome), prepared.extensionDigest(), now)) < 1) {
-                    throw new IllegalStateException("保存题目快照失败");
                 }
 
                 if (contexts.bumpProgressVersion(contextId, userId, now) != 1) {

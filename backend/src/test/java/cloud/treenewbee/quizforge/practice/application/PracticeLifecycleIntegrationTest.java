@@ -88,6 +88,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     static { RUNNER.start(); }
 
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
+        registry.add("qf.practice.jobs.enabled",()->"false");
         registry.add("qf.security.allowed-origin", () -> "https://submit.example.test");
         registry.add("qf.storage.blob-dir", BLOBS::toString);
         registry.add("qf.import.temp-dir", UPLOADS::toString);
@@ -110,6 +111,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     final Map<String, Sample> seeds = new HashMap<>();
     @MockitoSpyBean PracticeReadService reads;
     @MockitoSpyBean RoundSnapshots snapshots;
+    @org.springframework.beans.factory.annotation.Autowired PracticeLifecycleJobs jobs;
     @MockitoSpyBean PracticeReadMapper readMapper;
     @Autowired QuestionMapper questions;
     @Autowired JdbcTemplate jdbc;
@@ -150,7 +152,8 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
     @AfterEach void cleanupViewer() { reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper); deleteUser(user); }
     private void deleteUser(String id) {
-        for (String table : List.of("practice_user_resource","practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
+        jdbc.update("DELETE a FROM practice_history_asset a JOIN practice_round r ON r.id=a.history_id WHERE r.user_id=?",id);
+        for (String table : List.of("practice_lifecycle_job","practice_history_annotation","practice_user_resource","practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
             jdbc.update("DELETE FROM "+table+" WHERE user_id=?",id);
         jdbc.update("DELETE FROM account_user WHERE id=?",id);
     }
@@ -160,9 +163,9 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
     @ParameterizedTest @ValueSource(strings={"单选题","多选题","判断题","简答题","简答题（答题区）"})
-    void retryClearsLiveAnswerButPreservesFrozenSubmissionAndCanResubmit(String type) throws Exception {
+    void retryClearsLiveAnswerButPreservesSubmissionReceiptAndCanResubmit(String type) throws Exception {
         var submitted = ok(post(type,"submit","submit",0,answer(type,true)));
-        var frozen = payload();
+        var frozen = post(type,"submit","submit",0,answer(type,true)).body();
         var response = lifecycle(type,"retry","retry",2,JSON.createObjectNode());
         var value = ok(response);
         assertThat(value.path("revision").asLong()).isEqualTo(3);
@@ -175,7 +178,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
             assertThat(row.get(key)).as(key).isNull();
         assertThat(row.get("grading_status")).isEqualTo("none");
         assertThat(((Number)row.get("grading_generation")).intValue()).isEqualTo(1);
-        assertThat(payload()).isEqualTo(frozen);
+        assertThat(post(type,"submit","submit",0,answer(type,true)).body()).isEqualTo(frozen);
         assertThat(JSON.readTree(get(type).body()).path("question").path("data").has("correctOptionId")).isFalse();
         var replay = lifecycle(type,"retry","retry",2,JSON.createObjectNode());
         assertThat(replay.body()).isEqualTo(response.body());
@@ -193,15 +196,18 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         var submitted=post(type,"submit","image-submit",0,answer);var value=ok(submitted);
         assertThat(value.path("state").path("result").path("gradingStatus").asString()).isEqualTo("pending");
         assertThat(value.path("state").path("result").path("score").isNull()).isTrue();
-        assertScreenshot(value,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertScreenshot(value,image);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?",Integer.class,user)).isZero();
         assertThat(post(type,"submit","image-submit",0,answer).body()).isEqualTo(submitted.body());
         verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
         var reviewed=ok(lifecycle(type,"review","image-review",2,reviewData(1,part(type))));
-        assertScreenshot(reviewed,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertScreenshot(reviewed,image);
         assertScreenshot(ok(get(type)),image);
+        finish(type);ok(restart(type,"image-restart",ok(summary(type))));
+        assertScreenshot(JSON.readTree(payload()),image);
     }
 
-    @Test void submissionFreezesBoardWrittenWhileGradingWasInFlight() throws Exception {
+    @Test void archiveFreezesBoardWrittenWhileSubmissionGradingWasInFlight() throws Exception {
         String type="单选题";var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
         doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return call.callRealMethod();})
                 .when(grader).grade(eq(user),anyString(),anyString(),any());
@@ -215,6 +221,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
             }finally{release.countDown();}
             ok(submitting.get(30,TimeUnit.SECONDS));
         }finally{release.countDown();}
+        finish(type);ok(restart(type,"archive",ok(summary(type))));
         var frozen=JSON.readTree(payload());
         assertThat(frozen.path("whiteboard").path("draft").path("strokes").get(0).path("id").asString()).isEqualTo("during-grading");
     }
@@ -224,7 +231,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         var doc=JSON.readTree("{\"schemaVersion\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"paper\":{\"color\":\"#ffffff\",\"pattern\":\"plain\"},\"strokes\":[]}");
         var old=JSON.valueToTree(Map.of("requestId","old-board","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
         ok(request(path(samples.get(type))+"/actions",old));
-        ok(restart(type,"board-restart",ok(summary(type))));
+        finish(type);ok(restart(type,"board-restart",ok(summary(type))));
         long nextRevision=ok(get(type)).path("whiteboard").path("revision").asLong();
         var next=JSON.valueToTree(Map.of("requestId","new-board","revision",nextRevision,"action","whiteboard","data",Map.of("draft",doc)));
         assertThat(ok(request(path(samples.get(type))+"/actions",next)).path("whiteboard").path("revision").asLong()).isEqualTo(nextRevision+1);
@@ -252,7 +259,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         ok(lifecycle(type,"review","quota-review",2,reviewData(1.5,part(type))));
         ok(lifecycle(type,"retry","quota-retry",3,JSON.createObjectNode()));
         ok(post(type,"submit","quota-again",4,answer(type,true)));
-        ok(restart(type,"quota-restart",ok(summary(type))));
+        finish(type);ok(restart(type,"quota-restart",ok(summary(type))));
         assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(imported);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user)).isZero();
     }
@@ -269,7 +276,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
     @ParameterizedTest @ValueSource(strings={"简答题","简答题（答题区）"})
-    void reviewUsesRealExtensionAndLastSuccessfulScoreUpdatesStateAndSnapshot(String type) throws Exception {
+    void reviewUsesRealExtensionAndLastSuccessfulScoreIsFrozenOnlyAtRestart(String type) throws Exception {
         ok(post(type,"submit","submit",0,answer(type,true)));
         assertThat(JSON.readTree(get(type).body()).path("capabilities").path("canReview").asBoolean()).isTrue();
         String target = JSON.readTree(samples.get(type).question().data()).path("parts").get(0).path("id").asString();
@@ -279,9 +286,8 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(first.path("state").path("result").path("score").decimalValue()).isEqualByComparingTo("1.5");
         assertThat(first.path("state").path("result").path("gradingSource").asString()).isEqualTo("manual");
         assertThat(first.path("state").path("outlineStates").isArray()).isTrue();
-        var frozen = JSON.readTree(payload());
-        assertThat(frozen.path("state")).isEqualTo(first.path("state"));
-        assertThat(frozen.path("question").path("data")).isEqualTo(first.path("question").path("data"));
+        assertThat(ok(get(type)).path("state")).isEqualTo(first.path("state"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?",Integer.class,user)).isZero();
         assertThat(lifecycle(type,"review","review-1",2,data).body()).isEqualTo(response.body());
         verify(runner,times(1)).execute(eq("review"),any(),anyMap());
         var last = ok(lifecycle(type,"review","review-2",3,reviewData(0,target)));
@@ -290,25 +296,25 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(JSON.readTree(get(type).body()).path("state")).isEqualTo(last.path("state"));
         assertThat(lifecycle(type,"review","review-1",2,data).body()).isEqualTo(response.body());
         error(lifecycle(type,"review","review-1",2,reviewData(2,target)),400,"REQUEST_ID_REUSED");
+        finish(type);ok(restart(type,"archive",ok(summary(type))));
+        assertThat(JSON.readTree(payload()).path("state")).isEqualTo(last.path("state"));
     }
 
-    @Test void completedRoundRejectsRetryButAllowsReviewAndUpdatesFrozenSummary() throws Exception {
-        String type="简答题";
-        ok(post(type,"submit","submit",0,answer(type,true)));
-        jdbc.update("UPDATE practice_round SET status='completed',completed_at=NOW(3),summary=JSON_OBJECT('score',0) WHERE user_id=?",user);
+    @Test void completedRoundRejectsRetryButAllowsReviewAndArchiveFreezesLatestSummary() throws Exception {
+        String type="简答题";ok(post(type,"submit","submit",0,answer(type,true)));finish(type);
         error(lifecycle(type,"retry","retry",2,JSON.createObjectNode()),409,"PRACTICE_COMPLETED");
-        var caps=JSON.readTree(get(type).body()).path("capabilities");
-        assertThat(caps.path("canRetry").asBoolean()).isFalse(); assertThat(caps.path("canReview").asBoolean()).isTrue();
+        var caps=ok(get(type)).path("capabilities");
+        assertThat(caps.path("canRetry").asBoolean()).isFalse();assertThat(caps.path("canReview").asBoolean()).isTrue();
         ok(lifecycle(type,"review","review",2,reviewData(1.5,part(type))));
-        var summary=JSON.readTree(jdbc.queryForObject("SELECT summary FROM practice_round WHERE user_id=?",String.class,user));
-        assertThat(summary.path("finished").asBoolean()).isTrue();
-        assertThat(summary.path("score").decimalValue()).isEqualByComparingTo("1.5");
-        assertThat(ok(summary(type)).path("score")).isEqualTo(summary.path("score"));
+        var summary=ok(summary(type));assertThat(summary.path("score").decimalValue()).isEqualByComparingTo("1.5");
+        ok(restart(type,"archive",summary));
+        var frozen=JSON.readTree(jdbc.queryForObject("SELECT summary FROM practice_round WHERE user_id=?",String.class,user));
+        assertThat(frozen.path("score")).isEqualTo(summary.path("score"));
     }
 
     @Test void completedRetryRejectsBeforeLoadingProjectionEvenWhenRunnerIsUnavailable() throws Exception {
         String type="简答题";var sample=samples.get(type);ok(post(type,"submit","submit",0,answer(type,true)));
-        jdbc.update("UPDATE practice_round SET status='completed' WHERE user_id=?",user);
+        finish(type);
         clearInvocations(reads,runner);
         doThrow(new RuleRunnerException("projection unavailable")).when(reads).prepareDraft(user,sample.collection(),sample.question().questionId());
         try {
@@ -375,10 +381,10 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         } finally { jdbc.update("DELETE FROM content_question WHERE bank_id=?",bank); jdbc.update("DELETE FROM content_bank WHERE id=?",bank); }
     }
 
-    @Test void restartFreezesInProgressRoundResetsInPlaceClearsWhiteboardAndReplaysExactly() throws Exception {
+    @Test void restartFreezesCompletedRoundResetsInPlaceClearsWhiteboardAndReplaysExactly() throws Exception {
         String type="单选题";
         ok(post(type,"submit","submit",0,answer(type,true)));
-        var before=ok(summary(type)); String frozen=payload();
+        finish(type);var before=ok(summary(type));
         String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
         jdbc.update("INSERT INTO practice_whiteboard (context_id,question_id,user_id,draft,size_bytes,updated_at) VALUES (?,?,?,JSON_OBJECT('strokes',JSON_ARRAY()),10,NOW(3))",context,samples.get(type).question().questionId(),user);
         var response=restart(type,"restart",before); assertThat(ok(response).path("restarted").asBoolean()).isTrue();
@@ -394,7 +400,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         var old=jdbc.queryForMap("SELECT status,summary,completed_at FROM practice_round WHERE user_id=?",user);
         assertThat(old.get("status")).isEqualTo("completed"); assertThat(old.get("completed_at")).isNotNull();
         assertThat(JSON.readTree((String)old.get("summary")).path("score")).isEqualTo(before.path("score"));
-        assertThat(payload()).isEqualTo(frozen);
+        assertThat(JSON.readTree(payload()).path("state").path("status").asString()).isEqualTo("submitted");
         assertThat(ok(summary(type)).path("pendingCount").asInt()).isZero();
         error(post(type,"draft","old-tab",2,answer(type,false)),409,"REVISION_CONFLICT");
         ok(post(type,"submit","new-round",3,answer(type,false)));
@@ -403,15 +409,14 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         error(restart(type,"restart",ok(summary(type))),400,"REQUEST_ID_REUSED");
     }
 
-    @Test void restartWithoutRoundResetsDraftAndDraftRevisionInvalidatesSummaryVersion() throws Exception {
-        String type="判断题";
-        var before=ok(summary(type)); assertThat(before.path("roundId").isNull()).isTrue();
+    @Test void finishWithoutRoundChecksLatestDraftSummaryAndRestartResetsAfterGrading() throws Exception {
+        String type="判断题";var before=ok(summary(type));assertThat(before.path("roundId").isNull()).isTrue();
         ok(post(type,"draft","draft",0,answer(type,true)));
-        error(restart(type,"stale",before),409,"SUMMARY_CONFLICT");
-        var current=ok(summary(type)); assertThat(current.path("summaryVersion")).isNotEqualTo(before.path("summaryVersion"));
-        ok(restart(type,"restart",current));
-        assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE user_id=?",Long.class,user)).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isZero();
+        error(request("/api/collections/bank/"+samples.get(type).collection()+"/finish",lifecycleBody("stale",before)),409,"SUMMARY_CONFLICT");
+        error(restart(type,"too-early",ok(summary(type))),409,"PRACTICE_NOT_FINISHED");
+        finish(type);ok(restart(type,"restart",ok(summary(type))));
+        assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE user_id=?",Long.class,user)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isEqualTo(1);
     }
 
     @ParameterizedTest @ValueSource(strings={"retry","review","summary","restart"})
@@ -427,21 +432,23 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     @ParameterizedTest @ValueSource(strings={"retry","review","restart"})
     void receiptFailureRollsBackEveryLifecycleMutation(String action) throws Exception {
         String type="简答题"; ok(post(type,"submit","submit",0,answer(type,true)));
-        String frozen=payload(); var row=jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=?",user);
+        if(action.equals("restart"))finish(type);
+        var row=jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=?",user);
         doThrow(new org.springframework.dao.DataIntegrityViolationException("test receipt failure")).when(receiptMapper)
                 .insert(eq(user),eq("fail"),any(),anyString());
         var response=action.equals("restart")?restart(type,"fail",ok(summary(type)))
                 :lifecycle(type,action,"fail",2,action.equals("review")?reviewData(1,part(type)):JSON.createObjectNode());
         assertThat(response.statusCode()).as(response.body()).isEqualTo(500);
         assertThat(jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=?",user)).usingRecursiveComparison().isEqualTo(row);
-        assertThat(payload()).isEqualTo(frozen);
-        assertThat(jdbc.queryForObject("SELECT status FROM practice_round WHERE user_id=?",String.class,user)).isEqualTo("in_progress");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?",Integer.class,user)).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM practice_round WHERE user_id=?",String.class,user)).isEqualTo(action.equals("restart")?"completed":"in_progress");
         assertThat(jdbc.queryForObject("SELECT progress_version FROM practice_context WHERE user_id=?",Long.class,user)).isEqualTo(1);
     }
 
     @ParameterizedTest @ValueSource(strings={"retry","review","restart"})
     void duplicateConcurrentRequestHasOneMutationAndIdenticalResponses(String action) throws Exception {
         String type="简答题"; ok(post(type,"submit","submit",0,answer(type,true)));
+        if(action.equals("restart"))finish(type);
         var summary=ok(summary(type)); var entered=new CountDownLatch(2); var release=new CountDownLatch(1);
         var realContext = sqlSession.getMapper(cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper.class);
         doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return realContext.lockForUpdate(call.getArgument(0),call.getArgument(1));})
@@ -476,26 +483,26 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT grading_generation FROM practice_question_state WHERE user_id=?",Integer.class,user)).isEqualTo(1);
     }
 
-    @Test void restartWhileSubmissionIsGradingRejectsOldResultWithoutCreatingRound() throws Exception {
-        String type="单选题"; var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+    @Test void finishWhileSubmissionIsGradingFencesOldResultAndKeepsSavedAnswer() throws Exception {
+        String type="单选题";var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
         doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return call.callRealMethod();})
                 .when(runner).execute(eq("submit"),any(),anyMap());
+        HttpResponse<String> accepted;
         try(var pool=Executors.newFixedThreadPool(2)) {
-            var submitting=pool.submit(()->post(type,"submit","submitting",0,answer(type,true)));
-            try {
-                assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();
-                var summary=ok(summary(type)); assertThat(summary.path("answeredUnsubmittedCount").asInt()).isEqualTo(1);
-                ok(pool.submit(()->restart(type,"restart",summary)).get(10,TimeUnit.SECONDS));
+            var submitting=pool.submit(()->post(type,"submit","in-flight",0,answer(type,true)));
+            try {assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();
+                accepted=request("/api/collections/bank/"+samples.get(type).collection()+"/finish",lifecycleBody("finish",ok(summary(type))));
+                assertThat(accepted.statusCode()).isEqualTo(202);
             } finally {release.countDown();}
-            error(submitting.get(45,TimeUnit.SECONDS),409,"REVISION_CONFLICT");
+            error(submitting.get(45,TimeUnit.SECONDS),409,"PRACTICE_LOCKED");
         } finally {release.countDown();}
-        assertThat(jdbc.queryForObject("SELECT status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("unanswered");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isZero();
+        reset(runner);ok(accepted);
+        assertThat(jdbc.queryForObject("SELECT status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("submitted");
     }
 
     @Test void restartWhileReviewIsGradingRejectsOldReviewAndPreservesOldHistory() throws Exception {
         String type="简答题";ok(post(type,"submit","submit",0,answer(type,true)));
-        var before=ok(summary(type));String frozen=payload();var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        finish(type);var before=ok(summary(type));var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
         doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return call.callRealMethod();})
                 .when(reviewGrader).grade(anyString(),anyString(),anyString(),any(),any(),any());
         try(var pool=Executors.newFixedThreadPool(2)) {
@@ -504,14 +511,14 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
             finally {release.countDown();}
             error(reviewing.get(45,TimeUnit.SECONDS),409,"REVISION_CONFLICT");
         } finally {release.countDown();}
-        assertThat(payload()).isEqualTo(frozen);
+        assertThat(JSON.readTree(payload()).path("state").path("result").path("score").decimalValue()).isEqualByComparingTo("0");
     }
 
     @Test void reviewUnavailableRunnerReturns503WithoutChangingSubmission() throws Exception {
-        String type="简答题";ok(post(type,"submit","submit",0,answer(type,true)));String frozen=payload();
+        String type="简答题";ok(post(type,"submit","submit",0,answer(type,true)));String frozen=get(type).body();
         doThrow(new RuleRunnerException("offline")).when(runner).execute(eq("review"),any(),anyMap());
         error(lifecycle(type,"review","offline",2,reviewData(1,part(type))),503,"RULE_UNAVAILABLE");
-        assertThat(payload()).isEqualTo(frozen);
+        assertThat(get(type).body()).isEqualTo(frozen);
         assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE user_id=?",Long.class,user)).isEqualTo(2);
     }
 
@@ -526,24 +533,22 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(value.path("state").path("result").path("score").decimalValue()).isEqualByComparingTo("1.2346");
         assertThat(value.path("state").path("result").path("maxScore").decimalValue()).isEqualByComparingTo("1.2346");
         assertThat(jdbc.queryForObject("SELECT score=max_score FROM practice_question_state WHERE user_id=?",Boolean.class,user)).isTrue();
+        finish(type);ok(restart(type,"archive",ok(summary(type))));
         assertThat(JSON.readTree(payload()).path("state")).isEqualTo(value.path("state"));
     }
 
-    @Test void restartChecksDraftCommittedWhileItWasWaitingBeforeTakingStateLocks() throws Exception {
-        String type="单选题";ok(post(type,"draft","draft",0,answer(type,true)));
-        var before=ok(summary(type));var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+    @Test void finishSeesDraftCommittedBeforeItAcquiresTheContextLock() throws Exception {
+        String type="单选题";ok(post(type,"draft","draft",0,answer(type,true)));var before=ok(summary(type));
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
         var real=sqlSession.getMapper(cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper.class);
-        doAnswer(call->{var value=real.lockForUpdate(call.getArgument(0),call.getArgument(1));locked.countDown();
-            assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return value;}).when(contextMapper).lockForUpdate(anyString(),eq(user));
+        doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return real.lockForUpdate(call.getArgument(0),call.getArgument(1));})
+            .when(contextMapper).lockForUpdate(anyString(),eq(user));
         try(var pool=Executors.newFixedThreadPool(2)) {
-            var restarting=pool.submit(()->restart(type,"restart",before));
-            try {
-                assertThat(locked.await(30,TimeUnit.SECONDS)).isTrue();
-                ok(pool.submit(()->post(type,"draft","new-draft",1,answer(type,false))).get(10,TimeUnit.SECONDS));
-            } finally {release.countDown();}
-            error(restarting.get(30,TimeUnit.SECONDS),409,"SUMMARY_CONFLICT");
+            var finishing=pool.submit(()->request("/api/collections/bank/"+samples.get(type).collection()+"/finish",lifecycleBody("finish",before)));
+            try {assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();ok(post(type,"draft","new-draft",1,answer(type,false)));}
+            finally {release.countDown();}
+            error(finishing.get(30,TimeUnit.SECONDS),409,"SUMMARY_CONFLICT");
         } finally {release.countDown();}
-        assertThat(jdbc.queryForObject("SELECT status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("draft");
         assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE user_id=?",Long.class,user)).isEqualTo(2);
     }
 
@@ -554,14 +559,15 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(post(type,"submit","original",0,answer(type,true)).body()).isEqualTo(first.body());
         ok(lifecycle(type,"retry","retry",3,JSON.createObjectNode()));
         assertThat(post(type,"submit","original",0,answer(type,true)).body()).isEqualTo(first.body());
-        ok(restart(type,"restart",ok(summary(type))));
+        ok(post(type,"submit","last-attempt",4,answer(type,true)));finish(type);ok(restart(type,"restart",ok(summary(type))));
         assertThat(post(type,"submit","original",0,answer(type,true)).body()).isEqualTo(first.body());
-        verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
+        verify(runner,times(2)).execute(eq("submit"),any(),anyMap());
     }
 
     @ParameterizedTest @ValueSource(strings={"retry","restart"})
     void concurrentDifferentRequestsHaveOneWinnerAndOne409(String action) throws Exception {
         String type="单选题";ok(post(type,"submit","submit",0,answer(type,true)));
+        if(action.equals("restart"))finish(type);
         var before=ok(summary(type));var entered=new CountDownLatch(2);var release=new CountDownLatch(1);
         var real=sqlSession.getMapper(cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper.class);
         doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();
@@ -570,7 +576,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
             var a=pool.submit(()->action.equals("restart")?restart(type,"a",before):lifecycle(type,"retry","a",2,JSON.createObjectNode()));
             var b=pool.submit(()->action.equals("restart")?restart(type,"b",before):lifecycle(type,"retry","b",2,JSON.createObjectNode()));
             try {assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();} finally {release.countDown();}
-            assertThat(List.of(a.get(45,TimeUnit.SECONDS).statusCode(),b.get(45,TimeUnit.SECONDS).statusCode())).containsExactlyInAnyOrder(200,409);
+            assertThat(List.of(a.get(45,TimeUnit.SECONDS).statusCode(),b.get(45,TimeUnit.SECONDS).statusCode())).containsExactlyInAnyOrder(action.equals("restart")?202:200,409);
         } finally {release.countDown();}
     }
 
@@ -609,7 +615,20 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
     private JsonNode ok(HttpResponse<String> response) {
+        if(response.statusCode()==202) {
+            var accepted=JSON.readTree(response.body());String id=accepted.path("jobId").asString();
+            for(int n=0;n<100;n++){jobs.tick();var row=jdbc.queryForMap("SELECT status,result,error_code FROM practice_lifecycle_job WHERE id=?",id);
+                assertThat(row.get("status")).as(row.toString()).isNotEqualTo("failed");
+                if(row.get("status").equals("completed"))return JSON.readTree((String)row.get("result"));}
+            throw new AssertionError("job did not finish");
+        }
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);return JSON.readTree(response.body());
+    }
+    private JsonNode lifecycleBody(String id,JsonNode summary) {
+        var body=JSON.createObjectNode().put("requestId",id);body.set("roundId",summary.get("roundId"));body.set("summaryVersion",summary.get("summaryVersion"));return body;
+    }
+    private void finish(String type) throws Exception {
+        ok(request("/api/collections/bank/"+samples.get(type).collection()+"/finish",lifecycleBody("finish-"+Ids.uuidV7(),ok(summary(type)))));
     }
     private String part(String type) {return JSON.readTree(samples.get(type).question().data()).path("parts").get(0).path("id").asString();}
     private JsonNode reviewData(double score,String target) {

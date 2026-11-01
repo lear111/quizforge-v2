@@ -19,6 +19,7 @@ public class PrivateCollectionService {
     public void delete(String userId, String collectionId) {
         mapper.lock(userId, collectionId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "题库不存在"));
         for (String context : mapper.contexts(userId, collectionId)) mapper.states(userId, context);
+        mapper.annotations(userId,collectionId);mapper.historyAssets(userId,collectionId);mapper.jobs(userId,collectionId);
         mapper.snapshots(userId, collectionId); mapper.rounds(userId, collectionId);
         mapper.whiteboards(userId, collectionId); mapper.statesInCollection(userId, collectionId);
         mapper.exams(userId, collectionId); mapper.deleteContexts(userId, collectionId);

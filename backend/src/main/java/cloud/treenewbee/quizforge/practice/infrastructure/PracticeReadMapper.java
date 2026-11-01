@@ -70,4 +70,6 @@ public interface PracticeReadMapper {
               AND BINARY question_id = BINARY #{qid} AND user_id = #{userId}
             """)
     Optional<String> whiteboard(@Param("contextId") String contextId, @Param("qid") String qid, @Param("userId") String userId);
+    @Select("SELECT completion_status FROM practice_context WHERE id=#{contextId} AND user_id=#{userId}")
+    Optional<String> completionStatus(@Param("contextId") String contextId,@Param("userId") String userId);
 }

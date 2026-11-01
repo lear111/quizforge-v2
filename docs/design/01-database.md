@@ -41,7 +41,7 @@
 | **题库实例**（集合） | 用户“我的题库”中的一项，指向某份题库内容。每次导入都创建新实例（C-01） | `practice_collection` |
 | **练习上下文** | 一组作答进度的容器。同一个题库实例有两种上下文：**普通练习**（每个题库实例一个）和**考试**（每场考试一个） | `practice_context` |
 | **作答状态** | 某个上下文中某道题当前的作答、评分和版本号 | `practice_question_state`、`practice_whiteboard` |
-| **练习轮次**（历史） | 从第一次提交开始，到点击“完成”为止的一轮练习；完成后冻结为历史记录 | `practice_round`、`practice_round_question` |
+| **练习轮次**（历史） | 从第一次提交开始，到完成练习为止的一轮练习；点击“再练一次”时才冻结为历史记录 | `practice_round`、`practice_round_question` |
 
 为什么要有“练习上下文”：旧系统中普通练习和考试的作答状态分别保存在不同地方（集合状态文件、`.state/exams/`）。V2 把它们统一成一张作答状态表，区别只在于上下文的类型。这样保存、提交、评分的代码只需要写一套。
 
@@ -500,7 +500,7 @@ INSERT INTO practice_request_receipt (...) VALUES (...);
 ### 5.2 正式提交（涉及评分和轮次）
 
 ```text
-1. 不开事务：读取题目数据与当前作答状态（含 revision）
+1. 独立短事务先保存草稿（共享 context 锁检查 active、revision 乐观锁），再读取题目与作答版本
 2. 不开事务：调用 rule-runner 的 submit（含作答校验、评分、getScore 与提交后投影，可能耗时数百毫秒）
 3. 开事务：
    a. SELECT ... FROM practice_context WHERE id = ? AND user_id = ? FOR UPDATE
@@ -508,7 +508,7 @@ INSERT INTO practice_request_receipt (...) VALUES (...);
    b. 条件更新 practice_question_state（WHERE revision = 第 1 步读到的值），同时写入 result、score、outline_states、projection
       —— 0 行：评分期间有人改了作答 → 409，前端刷新后重试
    c. 若 current_round_id 为空：创建 practice_round 并写回上下文
-   d. 写入 / 更新 practice_round_question
+   d. 不构造历史快照；只保留轻量轮次身份（collection_snapshot 暂为 {}）
    e. progress_version + 1
    f. 写回执
    提交事务
@@ -546,9 +546,21 @@ SELECT COUNT(*)                                             AS question_count,
 
 ### 5.5 再练一次（restart）
 
-在一个事务中：锁上下文 → 将该上下文的全部作答状态更新为 `unanswered`、清空作答与结果、`revision + 1` → 清空白板两层并递增白板 revision（保留空行） → `current_round_id = NULL`、`progress_version + 1` → 写回执。
+只允许 completed 轮次，未完成返回 PRACTICE_NOT_FINISHED。接受请求的短事务：锁 context → 锁状态并检查 summaryVersion → 一次性生成题库结构快照、复制资源授权索引 → 插入 archive 任务、phase=archiving → 写 202 回执。工作线程按题序逐题冻结当前投影、最后作答、评分、两层白板、尝试信号；未作答题也有安全投影。此过程不得向列表发布部分历史。
 
-这里用**更新而不是删除**作答行和白板行：如果删除后重建，`revision` 会回到初始值，前端缓存的旧版本号可能恰好与之相同，乐观锁就会失效。白板清空不修改已冻结的轮次单题快照。
+归档结束的一个事务中：确认租约和 context 身份 → history_frozen_at 置值、冻结最终汇总 → 全部作答 UPDATE unanswered、revision/generation 增加，尝试信号清零 → 清空白板两层并增加白板版本（保留行） → current_round_id=NULL、phase=active、progress_version+1 → 任务完成。失败恢复 completed，作答不清空，历史暂存行不可见。
+
+用 UPDATE 而不是删除作答/白板行，保留乐观锁高水位。相同 requestId 只返回原任务，不重复构建。完整历史构建只发生在 restart；不是提交、保存或读题的附带工作。
+
+#### V9 生命周期与历史持久化
+
+- practice_context 增加 completion_status（active / finishing / completed / archiving）、lifecycle_job_id。草稿使用 context FOR SHARE 检查 active，多个不同题仍可同时保存；阶段转换、提交落库、review/retry、白板沿 context 锁顺序串行化。
+- practice_lifecycle_job 保存用户/题库/context/round、kind、status、总数与进度、租约 owner/until、结果或安全错误。FOR UPDATE SKIP LOCKED 领取，120 秒租约，逐题提交并重新入队；条件 heartbeat/结束写屏蔽旧 owner。默认每 app 一后台线程、25ms 间隔；规则调用不持有事务。
+- finish 开始立即 phase=finishing，锁作答和重做；逐题保存 score/result/projection，不调用单题 HTTP 保存流程，不额外增加草稿 revision。成功 completed；pending/null 可完成并按 0 汇总。失败 active，已经成功的提交保留。
+- practice_round.history_frozen_at 非空且 deleted_at 为空才属于历史。列表只 SELECT 摘要字段；详情才取 collection_snapshot、practice_round_question.payload、固定拓展 digest。
+- practice_history_annotation 保存 history_id/question_id/user_id、notes JSON、独立 revision、时间。锁所属 round 后校验追加性与 revision，和回执同事务提交。
+- practice_history_asset 保存 history_id/path/blob_sha256；当前题库变动后，历史仍可授权原图片与听力。GC 还须扫描未删除历史的 extension_digest、payload 中作答/截图/白板资源和 annotation。软删除历史排除授权与 GC 引用；删除题库连带删除这些行及后台任务。
+- 状态额外保存 attempt_count、first_correct、grading_source（rule/manual，AI 预留）；每轮重置，retry 不重置，历史只冻结最后状态。V9 对旧 submission_generation 无法还原的次数/首次对错记 NULL，不能把 retry 误算为提交次数。旧历史 snapshotVersion=0 可读取已知题，标明 legacy，不虚构已丢失的未作答题；新历史为 version 1。
 
 ### 5.6 考试到期自动交卷
 

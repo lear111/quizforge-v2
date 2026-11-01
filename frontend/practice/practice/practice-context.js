@@ -1,5 +1,5 @@
 // Pure view state: shared by the shell, outline, and extension bridge.
-export const collectionFeature=(pane,name)=>pane?.collection?.features?.[name]!==false;
+export const collectionFeature=(pane,name)=>(pane?.view==='history'?pane.historyEntry?.collection:pane?.collection)?.features?.[name]!==false;
 export const examActive=pane=>pane?.exam?.status==='in-progress'&&!pane.examDeadlineReached;
 // Authoring is unavailable online; richtext answer editing remains in the Bridge.
 export const canEditCollection=()=>false;

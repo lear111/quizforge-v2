@@ -36,15 +36,17 @@ public class PracticeSummaryService {
         var rows = mapper.summaryQuestions(bankId, context.id(), userId);
         var round = context.currentRoundId() == null ? null
                 : mapper.round(context.currentRoundId(), context.id(), userId).orElseThrow();
-        boolean finished = round != null && "completed".equals(round.status());
+        boolean finished = "completed".equals(context.completionStatus()) || "archiving".equals(context.completionStatus());
         var value = json.createObjectNode();
         value.put("questionCount", totals.questionCount()); value.put("submittedCount", totals.submittedCount());
         value.put("pendingCount", totals.pendingCount()); value.put("gradedCount", totals.submittedCount() - totals.pendingCount());
         value.put("score", totals.score()); value.put("maxScore", totals.maxScore());
         value.put("answeredUnsubmittedCount", rows.stream().filter(PracticeLifecycleMapper.SummaryQuestion::answered).count());
         value.put("finished", finished); value.put("status", finished ? "completed" : "in-progress");
-        value.put("roundId", context.currentRoundId()); value.put("historyId", finished ? context.currentRoundId() : null);
-        value.put("canFinish", false); value.put("canRestart", true);
+        value.put("roundId", context.currentRoundId()); value.put("historyId", (String)null);
+        value.put("canFinish", "active".equals(context.completionStatus())); value.put("canRestart", "completed".equals(context.completionStatus()));
+        value.put("processing", "finishing".equals(context.completionStatus()) || "archiving".equals(context.completionStatus()));
+        value.put("jobId", context.lifecycleJobId());
         var questions = value.putArray("questions");
         for (var row : rows) {
             var item = questions.addObject();

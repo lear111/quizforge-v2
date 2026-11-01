@@ -179,9 +179,8 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
         assertThat((BigDecimal)state.get("score")).isEqualTo(expected.score()==null?null:expected.score().setScale(4));
         assertThat(JSON.readTree(get(type).body()).path("state")).isEqualTo(root.path("state"));
         verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
-        String payload=jdbc.queryForObject("SELECT payload FROM practice_round_question WHERE user_id=?",String.class,user);
-        assertThat(JSON.readTree(payload).path("question").path("data")).isEqualTo(JSON.readTree(expected.projectedJson()));
-        assertThat(JSON.readTree(payload).path("state")).isEqualTo(root.path("state"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?",Integer.class,user)).isZero();
+
     }
     @ParameterizedTest @ValueSource(strings={"单选题","多选题","判断题"})
     void wrongObjectiveAnswerIsGradedBelowFullScore(String type) throws Exception {
@@ -274,7 +273,7 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
         assertThat(JSON.readTree(get("单选题").body()).path("state").path("result")).isEqualTo(result);
     }
 
-    @Test void concurrentFirstSubmissionsShareOneRoundAndFreezeBothQuestions() throws Exception {
+    @Test void concurrentFirstSubmissionsShareOneRoundWithoutBuildingHistory() throws Exception {
         var first=samples.get("单选题"); var q=first.question();
         String secondId="concurrent-"+Ids.uuidV7();
         var secondQuestion=new QuestionRow(q.bankId(),secondId,1,"第二题",q.extensionDigest(),q.outline(),q.listening(),q.data(),q.maxScore(),q.contentSha256(),1,"同名分组");
@@ -297,23 +296,17 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
             }
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isEqualTo(1);
             var context=jdbc.queryForMap("SELECT current_round_id,progress_version FROM practice_context WHERE user_id=?",user);
-            var ids=jdbc.queryForList("SELECT round_id FROM practice_round_question WHERE user_id=?",String.class,user);
-            assertThat(ids).containsExactly((String)context.get("current_round_id"),(String)context.get("current_round_id"));
+            assertThat(context.get("current_round_id")).isNotNull();
             assertThat(((Number)context.get("progress_version")).longValue()).isEqualTo(2);
-            var frozen=JSON.readTree(jdbc.queryForObject("SELECT collection_snapshot FROM practice_round WHERE user_id=?",String.class,user));
-            assertThat(frozen.path("title").asString()).isEqualTo("单选题");
-            assertThat(frozen.path("questions").get(0).path("id").asString()).isEqualTo(q.questionId());
-            assertThat(frozen.path("questions").get(1).path("id").asString()).isEqualTo(secondId);
-            assertThat(frozen.path("questions").get(1).path("outlineGroupIndex").asInt()).isEqualTo(1);
-            assertThat(frozen.path("questions").get(1).path("contentSha256").asString()).isEqualTo(HexFormat.of().formatHex(q.contentSha256()));
-            assertThat(frozen.toString()).doesNotContain("correctOptionId");
-            verify(snapshots, times(1)).collection(user, first.collection());
-            verify(reads, times(1)).collectionSnapshot(user, first.collection());
-            verify(readMapper, times(1)).questions(eq(q.bankId()), anyString(), eq(user));
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state WHERE user_id=? AND status='submitted'",Integer.class,user)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?",Integer.class,user)).isZero();
+            verify(snapshots, never()).collection(anyString(), anyString());
+            verify(reads, never()).collectionSnapshot(anyString(), anyString());
+            verify(readMapper, never()).questions(anyString(), anyString(), anyString());
         } finally { release.countDown(); jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),secondId); }
     }
 
-    @Test void onlyFirstSubmissionInRoundComputesCollectionSnapshot() throws Exception {
+    @Test void noSubmissionInRoundComputesCollectionSnapshot() throws Exception {
         var first = samples.get("单选题"); var q = first.question();
         String secondId = "later-" + Ids.uuidV7();
         var secondQuestion = new QuestionRow(q.bankId(), secondId, 1, "第二题", q.extensionDigest(), q.outline(),
@@ -324,9 +317,9 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
             var initial = send(first, "submit", "first-in-round", 0, answer("单选题", true));
             assertThat(initial.statusCode()).as(initial.body()).isEqualTo(200);
             String frozen = jdbc.queryForObject("SELECT collection_snapshot FROM practice_round WHERE user_id=?", String.class, user);
-            verify(snapshots, times(1)).collection(user, first.collection());
-            verify(reads, times(1)).collectionSnapshot(user, first.collection());
-            verify(readMapper, times(1)).questions(eq(q.bankId()), anyString(), eq(user));
+            verify(snapshots, never()).collection(anyString(), anyString());
+            verify(reads, never()).collectionSnapshot(anyString(), anyString());
+            verify(readMapper, never()).questions(anyString(), anyString(), anyString());
 
             jdbc.update("UPDATE practice_collection SET title='轮中改名' WHERE id=?", first.collection());
             clearInvocations(reads, snapshots, readMapper);
@@ -336,24 +329,26 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
             verify(reads, never()).collectionSnapshot(anyString(), anyString());
             verify(readMapper, never()).questions(anyString(), anyString(), anyString());
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?", Integer.class, user)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?", Integer.class, user)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question WHERE user_id=?", Integer.class, user)).isZero();
             assertThat(jdbc.queryForObject("SELECT collection_snapshot FROM practice_round WHERE user_id=?", String.class, user)).isEqualTo(frozen);
-            assertThat(JSON.readTree(frozen).path("title").asString()).isEqualTo("单选题");
+            assertThat(JSON.readTree(frozen).isEmpty()).isTrue();
         } finally {
             jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?", q.bankId(), secondId);
         }
     }
 
     @Test
-    void coldProjectionRunnerFailureMustStillPreserveDraft() throws Exception {
+    void coldProjectionFailureCannotAffectSubmitWhichUsesSubmittedProjectionOnly() throws Exception {
         var original=samples.get("单选题"); var q=original.question();
         String id="cold-"+Ids.uuidV7(); byte[] hash=new byte[32]; new java.security.SecureRandom().nextBytes(hash);
         var cold=new QuestionRow(q.bankId(),id,1,"冷缓存",q.extensionDigest(),q.outline(),q.listening(),q.data(),q.maxScore(),hash,0,null);
         questions.insert(cold);
         doThrow(new RuleRunnerException("unavailable before projection")).when(runner).execute(eq("project"),any(),anyMap());
         try {
-            error(send(new Sample(original.collection(),cold),"submit","cold",0,answer("单选题",true)),503,"RULE_UNAVAILABLE");
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state WHERE user_id=? AND question_id=? AND status='draft'",Integer.class,user,id)).isEqualTo(1);
+            var response=send(new Sample(original.collection(),cold),"submit","cold",0,answer("单选题",true));
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+            verify(runner,never()).execute(eq("project"),any(),anyMap());
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state WHERE user_id=? AND question_id=? AND status='submitted'",Integer.class,user,id)).isEqualTo(1);
         } finally { jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),id); }
     }
 

@@ -4,7 +4,7 @@
 // page, but does not add a type selector to active extension routes.
 export const sameExtension=(left,right)=>!!left&&!!right&&left.id===right.id&&left.version===right.version&&(left.path||'')===(right.path||'')&&(left.typeId||'')===(right.typeId||'')&&left.development?.folder===right.development?.folder;
 export const extensionPagePrefix=extension=>`${extension.development?.folder?`development:${extension.development.folder}`:`${extension.pageId||extension.id}:${extension.version}`}:`;
-export const sameQuestionStamp=(left,right)=>!!left&&!!right&&left.revision===right.revision&&left.contentVersion===right.contentVersion&&left.packageVersion===right.packageVersion;
+export const sameQuestionStamp=(left,right)=>!!left&&!!right&&left.revision===right.revision&&left.contentVersion===right.contentVersion&&left.packageVersion===right.packageVersion&&(left.practicePhase||'active')===(right.practicePhase||'active');
 export function questionExtension(payload,collection,qid=payload?.question?.id){
   const extension=payload?.extension||collection?.questions?.find(row=>row.id===qid)?.type||collection?.extension;
   if(!extension||typeof extension.id!=='string'||!extension.id||typeof extension.version!=='string'||!extension.version)throw new Error('题目缺少有效的题型拓展信息');

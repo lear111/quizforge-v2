@@ -31,13 +31,14 @@ public class PracticeLifecycleService {
     private final QuestionStamps stamps;
     private final Clock clock;
     private final JsonMapper json;
+    private final PracticeLifecycleJobs jobs;
 
     public PracticeLifecycleService(PracticeReadService reads, PracticeReadMapper readMapper, PracticeLifecycleMapper mapper,
             PracticeContextMapper contexts, PracticeSummaryService summaries, ReviewGrader grader, ReceiptMapper receipts,
-            TransactionTemplate tx, QuestionStamps stamps, Clock clock, JsonMapper json) {
+            TransactionTemplate tx, QuestionStamps stamps, Clock clock, JsonMapper json, PracticeLifecycleJobs jobs) {
         this.reads = reads; this.readMapper = readMapper; this.mapper = mapper; this.contexts = contexts;
         this.summaries = summaries; this.grader = grader; this.receipts = receipts; this.tx = tx;
-        this.stamps = stamps; this.clock = clock; this.json = json;
+        this.stamps = stamps; this.clock = clock; this.json = json; this.jobs=jobs;
     }
 
     public JsonNode retry(String userId, String collectionId, String qid, String requestId, long revision,
@@ -50,9 +51,11 @@ public class PracticeLifecycleService {
         return prepareOrReplay(userId, requestId, hash, () -> {
             requireSubmitted(target.contextId(), qid, userId, revision);
             var current = mapper.context(target.contextId(), userId).orElseThrow();
+            PracticeWrites.requireStable(current);
             requireRetryable(round(current, userId));
             var prepared = reads.prepareDraft(userId, collectionId, qid);
             return execute(userId, requestId, hash, target.contextId(), qid, context -> {
+                PracticeWrites.requireActive(context);
                 requireSubmitted(context.id(), qid, userId, revision);
                 var round = round(context, userId);
                 requireRetryable(round);
@@ -81,10 +84,9 @@ public class PracticeLifecycleService {
             var prepared = new PracticeReadService.PreparedDraft(target.contextId(), target.contentSha256(),
                     target.extensionDigest(), template, userId);
             return execute(userId, requestId, hash, target.contextId(), qid, context -> {
+                PracticeWrites.requireStable(context);
                 requireSubmitted(context.id(), qid, userId, revision);
-                var round = round(context, userId);
-                var oldPayload = mapper.payload(round.id(), qid, userId)
-                        .orElseThrow(() -> conflict("REVIEW_UNAVAILABLE", "本轮没有该题的提交快照"));
+                round(context, userId);
                 var result = json.readTree(outcome.resultJson());
                 if (!(result instanceof ObjectNode object)) throw new IllegalStateException("人工评分结果必须为对象");
                 object.put("gradingSource", "manual");
@@ -94,50 +96,14 @@ public class PracticeLifecycleService {
                 if (mapper.review(context.id(), qid, userId, revision, stored.resultJson(), stored.score(), stored.maxScore(),
                         stored.gradingStatus(), stored.outlineStatesJson(), stored.projectedJson(), clock.instant()) != 1) throw revisionConflict();
                 var response = response(template, prepared, answer, stored, revision + 1, "submitted");
-                var frozen = (ObjectNode) json.readTree(oldPayload);
-                ((ObjectNode) frozen.get("question")).set("data", response.path("question").get("data"));
-                frozen.set("state", response.get("state")); frozen.set("stamp", response.get("stamp"));
-                if (mapper.updatePayload(round.id(), qid, userId, json.writeValueAsString(frozen), clock.instant()) != 1)
-                    throw new IllegalStateException("更新题目快照失败");
                 changed(context, userId);
-                if ("completed".equals(round.status())) {
-                    var collection = reads.resolveCollection(userId, collectionId);
-                    var summary = summaries.current(userId, collection.bankId(),
-                            mapper.context(context.id(), userId).orElseThrow());
-                    if (mapper.updateCompletedSummary(round.id(), userId, json.writeValueAsString(summary), clock.instant()) != 1)
-                        throw new IllegalStateException("更新历史汇总失败");
-                }
                 return response;
             });
         });
     }
 
     public JsonNode restart(String userId, String collectionId, String requestId, String roundId, String summaryVersion) {
-        var target = reads.resolveCollection(userId, collectionId);
-        var input = json.createObjectNode(); input.put("roundId", roundId); input.put("summaryVersion", summaryVersion);
-        byte[] hash = hash("restart", collectionId, "", 0, input, null);
-        var replay = receipt(userId, requestId, hash);
-        if (replay != null) return replay;
-        return execute(userId, requestId, hash, target.contextId(), null, context -> {
-            var summary = summaries.current(userId, target.bankId(), context);
-            if (!java.util.Objects.equals(roundId, context.currentRoundId())
-                    || !summaryVersion.equals(summary.path("summaryVersion").asString()))
-                throw conflict("SUMMARY_CONFLICT", "练习数据已更新，请刷新汇总后再开始新一轮");
-            mapper.reset(context.id(), userId, clock.instant());
-            mapper.resetWhiteboards(context.id(), userId, clock.instant());
-            if (context.currentRoundId() != null) {
-                var round = round(context, userId);
-                if ("in_progress".equals(round.status())) {
-                    summary.put("finished", true); summary.put("status", "completed"); summary.put("historyId", round.id());
-                    if (mapper.complete(round.id(), userId, json.writeValueAsString(summary), clock.instant()) != 1)
-                        throw new IllegalStateException("完成轮次失败");
-                }
-            }
-            if (contexts.setCurrentRound(context.id(), userId, null, clock.instant()) != 1)
-                throw new IllegalStateException("重置当前轮次失败");
-            changed(context, userId);
-            return json.createObjectNode().put("restarted", true);
-        });
+        return jobs.begin(userId,collectionId,requestId,roundId,summaryVersion,"archive");
     }
 
     private PracticeReadRows.State requireSubmitted(String context, String qid, String userId, long revision) {
