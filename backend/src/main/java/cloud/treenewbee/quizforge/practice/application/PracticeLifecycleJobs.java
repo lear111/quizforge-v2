@@ -143,6 +143,9 @@ public class PracticeLifecycleJobs {
             var qid=jobs.questionAt(target.bankId(),job.completed()).orElse(null);
             if(qid!=null) {
                 var payload=(ObjectNode)json.valueToTree(reads.question(job.userId(),job.collectionId(),qid,null));
+                // 空答案草稿没有参与完成判分，历史中与从未作答一致。
+                var state=(ObjectNode)payload.get("state");
+                if(!"submitted".equals(state.path("status").asString()))state.put("status","unanswered");
                 payload.put("snapshotVersion",1);payload.set("capabilities",json.valueToTree(new PracticeViews.Capabilities(false,false,false,false,false,false)));
                 var signals=jobs.signals(job.contextId(),qid,job.userId()).orElse(new LifecycleJobMapper.Signals(0,null,null));
                 payload.set("practiceSignals",json.valueToTree(signals));

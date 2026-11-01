@@ -26,8 +26,8 @@ def percentile(values, fraction):
 
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("--base-url", type=local_url, default="http://localhost:8106")
-    cli.add_argument("--project", default="qf-practice-finish-history-v3")
+    cli.add_argument("--base-url", type=local_url, default="http://127.0.0.1:8106")
+    cli.add_argument("--project", default="qf-practice-finish-history-v4")
     cli.add_argument("--runs", type=int, default=3)
     cli.add_argument("--vus", type=int, default=4)
     cli.add_argument("--output", type=Path, default=ROOT / ".artifacts/finish-submit-latency.json")
@@ -89,6 +89,7 @@ def main():
     foreground, background = register("单题延迟探针"), register("后台完成探针")
     results=[]
     for run in range(args.runs):
+        print(json.dumps({"run": run+1, "phase": "准备公开样例与草稿"},ensure_ascii=False),flush=True)
         fg, bg = upload(foreground), upload(background)
         for qid in question_ids: action(background,bg,qid,"draft")
         submit_phase(foreground,fg,question_ids[:30])

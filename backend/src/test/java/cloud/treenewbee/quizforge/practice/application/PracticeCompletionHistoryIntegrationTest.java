@@ -197,10 +197,13 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
         assertThat(history.path("questions").get(0).path("payload").path("practiceSignals").path("attemptCount").asInt()).isEqualTo(1);
         assertThat(ok(get(type)).path("state").path("status").asString()).isEqualTo("unanswered");
     }
-    @Test void historyContainsUnansweredQuestionsFrozenOrderAndLateNotes() throws Exception {
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    void historyContainsUnansweredQuestionsFrozenOrderAndLateNotes(boolean emptyDraft) throws Exception {
         String type="单选题";var q=samples.get(type).question();
         jdbc.update("INSERT INTO content_question(bank_id,question_id,position,title,extension_digest,outline,listening,data,max_score,content_sha256) SELECT bank_id,'unanswered',1,'未作答',extension_digest,outline,listening,data,max_score,content_sha256 FROM content_question WHERE bank_id=? AND question_id=?",q.bankId(),q.questionId());
         try {
+            if(emptyDraft)ok(request(base(type)+"/questions/unanswered/actions",JSON.valueToTree(Map.of(
+                    "requestId","empty-draft","revision",0,"action","draft","data",Map.of("answer",JSON.nullNode())))));
             ok(post(type,"submit","submit",0,answer(type,true)));
             complete(begin(type,"finish","finish",ok(summary(type))));
             var doc=board("late-note");ok(lifecycle(type,"whiteboard","note",0,JSON.valueToTree(Map.of("layer","notes","draft",doc))));
