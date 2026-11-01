@@ -1,6 +1,5 @@
 package cloud.treenewbee.quizforge.practice.application;
 
-import cloud.treenewbee.quizforge.quota.application.PracticeStorage;
 import java.time.Clock;
 import java.time.Instant;
 
@@ -18,12 +17,10 @@ public class DraftService {
 
     private final QuestionStateMapper states;
     private final Clock clock;
-    private final PracticeStorage storage;
 
-    public DraftService(QuestionStateMapper states, Clock clock, PracticeStorage storage) {
+    public DraftService(QuestionStateMapper states, Clock clock) {
         this.states = states;
         this.clock = clock;
-        this.storage = storage;
     }
 
     /**
@@ -43,7 +40,6 @@ public class DraftService {
             try {
                 int inserted = states.insertDraft(contextId, questionId, userId, answerJson, now, contentSha256);
                 if (inserted == 1) {
-                    storage.state(userId, contextId, questionId);
                     return 1;
                 }
                 throw revisionConflict();   // 插入 0 行：存档不属于该用户（INSERT … SELECT 的归属检查）
@@ -54,7 +50,6 @@ public class DraftService {
 
         // 之后的保存：乐观锁更新
         if (states.updateDraft(contextId, questionId, userId, clientRevision, answerJson, now) == 1) {
-            storage.state(userId, contextId, questionId);
             return clientRevision + 1;
         }
         throw revisionConflict();           // 版本号已过期，或这道题已提交

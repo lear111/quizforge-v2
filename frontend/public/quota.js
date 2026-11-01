@@ -6,12 +6,10 @@ export function formatBytes(bytes) {
 }
 
 export function quotaCards(usage) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(usage?.day)) throw new Error('统计日无效');
   return [
-    ['storage', '存储空间', '私人题库、答题图片、草稿、白板与历史'],
-    ['dailyDownload', '今日下载流量', `统计日：${usage.day}（北京时间）`],
+    ['storage', '存储空间', '仅私人上传的题库；作答图片、白板与练习记录不计入'],
   ].map(([key, title, caption]) => {
-    const {usedBytes, limitBytes} = usage[key] || {};
+    const {usedBytes, limitBytes} = usage?.[key] || {};
     return {title, text: `${formatBytes(usedBytes)} / ${formatBytes(limitBytes)}`,
       value: Math.min(usedBytes, limitBytes), max: Math.max(1, limitBytes), caption};
   });

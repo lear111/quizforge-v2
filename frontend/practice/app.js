@@ -7,6 +7,7 @@ import {request,readResource,collectionPath,questionPath,makeRequestId} from './
 import {mountExtension} from './bridge/frame.js';
 import {prepareExtensionAssets} from './bridge/page-assets.js';
 import {mountWhiteboard} from './draft/whiteboard.js';
+import {layerDocument,layerPayload,protectedInk,mergeWhiteboard} from './draft/whiteboard-layers.js';
 import {createWriteQueue,createDraftBuffer} from './shared/write-queue.js';
 import {createQuestionCache} from './practice/question-cache.js';
 import {navigateOutlineTarget} from './outline/outline-navigation.js';
@@ -44,7 +45,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?'草稿自动保存；提交后可重做，简答题可人工评分。汇总中可再练一轮；白板与批量完成练习尚未开放。':'';
+const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。白板可切换草稿与追加笔记；批量完成练习尚未开放。':'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -60,20 +61,28 @@ async function loadQuestion(pane,qid,{fresh=false}={}){
   const key=questionCacheKey(pane,qid);if(fresh)questionsCache.delete(key);
   let cacheHit=false;
   const payload=await questionsCache.load(key,async cached=>{
-    if(cached?.stamp){const value=await request(questionPath(pane.kind,pane.id,qid),{headers:{'X-QuizForge-Question-Stamp':JSON.stringify(cached.stamp)}});if(value.unchanged&&sameQuestionStamp(value.stamp,cached.stamp)){cacheHit=true;return cached;}return value;}
+    if(cached?.stamp){const value=await request(questionPath(pane.kind,pane.id,qid),{headers:{'X-QuizForge-Question-Stamp':JSON.stringify({...cached.stamp,whiteboardRevision:cached.whiteboard?.revision||0})}});if(value.unchanged&&sameQuestionStamp(value.stamp,cached.stamp)){cacheHit=true;return cached;}return value;}
     return request(questionPath(pane.kind,pane.id,qid));
   },{revalidate:true});
   pane.node.dataset.questionSource=cacheHit?'cache':'server';return payload;
 }
 
 function makeWriteQueue(pane){return createWriteQueue({
-    makeRequestId,revisionFor:qid=>stateFor(pane,qid).revision,
+    makeRequestId,revisionFor:(qid,action)=>action==='whiteboard'?(pane.boardVersions?.get(qid)||0):stateFor(pane,qid).revision,
     send:(qid,body)=>{if(pane.closed)throw new Error('题库页面已关闭');return request(`${questionPath(pane.kind,pane.id,qid)}/actions`,{method:'POST',body:JSON.stringify(body)});},
     onBusy:busy=>{pendingWrites+=busy?1:-1;if(busy&&active()===pane)saveStatus(collectionFeature(pane,'history')?'保存中…':'当前会话','saving');},
     onSaved:(qid,action,value)=>{
+      if(action==='whiteboard'){
+        (pane.boardVersions??=new Map()).set(qid,value.whiteboard.revision);
+        const key=questionCacheKey(pane,qid),cached=questionsCache.get(key);
+        if(cached)questionsCache.set(key,mergeWhiteboard(cached,value));
+        if(pane.questionId===qid){pane.payload=mergeWhiteboard(pane.payload,value);pane.whiteboard.protectStrokes(protectedInk(value.whiteboard,pane.whiteboardLayer||'draft'));}
+        if(active()===pane){saveStatus(pane.writes.hasFailures?'仍有内容未保存':'白板已保存',pane.writes.hasFailures?'error':'');renderRecovery();}
+        return;
+      }
       questionsCache.set(questionCacheKey(pane,qid),value);
       pane.collection.states[qid]=value.state;
-      if(pane.questionId===qid){pane.payload=value;if(action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){const before=pane.whiteboard.getDraft?.()?.strokes||[],kept=new Set((value.draft?.strokes||[]).map(stroke=>stroke.id));pane.ink.clear();clearTimeout(pane.inkTimer);pane.inkTimer=null;pane.whiteboard.load(value.draft);pane.whiteboard.forgetAnswerInk?.(before.map(stroke=>stroke.id).filter(id=>!kept.has(id)));}if(action!=='whiteboard'&&action!=='draft')pane.plugin?.update(contextFor(pane));}
+      if(pane.questionId===qid){pane.payload=value;if(action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){const before=pane.whiteboard.getDraft?.()?.strokes||[],kept=new Set((value.draft?.strokes||[]).map(stroke=>stroke.id));pane.ink.clear();clearTimeout(pane.inkTimer);pane.inkTimer=null;pane.whiteboard.load(layerDocument(value.whiteboard,pane.whiteboardLayer||'draft'));configureBoardLayer(pane);pane.whiteboard.forgetAnswerInk?.(before.map(stroke=>stroke.id).filter(id=>!kept.has(id)));}if(action!=='whiteboard'&&action!=='draft')pane.plugin?.update(contextFor(pane));}
       if(active()===pane){renderOutline();updateChrome();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');renderRecovery();}
     },
     onFailed:async(qid,_action,error)=>{
@@ -87,6 +96,7 @@ async function mutate(pane,action,data,options={}){
   if(preview&&active()===pane){renderOutline();saveStatus('保存中…','saving');}
   if(action==='submit'||action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){pane.whiteboard.flush();await saveInk(pane);}
   const value=await pane.writes.enqueue(qid,action,answerState?{...data,answerState}:data,{contentVersion});
+  if(action==='whiteboard')return {ok:true,data:{revision:value.whiteboard.revision}};
   if(preview)confirmAnswerPreview(pane,qid,preview);
   if(action==='submit'||action==='retry')pane.answerPreviews?.delete(qid);
   for(const [stateId,snapshot]of pane.answerStateSnapshots||[])if(snapshot.qid===qid&&(['submit','retry'].includes(action)||stateId===options.answerStateId))pane.answerStateSnapshots.delete(stateId);
@@ -109,7 +119,7 @@ async function saveInk(pane){
   clearTimeout(pane.inkTimer);pane.inkTimer=null;
   if(!collectionFeature(pane,'whiteboard')){pane.ink.clear();return;}
   const snapshot=pane.ink.take();if(!snapshot)return;
-  try{await mutate(pane,'whiteboard',{draft:snapshot.value});}
+  try{await mutate(pane,'whiteboard',layerPayload(pane.payload?.whiteboard,pane.whiteboardLayer||'draft',snapshot.value));}
   catch(error){pane.ink.restore(snapshot);throw error;}
 }
 async function flushPane(pane){
@@ -168,12 +178,14 @@ async function showQuestion(pane,qid,{payload:prepared,collection:descriptor=pan
     if(!collectionFeature(pane,'whiteboard'))pane.draftMode=false;
     pane.node.classList.remove('is-edit');pane.node.classList.toggle('is-draft',pane.draftMode);
     pane.questionId=qid;pane.outlineItemId=null;pane.ink.clear();pane.payload=payload;pane.renderedContentVersion=payload.stamp?.contentVersion;pane.collection.states[qid]=payload.state;
+    (pane.boardVersions??=new Map()).set(qid,payload.whiteboard?.revision||0);
     pane.plugin?.destroy();pane.plugin=null;if(candidateHost){for(const child of [...pane.frameHost.children])if(child!==candidateHost&&!child.classList.contains('development-retained-question'))child.remove();candidateHost.classList.remove('question-frame-candidate');}else pane.frameHost.replaceChildren();
     pane.viewport.scrollTop=0;pane.viewport.scrollLeft=0;
-    pane.draftLayoutPending=!payload.draft;
+    pane.draftLayoutPending=!payload.draft||payload.whiteboard?.revision===0;
     const zoom=Math.max(.25,Math.min(1,(pane.viewport.clientWidth-24)/760));
-    const draft=collectionFeature(pane,'whiteboard')&&structuredClone(payload.draft)||{schemaVersion:1,viewport:{x:(pane.viewport.clientWidth/zoom-760)/2,y:0,zoom},strokes:[],paper:{color:'#ffffff',pattern:'plain'}};
+    const draft=payload.whiteboard?layerDocument(payload.whiteboard,pane.whiteboardLayer||'draft'):collectionFeature(pane,'whiteboard')&&structuredClone(payload.draft)||{schemaVersion:1,viewport:{x:(pane.viewport.clientWidth/zoom-760)/2,y:0,zoom},strokes:[],paper:{color:'#ffffff',pattern:'plain'}};
     pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane));pane.whiteboard.load(draft);pane.tools.hidden=!pane.draftMode;pane.whiteboard.setMode(pane.draftMode?'draft':'practice');
+    configureBoardLayer(pane);
     syncPracticeCamera(pane);
     pane.plugin=candidatePlugin;
     await pane.plugin.ready;
@@ -457,7 +469,27 @@ async function openCollection(kind,id){
   }
 }
 function activate(key){const selected=collections.get(key);if(selected){collections.delete(key);collections.set(key,selected);}activeKey=key;notice(practiceNotice(selected?.collection));for(const pane of collections.values()){pane.node.hidden=pane.key!==key;pane.plugin?.setActive?.(pane.key===key);}$('#welcome').hidden=!!selected;renderLibrary();renderOutline();updateChrome();renderRecovery();closeDrawers();const pane=active();saveStatus(pane?.writes.hasFailures?'仍有内容未保存':pane?.view==='history'?'只读快照':pane?.view==='edit'?'编辑中':pane?.payload&&pane.payload.state.status!=='unanswered'?practiceSaveLabel(pane):'',pane?.writes.hasFailures?'error':'');}
-function attachRuntime(pane){if(pane.whiteboard)return;pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);}
+function configureBoardLayer(pane){
+  const layer=pane.whiteboardLayer||'draft',board=pane.payload?.whiteboard;
+  pane.whiteboard.protectStrokes(protectedInk(board,layer));
+  pane.whiteboard.setAppendOnly(layer==='notes');
+  pane.whiteboard.setAnswerInkEnabled(layer==='draft'&&!board?.draftLocked);
+  pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane)||layer==='draft'&&board?.draftLocked===true);
+  if(pane.layerControl){pane.layerControl.value=layer;pane.layerControl.title=board?.draftLocked?'本轮草稿已锁定，只能追加笔记':'笔记保存后只能追加，不能擦除';}
+}
+function attachRuntime(pane){
+  if(pane.whiteboard)return;
+  pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});
+  const label=el('label','qf-board-layers','白板层：'),control=el('select');control.setAttribute('aria-label','白板层');
+  for(const [value,text]of [['draft','作答草稿'],['notes','追加笔记']]){const option=el('option','',text);option.value=value;control.append(option);}
+  label.append(control);pane.tools.append(label);pane.layerControl=control;
+  control.addEventListener('change',async()=>{
+    const next=control.value;control.disabled=true;
+    try{pane.whiteboard.flush();await saveInk(pane);await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('请先保存当前白板');pane.whiteboardLayer=next;pane.whiteboard.load(layerDocument(pane.payload?.whiteboard,next));configureBoardLayer(pane);}
+    catch(error){control.value=pane.whiteboardLayer||'draft';failure(error);}finally{control.disabled=false;}
+  });
+  pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);
+}
 async function suspendPane(pane){
   if(!pane||pane.closed||!pane.whiteboard)return;
   await flushPane(pane);

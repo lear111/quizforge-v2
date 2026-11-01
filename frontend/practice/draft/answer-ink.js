@@ -70,14 +70,14 @@ export function createAnswerInk({container,canvas,whiteboard,getMode,getCamera,g
         if(record.input.autoGrow&&JSON.stringify(previous)!==JSON.stringify(anchor)){
           // Make room for existing scratch notes instead of silently turning
           // them into an answer when the crop grows or changes position.
-          const blocked=whiteboard.strokes.filter(stroke=>!owners.has(stroke.id)&&!strokeInRectangle(stroke,previous)&&strokeInRectangle(stroke,anchor));
+          const blocked=whiteboard.strokes.filter(stroke=>!whiteboard.isProtectedStroke?.(stroke.id)&&!owners.has(stroke.id)&&!strokeInRectangle(stroke,previous)&&strokeInRectangle(stroke,anchor));
           if(blocked.length){const bottom=Math.max(...live.map(row=>row.nextAnchor.y+row.nextAnchor.height));for(const stroke of blocked){const delta=bottom+16-Math.min(...stroke.points.map(point=>point.y));whiteboard.mapStrokes(new Set([stroke.id]),item=>({...item,points:item.points.map(point=>({...point,y:round(point.y+delta)}))}));}adopted=true;}
         }
         record.anchor=anchor;
       }
       for(const record of live){
         const doc=record.document,anchor=record.nextAnchor;
-        const strokes=transformInk(whiteboard.strokes.filter(stroke=>(!owners.has(stroke.id)||owners.get(stroke.id)===record)&&strokeInRectangle(stroke,anchor)),anchor,{x:0,y:0,width:doc.width,height:doc.height});
+        const strokes=transformInk(whiteboard.strokes.filter(stroke=>!whiteboard.isProtectedStroke?.(stroke.id)&&(!owners.has(stroke.id)||owners.get(stroke.id)===record)&&strokeInRectangle(stroke,anchor)),anchor,{x:0,y:0,width:doc.width,height:doc.height});
         const update={id:doc.id,strokes,anchor},signature=JSON.stringify(update);
         if(signature!==record.lastSent){record.lastSent=signature;if(!strokes.length&&!doc.strokes.length&&doc.inkSource!=='draft')continue;const Event=container.ownerDocument.defaultView.CustomEvent;record.frame.dispatchEvent(new Event('qf-answer-ink',{detail:update}));}
       }

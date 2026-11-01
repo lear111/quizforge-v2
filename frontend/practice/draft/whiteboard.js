@@ -118,7 +118,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
   let mode = 'practice', tool = 'pen', destroyed = false, frame = 0, loadGeneration = 0;
   let fullscreenActive = false;
   let viewCamera = null;
-  let readOnly = false, readOnlyCamera = null, writableTool = tool;
+  let readOnly = false, readOnlyCamera = null, writableTool = tool, answerInkEnabled=true, appendOnly=false;
   let viewWidth = 1, viewHeight = 1, pixelRatio = 1, strokeSequence = 0;
   let gesture = null, cameraBefore = null, interaction = false, eraserCursor = null;
   let selectedIds = [], clipboard = [];
@@ -126,7 +126,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
   let answerClearTarget=null;
   const pointers = new Map();
   let pendingImageTap=null;
-  const answerInk=createAnswerInk({container,canvas,whiteboard:model,getMode:()=>mode,getCamera:()=>draftCamera(),getScroll:scrollOffset,getSize:()=>({width:viewWidth,height:viewHeight}),onAdopt:()=>onChange(model.getDraft())});
+  const answerInk=createAnswerInk({container,canvas,whiteboard:model,getMode:()=>answerInkEnabled?mode:'practice',getCamera:()=>draftCamera(),getScroll:scrollOffset,getSize:()=>({width:viewWidth,height:viewHeight}),onAdopt:()=>onChange(model.getDraft())});
 
   function readDock() {
     try { return normalizeDock(JSON.parse(win.localStorage.getItem(TOOLBAR_STORAGE_KEY))); }
@@ -176,6 +176,8 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     select('[data-action="clear"]').disabled = !answerFocus && model.strokes.length === 0;
     paperColor.value = model.paper.color;
     pattern.value = model.paper.pattern;
+    pattern.disabled=readOnly||appendOnly;
+    for(const button of query('[data-paper]'))button.disabled=readOnly||appendOnly;
     for (const button of query('[data-ink]')) button.setAttribute('aria-pressed',String(button.dataset.ink === inkColor.value));
     for (const button of query('[data-paper]')) button.setAttribute('aria-pressed',String(button.dataset.paper === model.paper.color));
     const nextIcon = toolIcon(tool, inkColor.value);
@@ -797,7 +799,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     const button = event.target.closest('button');
     if (!button || !scope.contains(button)) return;
     if (button.dataset.ink && !readOnly) { inkColor.value=button.dataset.ink;closePalette({focus:true});setCornerOpen(false);updateControls();penButton.querySelector('.qf-whiteboard-pen-color')?.style.setProperty('--swatch',inkColor.value); }
-    else if (button.dataset.paper && !readOnly) { finishInteraction();if(model.setPaper({color:button.dataset.paper,pattern:pattern.value}))emitChange();requestPaint(); }
+    else if (button.dataset.paper && !readOnly && !appendOnly) { finishInteraction();if(model.setPaper({color:button.dataset.paper,pattern:pattern.value}))emitChange();requestPaint(); }
     else if (button.dataset.tool) { chooseTool(button.dataset.tool); if (palette.hidden) setCornerOpen(false); }
     else if (button.dataset.action) perform(button.dataset.action);
   }
@@ -853,7 +855,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
   listen(penOnly, 'change', () => { cancelInteraction();updateControls(); });
   listen(container,'qf-answer-area-focus',updateControls);
   for (const control of [paperColor, pattern]) listen(control, 'change', () => {
-    if (readOnly) { updateControls(); return; }
+    if (readOnly || appendOnly) { updateControls(); return; }
     finishInteraction();
     if (model.setPaper({ color: paperColor.value, pattern: pattern.value })) emitChange();
     requestPaint();
@@ -895,6 +897,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
   updateControls();
 
   return {
+    setAppendOnly(value) { appendOnly=!!value;updateControls(); },
     setReadOnly(value) {
       if (destroyed || readOnly === !!value) return;
       cancelInteraction();
@@ -947,6 +950,8 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     // Changes whenever load() resets the camera, so hosts can restore their view.
     get loadGeneration() { return loadGeneration; },
     getDraft() { return model.getDraft(); },
+    protectStrokes(strokes) { model.protectStrokes(strokes);updateControls();requestPaint(); },
+    setAnswerInkEnabled(value) { answerInkEnabled=value===true; },
     getLayout() { return model.layout; },
     initializeLayout(width) {
       if (destroyed || readOnly || !model.initializeLayout(width)) return false;

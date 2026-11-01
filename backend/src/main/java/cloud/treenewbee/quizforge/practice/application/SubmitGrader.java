@@ -39,7 +39,7 @@ public class SubmitGrader {
         if (!Set.of("graded", "pending").contains(status) || !score.path("maxScore").isNumber()
                 || (status.equals("pending") ? !score.path("score").isNull() : !score.path("score").isNumber())
                 || (score.has("outlineStates") && !score.get("outlineStates").isArray())) throw invalidResponse();
-        return new GradeOutcome(json.writeValueAsString(data.get("result")), json.writeValueAsString(data.get("projected")),
+        return new GradeOutcome(json.writeValueAsString(data.get("result")), cloud.treenewbee.quizforge.practice.resources.SubmissionImages.freeze(json,data.get("projected"),answer),
                 status.equals("pending") ? null : decimal(score.get("score")), decimal(score.get("maxScore")), status,
                 score.has("outlineStates") ? json.writeValueAsString(score.get("outlineStates")) : null);
     }

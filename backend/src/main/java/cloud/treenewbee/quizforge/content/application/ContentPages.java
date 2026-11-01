@@ -32,10 +32,12 @@ public class ContentPages {
     private final BlobStore blobs;
     private final SdkRegistry sdk;
     private final JsonMapper json;
+    private final cloud.treenewbee.quizforge.practice.resources.UserResourceMapper userResources;
 
     public ContentPages(ContentAccessMapper access, ExtensionPackageMapper packages, ExtensionFileMapper files,
-            BlobStore blobs, SdkRegistry sdk, JsonMapper json) {
+            BlobStore blobs, SdkRegistry sdk, JsonMapper json, cloud.treenewbee.quizforge.practice.resources.UserResourceMapper userResources) {
         this.access = access; this.packages = packages; this.files = files; this.blobs = blobs; this.sdk = sdk; this.json = json;
+        this.userResources = userResources;
     }
 
     public ExtensionPackageRow extension(byte[] digest) { return packages.findByDigest(digest).orElseThrow(ContentPages::notFound); }
@@ -133,6 +135,11 @@ public class ContentPages {
     }
 
     public FileResponse resource(String userId, String sha) throws IOException {
+        var owned = userResources.find(userId, hash(sha));
+        if (owned.isPresent()) {
+            if (!blobs.exists(sha)) throw notFound();
+            return new FileResponse("/_qf_blobs/" + sha.substring(0, 2) + "/" + sha.substring(2, 4) + "/" + sha, owned.get().mime());
+        }
         String path = access.asset(userId, hash(sha)).orElseThrow(ContentPages::notFound);
         String suffix = path.substring(path.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
         String mime = MEDIA.get(suffix);

@@ -3,6 +3,7 @@ import {resolveExtensionApi} from './api-bridges.js';
 import {validateContentApi} from './page-assets.js';
 import {inlinePageAssets,prepareLegacyPage} from './page-html.js';
 import {installFrameCapture} from './frame-capture.js';
+import {captureAnswerSnapshots} from './answer-snapshots.js';
 import {readHostAppearance} from '../shell/appearance.js';
 const escapeScript = value => value.replace(/<\/script/gi, '<\\/script');
 export function mountExtension(container,assets,context,{onRequest,onError,onDirty,onLayout,editorDraft=null}) {
@@ -27,7 +28,7 @@ export function mountExtension(container,assets,context,{onRequest,onError,onDir
     boot.answerAreasDeclared=true;boot.answerAreaDraft=!!container.closest?.('.is-draft');captureBoot.answerAreas=true;
     boot.answerAreaTools=answerViewport?.qfAnswerAreaTools??null;
   }
-  const start=`${answerAreasSupported?assets.answerAreaComponent.script:''}\n(${bridge.bootstrap.toString()})(${JSON.stringify(boot).replace(/</g,'\\u003c')});(${installFrameCapture.toString()})(${JSON.stringify(captureBoot).replace(/</g,'\\u003c')});`;
+  const start=`${answerAreasSupported?assets.answerAreaComponent.script:''}\n(${bridge.bootstrap.toString()})(${JSON.stringify(boot).replace(/</g,'\\u003c')},${captureAnswerSnapshots.toString()});(${installFrameCapture.toString()})(${JSON.stringify(captureBoot).replace(/</g,'\\u003c')});`;
   // The iframe viewport is the logical card width in draft mode, not the
   // physical phone width. Responsive practice styles remain inside the frame.
   const phoneStyle=`@media(max-width:600px){html,body{padding:0!important;background:#fff}body>:first-child{border:0!important;border-radius:0!important;box-shadow:none!important}input,textarea:not(.qf-answer-shared textarea),select{font-size:16px!important}}`;

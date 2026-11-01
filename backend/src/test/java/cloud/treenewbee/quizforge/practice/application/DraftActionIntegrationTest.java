@@ -224,7 +224,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
     }
 
     @Test void unsupportedActionsAreExplicitAndSubmittedQuestionsStayReadOnly() throws Exception {
-        var body = draft("whiteboard", 0, "unused"); body.put("action", "whiteboard");
+        var body = draft("unsupported", 0, "unused"); body.put("action", "unknown-action");
         error(post(owner, body), 501, "FEATURE_NOT_AVAILABLE"); assertThat(receipts(owner)).isZero();
         jdbc.update("""
                 INSERT INTO practice_question_state (context_id,question_id,user_id,status,answer,projection,revision,content_sha256,updated_at)

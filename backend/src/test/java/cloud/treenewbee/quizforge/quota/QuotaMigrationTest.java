@@ -8,7 +8,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.mysql.MySQLContainer;
 
 class QuotaMigrationTest {
-    @Test void existingPrivateInstancesAndPracticePayloadsAreBackfilledWithoutChargingPublicContent() {
+    @Test void existingPracticeChargesAreReleasedWithoutChangingPrivateImportsOrUserData() {
         try (var mysql = new MySQLContainer("mysql:8.4").withDatabaseName("quota_legacy").withUsername("test").withPassword("test")) {
             mysql.start();
             var source = new DriverManagerDataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword());
@@ -30,17 +30,21 @@ class QuotaMigrationTest {
             sql.update("INSERT INTO practice_round (id,user_id,collection_id,context_id,mode,status,collection_snapshot,summary,created_at,updated_at) VALUES ('round','user','private-a','context','practice','completed','{}','{}',NOW(3),NOW(3))");
             sql.update("INSERT INTO practice_round_question VALUES ('round','q1','user','{}',UNHEX(REPEAT('22',32)),NOW(3))");
             sql.update("INSERT INTO practice_user_resource VALUES ('user',UNHEX(REPEAT('44',32)),'image/png',100,NOW(3))");
+            Flyway.configure().dataSource(source).target("6").load().migrate();
+            long previous = sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class);
+            assertThat(previous).isPositive();
             Flyway.configure().dataSource(source).load().migrate();
             assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category='import'",Long.class)).isEqualTo(2);
             var sizes = sql.queryForList("SELECT size_bytes FROM quota_storage_item WHERE category='import'",Long.class);
             assertThat(sizes.get(0)).isEqualTo(sizes.get(1)).isGreaterThan(200);
-            assertThat(sql.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE category='state'",Long.class)).isEqualTo(5);
-            assertThat(sql.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE category='whiteboard'",Long.class)).isEqualTo(2);
-            assertThat(sql.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE category='round'",Long.class)).isEqualTo(4);
-            assertThat(sql.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE category='snapshot'",Long.class)).isEqualTo(2);
-            assertThat(sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class)).isEqualTo(sizes.get(0)*2+5+2+4+2+100);
+            assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category<>'import'",Long.class)).isZero();
+            assertThat(sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class)).isEqualTo(sizes.get(0)*2).isLessThan(previous);
             assertThat(sql.queryForObject("SELECT storage_limit FROM quota_account WHERE user_id='user'",Long.class)).isNull();
             assertThat(sql.queryForObject("SELECT COUNT(*) FROM practice_collection",Long.class)).isEqualTo(4);
+            assertThat(sql.queryForObject("SELECT answer FROM practice_question_state",String.class)).isEqualTo("\"中\"");
+            assertThat(sql.queryForObject("SELECT COUNT(*) FROM practice_user_resource",Long.class)).isEqualTo(1);
+            Flyway.configure().dataSource(source).load().migrate();
+            assertThat(sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class)).isEqualTo(sizes.get(0)*2);
         }
     }
 }

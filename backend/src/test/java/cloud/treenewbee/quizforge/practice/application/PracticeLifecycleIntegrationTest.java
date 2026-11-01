@@ -150,7 +150,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
     @AfterEach void cleanupViewer() { reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper); deleteUser(user); }
     private void deleteUser(String id) {
-        for (String table : List.of("practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
+        for (String table : List.of("practice_user_resource","practice_whiteboard","practice_request_receipt","practice_round_question","practice_round","practice_question_state","practice_context","practice_collection","auth_session"))
             jdbc.update("DELETE FROM "+table+" WHERE user_id=?",id);
         jdbc.update("DELETE FROM account_user WHERE id=?",id);
     }
@@ -186,54 +186,86 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         assertThat(lifecycle(type,"retry","retry",2,JSON.createObjectNode()).body()).isEqualTo(response.body());
     }
 
-    @Test void practiceQuotaTracksSubmissionReviewRetryAndRestartWithoutChargingReplay() throws Exception {
-        String type="简答题";
-        ok(post(type,"submit","quota-submit",0,answer(type,true)));
-        long submitted=quotas.usage(user).storage().usedBytes(); assertThat(submitted).isPositive();
-        assertPracticeQuotaEqualsPayloadBytes();
-        ok(post(type,"submit","quota-submit",0,answer(type,true)));
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(submitted);
-        ok(lifecycle(type,"review","quota-review",2,reviewData(1.5,part(type))));
-        assertPracticeQuotaEqualsPayloadBytes();
-        ok(lifecycle(type,"retry","quota-retry",3,JSON.createObjectNode()));
-        assertPracticeQuotaEqualsPayloadBytes();
-        assertThat(quotas.usage(user).storage().usedBytes()).isPositive(); // Frozen historical submission survives retry.
-        ok(post(type,"submit","quota-again",4,answer(type,true)));
-        String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
-        String ink=JSON.writeValueAsString("x".repeat(10000));
-        jdbc.update("INSERT INTO practice_whiteboard VALUES (?, 'q1', ?, ?, 1, NOW(3))",context,user,ink);
-        quotaTransaction.executeWithoutResult(s -> quotas.setStorage(user,"whiteboard",context+":q1",samples.get(type).collection(),ink.length()));
-        jdbc.update("UPDATE quota_account SET storage_limit=storage_used WHERE user_id=?",user);
-        ok(restart(type,"quota-restart",ok(summary(type))));
-        assertPracticeQuotaEqualsPayloadBytes();
-        assertThat(jdbc.queryForObject("SELECT size_bytes FROM quota_storage_item WHERE user_id=? AND category='state'",Long.class,user)).isZero();
-        assertThat(quotas.usage(user).storage().usedBytes()).isPositive(); // Historical snapshot and summary remain billed.
-    }
-
-    @Test void quotaFailureDuringFinalSubmissionRollsBackResultRoundAndReceiptButKeepsPreviouslySavedDraft() throws Exception {
-        String type="单选题";
-        ok(post(type,"draft","quota-draft",0,answer(type,true)));
-        long draftBytes=quotas.usage(user).storage().usedBytes();
-        jdbc.update("UPDATE quota_account SET storage_limit=? WHERE user_id=?",draftBytes,user);
-        error(post(type,"submit","quota-too-full",1,answer(type,true)),413,"STORAGE_QUOTA_EXCEEDED");
-        var state=jdbc.queryForMap("SELECT status,revision,result FROM practice_question_state WHERE user_id=?",user);
-        assertThat(state.get("status")).isEqualTo("draft"); assertThat(((Number)state.get("revision")).longValue()).isEqualTo(2);
-        assertThat(state.get("result")).isNull();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round WHERE user_id=?",Integer.class,user)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_request_receipt WHERE user_id=? AND request_id='quota-too-full'",Integer.class,user)).isZero();
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(draftBytes);
+    @Test void submissionScreenshotIsBoundToThisAnswerProjectionSnapshotReplayAndReview() throws Exception {
+        String type="简答题（答题区）",image=uploadScreenshot();
+        var answer=answer(type,true);var area=(tools.jackson.databind.node.ObjectNode)answer.path("responses").get(part(type));
+        area.putObject("snapshot").put("type","image").putObject("attrs").put("assetId",image);
+        var submitted=post(type,"submit","image-submit",0,answer);var value=ok(submitted);
+        assertThat(value.path("state").path("result").path("gradingStatus").asString()).isEqualTo("pending");
+        assertThat(value.path("state").path("result").path("score").isNull()).isTrue();
+        assertScreenshot(value,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertThat(post(type,"submit","image-submit",0,answer).body()).isEqualTo(submitted.body());
         verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
+        var reviewed=ok(lifecycle(type,"review","image-review",2,reviewData(1,part(type))));
+        assertScreenshot(reviewed,image);assertScreenshot(JSON.readTree(payload()),image);
+        assertScreenshot(ok(get(type)),image);
     }
 
-    private void assertPracticeQuotaEqualsPayloadBytes() {
-        long bytes=0;
-        for (var row:jdbc.queryForList("SELECT answer,answer_state,result,outline_states,projection FROM practice_question_state WHERE user_id=?",user))
-            for(var value:row.values())if(value!=null)bytes+=value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        for (var row:jdbc.queryForList("SELECT collection_snapshot,summary FROM practice_round WHERE user_id=? AND deleted_at IS NULL",user))
-            for(var value:row.values())if(value!=null)bytes+=value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        for (String payload:jdbc.queryForList("SELECT payload FROM practice_round_question WHERE user_id=?",String.class,user))
-            bytes+=payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(bytes);
+    @Test void submissionFreezesBoardWrittenWhileGradingWasInFlight() throws Exception {
+        String type="单选题";var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{entered.countDown();assertThat(release.await(30,TimeUnit.SECONDS)).isTrue();return call.callRealMethod();})
+                .when(grader).grade(eq(user),anyString(),anyString(),any());
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var submitting=pool.submit(()->post(type,"submit","board-in-flight",0,answer(type,true)));
+            try{
+                assertThat(entered.await(30,TimeUnit.SECONDS)).isTrue();
+                var doc=JSON.readTree("{\"schemaVersion\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"paper\":{\"color\":\"#ffffff\",\"pattern\":\"plain\"},\"strokes\":[{\"id\":\"during-grading\",\"color\":\"#334155\",\"width\":3,\"points\":[{\"x\":1,\"y\":2,\"pressure\":0.5}]}]}");
+                var body=JSON.valueToTree(Map.of("requestId","board-during-grading","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
+                ok(pool.submit(()->request(path(samples.get(type))+"/actions",body)).get(10,TimeUnit.SECONDS));
+            }finally{release.countDown();}
+            ok(submitting.get(30,TimeUnit.SECONDS));
+        }finally{release.countDown();}
+        var frozen=JSON.readTree(payload());
+        assertThat(frozen.path("whiteboard").path("draft").path("strokes").get(0).path("id").asString()).isEqualTo("during-grading");
+    }
+
+    @Test void oldWhiteboardVersionCannotOverwriteTheNextRoundAfterRestart() throws Exception {
+        String type="单选题";
+        var doc=JSON.readTree("{\"schemaVersion\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"paper\":{\"color\":\"#ffffff\",\"pattern\":\"plain\"},\"strokes\":[]}");
+        var old=JSON.valueToTree(Map.of("requestId","old-board","revision",0,"action","whiteboard","data",Map.of("draft",doc)));
+        ok(request(path(samples.get(type))+"/actions",old));
+        ok(restart(type,"board-restart",ok(summary(type))));
+        long nextRevision=ok(get(type)).path("whiteboard").path("revision").asLong();
+        var next=JSON.valueToTree(Map.of("requestId","new-board","revision",nextRevision,"action","whiteboard","data",Map.of("draft",doc)));
+        assertThat(ok(request(path(samples.get(type))+"/actions",next)).path("whiteboard").path("revision").asLong()).isEqualTo(nextRevision+1);
+        var stale=JSON.valueToTree(Map.of("requestId","stale-board","revision",1,"action","whiteboard","data",Map.of("draft",doc)));
+        error(request(path(samples.get(type))+"/actions",stale),409,"REVISION_CONFLICT");
+        assertThat(ok(get(type)).path("whiteboard").path("revision").asLong()).isEqualTo(nextRevision+1);
+    }
+
+    private String uploadScreenshot() throws Exception {
+        String png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=";
+        return ok(request("/api/resources",JSON.valueToTree(Map.of("mime","image/png","data",png)))).path("id").asString();
+    }
+    private void assertScreenshot(JsonNode value,String image){
+        assertThat(value.path("question").path("data").path("_qfSubmission").path("screenshots").get(0).path("assetId").asString()).isEqualTo(image);
+        assertThat(value.path("state").path("answer").toString()).contains(image);
+        assertThat(value.path("question").path("data").path("_qfSubmission").path("snapshotVersion").asInt()).isEqualTo(1);
+    }
+
+    @Test void submissionReviewRetryAndRestartDoNotChargePracticeStorage() throws Exception {
+        String type="简答题";
+        long imported=quotas.usage(user).storage().usedBytes();
+        jdbc.update("UPDATE quota_account SET storage_limit=storage_used WHERE user_id=?",user);
+        ok(post(type,"submit","quota-submit",0,answer(type,true)));
+        ok(post(type,"submit","quota-submit",0,answer(type,true)));
+        ok(lifecycle(type,"review","quota-review",2,reviewData(1.5,part(type))));
+        ok(lifecycle(type,"retry","quota-retry",3,JSON.createObjectNode()));
+        ok(post(type,"submit","quota-again",4,answer(type,true)));
+        ok(restart(type,"quota-restart",ok(summary(type))));
+        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(imported);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user)).isZero();
+    }
+
+    @Test void fullStorageDoesNotPreventDraftOrSubmission() throws Exception {
+        String type="单选题";
+        long imported=quotas.usage(user).storage().usedBytes();
+        jdbc.update("UPDATE quota_account SET storage_limit=0 WHERE user_id=?",user);
+        ok(post(type,"draft","quota-draft",0,answer(type,true)));
+        ok(post(type,"submit","quota-full-submit",1,answer(type,true)));
+        assertThat(jdbc.queryForObject("SELECT status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("submitted");
+        assertThat(quotas.usage(user).storage().usedBytes()).isEqualTo(imported);
+        verify(runner,times(1)).execute(eq("submit"),any(),anyMap());
     }
 
     @ParameterizedTest @ValueSource(strings={"简答题","简答题（答题区）"})
@@ -343,19 +375,20 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
         } finally { jdbc.update("DELETE FROM content_question WHERE bank_id=?",bank); jdbc.update("DELETE FROM content_bank WHERE id=?",bank); }
     }
 
-    @Test void restartFreezesInProgressRoundResetsInPlaceDeletesWhiteboardAndReplaysExactly() throws Exception {
+    @Test void restartFreezesInProgressRoundResetsInPlaceClearsWhiteboardAndReplaysExactly() throws Exception {
         String type="单选题";
         ok(post(type,"submit","submit",0,answer(type,true)));
         var before=ok(summary(type)); String frozen=payload();
         String context=jdbc.queryForObject("SELECT id FROM practice_context WHERE user_id=?",String.class,user);
-        jdbc.update("INSERT INTO practice_whiteboard VALUES (?,?,?,JSON_OBJECT('strokes',JSON_ARRAY()),10,NOW(3))",context,samples.get(type).question().questionId(),user);
+        jdbc.update("INSERT INTO practice_whiteboard (context_id,question_id,user_id,draft,size_bytes,updated_at) VALUES (?,?,?,JSON_OBJECT('strokes',JSON_ARRAY()),10,NOW(3))",context,samples.get(type).question().questionId(),user);
         var response=restart(type,"restart",before); assertThat(ok(response).path("restarted").asBoolean()).isTrue();
         assertThat(restart(type,"restart",before).body()).isEqualTo(response.body());
         var row=jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=?",user);
         assertThat(row.get("status")).isEqualTo("unanswered"); assertThat(((Number)row.get("revision")).longValue()).isEqualTo(3);
         assertThat(((Number)row.get("grading_generation")).intValue()).isEqualTo(1);
         for(var key:List.of("answer","answer_state","result","score","max_score","outline_states","projection")) assertThat(row.get(key)).isNull();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_whiteboard WHERE user_id=?",Integer.class,user)).isZero();
+        assertThat(jdbc.queryForObject("SELECT revision FROM practice_whiteboard WHERE user_id=?",Long.class,user)).isEqualTo(2);
+        assertThat(JSON.readTree(jdbc.queryForObject("SELECT draft FROM practice_whiteboard WHERE user_id=?",String.class,user)).path("strokes").isEmpty()).isTrue();
         assertThat(jdbc.queryForObject("SELECT current_round_id FROM practice_context WHERE user_id=?",String.class,user)).isNull();
         assertThat(jdbc.queryForObject("SELECT progress_version FROM practice_context WHERE user_id=?",Long.class,user)).isEqualTo(2);
         var old=jdbc.queryForMap("SELECT status,summary,completed_at FROM practice_round WHERE user_id=?",user);

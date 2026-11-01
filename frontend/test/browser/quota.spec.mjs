@@ -15,7 +15,7 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   await page.getByRole('button',{name:'注册并登录',exact:true}).click();
   await expect(page).toHaveURL(/\/practice\/$/);
   await page.goto('/');
-  await expect(page.locator('.quota-card')).toHaveCount(2);
+  await expect(page.locator('.quota-card')).toHaveCount(1);
   await expect(page.locator('.quota-number').first()).toHaveText('0 B / 256.00 MiB');
   const response=await page.request.post('/api/library/import',{
     headers:{Origin:new URL(page.url()).origin},
@@ -29,7 +29,7 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   const opensBank=(await catalog.json()).banks.some(bank=>!bank.error&&bank.availability?.available!==false);
   await page.locator('#quota-refresh').click();
   await expect(page.locator('.quota-number').first()).not.toHaveText('0 B / 256.00 MiB');
-  await expect(page.locator('.quota-number').last()).toHaveText('0 B / 256.00 MiB');
+  await expect(page.locator('.quota-card')).toHaveCount(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   const screenshots=resolve(process.env.QF_SCREENSHOT_DIR||'../.artifacts/screenshots');await mkdir(screenshots,{recursive:true});
   await page.screenshot({path:resolve(screenshots,`quota-${info.project.name}.png`),fullPage:true});

@@ -78,3 +78,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - `practice/app.js` 更新练习能力提示，再练一轮前确认清空当前作答；继续沿用原 Bridge、写队列的 retry / review 字段。
 - `practice/practice/practice-summary.js` 与 CSS 支持 V2 的 canFinish / canRestart：批量完成尚未开放时禁用该按钮，进行中轮次可使用独立的“再练一轮”。待评分数量与按 0 汇总的提示按 FR-14 更新，历史只读行为保留。
 - 新增纯前端卡片/能力测试和真实 iframe 闭环浏览器测试；拓展源码、SDK 和依赖均未修改。
+
+## 2026-11-01：L1.5 白板与答题资源
+
+- 宿主 bridge 增加答题区模型绘制、截图上传和本次提交的 snapshot 绑定，沿用现有 1.4.1 组件源码，未修改拓展或 SDK。
+- app / write-queue 使用独立白板 revision；两层合成显示、分层保存，笔记不进入正式作答。白板模型保护已存笔迹，笔记模式不允许改变纸面。
+- 用户中心文案改为只有私人题库计入存储，并按 main #78 移除每日下载流量卡片。新增资源/白板单元与真实浏览器测试。

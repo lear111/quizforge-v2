@@ -251,7 +251,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Test void deletionRemovesHistoricalSnapshotsWhiteboardsAndReleasesAllOwnedItems() throws Exception {
         var user = user(false); var other = user(false); var collection = importOne(user, archive());
         var context = context(user.id(), collection.id()); var round = Ids.uuidV7();
-        jdbc.update("INSERT INTO practice_whiteboard VALUES (?, 'q1', ?, '{}', 2, NOW(3))", context, user.id());
+        jdbc.update("INSERT INTO practice_whiteboard (context_id,question_id,user_id,draft,size_bytes,updated_at) VALUES (?, 'q1', ?, '{}', 2, NOW(3))", context, user.id());
         jdbc.update("INSERT INTO practice_round (id,user_id,collection_id,context_id,mode,status,collection_snapshot,created_at,updated_at) VALUES (?,?,?,?,'practice','completed','{}',NOW(3),NOW(3))", round,user.id(),collection.id(),context);
         jdbc.update("INSERT INTO practice_round_question VALUES (?, 'q1', ?, '{\"notes\":[]}', UNHEX(REPEAT('12',32)), NOW(3))",round,user.id());
         tx.executeWithoutResult(s -> { quotas.setStorage(user.id(),"round",round,collection.id(),2); quotas.setStorage(user.id(),"snapshot",round+":q1",collection.id(),13); quotas.setStorage(user.id(),"whiteboard",context+":q1",collection.id(),2); });
@@ -265,17 +265,14 @@ class QuotaIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_context WHERE id=?",Integer.class,context)).isZero();
     }
 
-    @Test void draftGrowthIsBilledInSameTransactionAndFailurePreservesOldAnswer() throws Exception {
+    @Test void draftsDoNotConsumeQuotaEvenWhenPrivateStorageIsFull() throws Exception {
         var user = user(false); var admin = user(true); var collection = importOne(user, archive());
-        String context = context(user.id(), collection.id()); long contentBytes = quotas.usage(user.id()).storage().usedBytes();
-        long revision = drafts.saveDraft(user.id(),context,"q1",0,"\"中文\"",new byte[32]);
-        assertThat(revision).isEqualTo(1);
-        long used = quotas.usage(user.id()).storage().usedBytes();
-        assertThat(used-contentBytes).isEqualTo(8); // UTF-8: two Chinese characters plus JSON quotes.
+        String context = context(user.id(), collection.id()); long used = quotas.usage(user.id()).storage().usedBytes();
         quotas.adjust(admin.id(),user.id(),used,null);
-        assertQuota(() -> drafts.saveDraft(user.id(),context,"q1",1,"\"longer than the available space\"",new byte[32]),"STORAGE_QUOTA_EXCEEDED");
-        assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE context_id=?",Long.class,context)).isEqualTo(1);
+        assertThat(drafts.saveDraft(user.id(),context,"q1",0,"\"中文\"",new byte[32])).isEqualTo(1);
+        assertThat(drafts.saveDraft(user.id(),context,"q1",1,"\"longer answer\"",new byte[32])).isEqualTo(2);
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(used);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user.id())).isZero();
     }
 
     @Test void quotaHttpIsPrivateAdminOnlyAndNormalReadsNeverConsumeTraffic() throws Exception {

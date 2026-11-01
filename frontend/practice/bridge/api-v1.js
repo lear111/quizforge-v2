@@ -1,10 +1,10 @@
 // The v1 bridge is serialized into the sandbox. Keep this function self-contained.
-export function bootstrapV1(boot) {
+export function bootstrapV1(boot,captureAnswerSnapshots) {
   let hooks,editorHooks,closed=false,inactive=false,context=boot.context,sequence=0,outlineQueue=Promise.resolve();
   const outlineSupported=boot.api.capabilities.includes('outline-items');
   const resourceCache=new Map(),resourceUrls=new Set();let resourceBytes=0,editorLoading=null,contentFacade=null;
   const requests=new Map(),pending=new Set();
-  let draftMode=boot.answerAreaDraft===true,answerAreaService=null;
+  let draftMode=boot.answerAreaDraft===true,answerAreaService=null,answerAreaModel=null;
   // API 1.4: host theme and panel transparency, mirrored on <html> for CSS.
   let appearance=boot.appearance?Object.freeze({...boot.appearance}):null;const appearanceListeners=new Set();
   const send=message=>parent.postMessage({...message,channel:'quizforge-extension',session:boot.session},'*');
@@ -22,7 +22,7 @@ export function bootstrapV1(boot) {
   async function register(value){if(hooks)throw new Error('页面只能注册一次');if(!value||typeof value.onLoad!=='function')throw new TypeError('必须提供 onLoad');if(outlineSupported&&value.onOutlineNavigate!==undefined&&typeof value.onOutlineNavigate!=='function')throw new TypeError('onOutlineNavigate 必须是函数');hooks=value;await load(context);if(editorHooks&&boot.editorDraft!=null){if(typeof editorHooks.importDraft!=='function')throw new Error('拓展不支持恢复编辑草稿');await editorHooks.importDraft(structuredClone(boot.editorDraft));}send({kind:'registered'});resize();return structuredClone(context);}
   const unwrap=reply=>{if(!reply?.ok)throw Object.assign(new Error(reply?.error?.message||'资源操作失败'),{code:reply?.error?.code});return reply.data;};
   const resources=Object.freeze({
-    async put(file){if(closed)throw new Error('页面已关闭');if(!file||file.size>4*1024*1024||!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type))throw new Error('请选择不超过 4 MiB 的 PNG、JPEG、WebP 或 GIF 图片');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('无法读取图片'));reader.readAsDataURL(file);});return unwrap(await invoke('resource-put',{mime:file.type,data}));},
+    async put(file){if(closed)throw new Error('页面已关闭');if(!file||file.size>4*1024*1024||!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('请选择不超过 4 MiB 的 PNG、JPEG 或 WebP 图片');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('无法读取图片'));reader.readAsDataURL(file);});return unwrap(await invoke('resource-put',{mime:file.type,data}));},
     async get(id){if(!/^[a-f0-9]{64}$/.test(id))throw new Error('图片资源编号无效');if(resourceCache.has(id))return resourceCache.get(id);const loading=(async()=>{const value=unwrap(await invoke('resource-get',{id}));if(closed)throw new Error('页面已关闭');if(resourceBytes+value.size>16*1024*1024)throw new Error('当前题目图片超过 16 MiB 限制');resourceBytes+=value.size;const bytes=Uint8Array.from(atob(value.data),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:value.mime}));resourceUrls.add(url);return {url,mime:value.mime,size:value.size};})();resourceCache.set(id,loading);loading.catch(()=>resourceCache.delete(id));return loading;}
   });
   function content(){
@@ -73,6 +73,7 @@ export function bootstrapV1(boot) {
   if(boot.answerAreasDeclared===true&&boot.api.capabilities.includes('answer-areas')){
     const provider=globalThis.__qfAnswerAreaProvider;
     if(!provider||!['1.0.0','1.1.0','1.2.0','1.3.0','1.3.1','1.3.2','1.4.0','1.4.1'].includes(provider.version))throw new Error('手写答题区组件缺失或版本不兼容');
+    answerAreaModel=provider.model;
     answerAreaService=provider.create({model:provider.model,getContext:()=>context,isDraft:()=>draftMode,resources,resize,tools:boot.answerAreaTools,onRegions:areas=>send({kind:'answer-area-layout',areas}),onSync:()=>invoke('answer-area-sync',{}).then(unwrap),onFocus:focus=>send({kind:'answer-area-focus',focus}),onPan:pointer=>send({kind:'answer-area-pan',pointer}),onDirty:()=>{inputGeneration++;send({kind:'input-dirty',changed:true});}});
   }
   delete globalThis.__qfAnswerAreaProvider;
@@ -80,7 +81,16 @@ export function bootstrapV1(boot) {
     api,
     page:Object.freeze({register,...(boot.api.capabilities.includes('answer-state')?{reportAnswerState:value=>invoke('answer-state',value)}:{})}),
     editor:Object.freeze({register(value){if(context.mode!=='edit')throw new Error('当前页面不是编辑模式');if(typeof value?.getDocument!=='function')throw new TypeError('必须提供 getDocument');editorHooks=value;return register(value);}}),
-    save:value=>invoke('save',value),requestAction:value=>invoke('action',value),
+    save:async value=>{
+      if(value?.purpose==='submit'&&answerAreaService&&typeof captureAnswerSnapshots==='function'){
+        await answerAreaService.flush();const generation=inputGeneration;
+        const answer=await captureAnswerSnapshots(value.data?.answer,{model:answerAreaModel,resources,document,Image});
+        if(closed||inactive)throw new Error('题卡已关闭或暂停，尚未提交');
+        if(generation!==inputGeneration)throw new Error('截图期间答案发生变化，请重新提交；输入已保留');
+        return invoke('save',{...value,data:{...value.data,answer}});
+      }
+      return invoke('save',value);
+    },requestAction:value=>invoke('action',value),
     ai:Object.freeze({grade:(value={})=>invoke('ai-grade',value),getTask:(value={})=>invoke('ai-task',value),retry:(value={})=>invoke('ai-retry',value),confirm:(value={})=>invoke('ai-confirm',value)}),
     ui,resources,...(answerAreaService?{answerAreas:answerAreaService.api}:{}),get content(){return content();}
   });
