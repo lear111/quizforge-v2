@@ -86,6 +86,9 @@ def main():
         if body["status"] == "failed": raise RuntimeError(str(body["error"]))
         return body
 
+    print(json.dumps({"phase":"预热 300 次真实单题提交"},ensure_ascii=False),flush=True)
+    warmup=register("单题预热探针")
+    submit_phase(warmup,upload(warmup),question_ids)
     foreground, background = register("单题延迟探针"), register("后台完成探针")
     results=[]
     for run in range(args.runs):
@@ -97,7 +100,7 @@ def main():
         status, summary, _ = api(bg+"/summary",token=background);require(status,summary)
         status, accepted, _ = api(bg+"/finish", {"requestId":secrets.token_hex(16),"roundId":summary["roundId"],"summaryVersion":summary["summaryVersion"]},background)
         require(status,accepted,202);job=accepted["jobId"]
-        until=time.monotonic()+120
+        until=time.monotonic()+600
         while True:
             before=poll(background,bg,job)
             if before["completed"]>0:break
@@ -115,7 +118,7 @@ def main():
                 "backgroundProgress":[before["completed"],after["completed"]],"errors":0}
         results.append(result)
         print(json.dumps({"run":run+1,"p95Ms":{key:round(percentile(value,.95),3) for key,value in (("baseline",baseline),("during",during),("after",post))},"backgroundProgress":result["backgroundProgress"]}),flush=True)
-    report={"foregroundVus":args.vus,"backgroundWorkers":1,"questionsPerBackgroundJob":300,"warmupSubmitsPerRun":30,"runs":results}
+    report={"foregroundVus":args.vus,"backgroundWorkers":1,"backgroundIntervalMs":250,"questionsPerBackgroundJob":300,"initialWarmupSubmits":300,"warmupSubmitsPerRun":30,"runs":results}
     report["aggregateP95Ms"]={key:round(percentile([v for run in results for v in run[key+"Ms"]],.95),3) for key in ("baseline","during","after")}
     args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report["aggregateP95Ms"]))

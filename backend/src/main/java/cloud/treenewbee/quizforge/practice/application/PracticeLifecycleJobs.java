@@ -45,7 +45,7 @@ public class PracticeLifecycleJobs {
     private final String owner=UUID.randomUUID().toString();
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor(r->{var t=new Thread(r,"practice-lifecycle");t.setDaemon(true);return t;});
     @Value("${qf.practice.jobs.enabled:true}") boolean enabled;
-    @Value("${qf.practice.jobs.interval-ms:25}") long interval;
+    @Value("${qf.practice.jobs.interval-ms:250}") long interval;
 
     public PracticeLifecycleJobs(LifecycleJobMapper jobs,PracticeContextMapper contexts,PracticeLifecycleMapper lifecycle,
             PracticeRoundMapper rounds,QuestionStateMapper states,PracticeReadService reads,PracticeSummaryService summaries,

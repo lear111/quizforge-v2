@@ -552,15 +552,15 @@ SELECT COUNT(*)                                             AS question_count,
 
 用 UPDATE 而不是删除作答/白板行，保留乐观锁高水位。相同 requestId 只返回原任务，不重复构建。完整历史构建只发生在 restart；不是提交、保存或读题的附带工作。
 
-#### V9 生命周期与历史持久化
+#### V10 生命周期与历史持久化
 
 - practice_context 增加 completion_status（active / finishing / completed / archiving）、lifecycle_job_id。草稿使用 context FOR SHARE 检查 active，多个不同题仍可同时保存；阶段转换、提交落库、review/retry、白板沿 context 锁顺序串行化。
-- practice_lifecycle_job 保存用户/题库/context/round、kind、status、总数与进度、租约 owner/until、结果或安全错误。FOR UPDATE SKIP LOCKED 领取，120 秒租约，逐题提交并重新入队；条件 heartbeat/结束写屏蔽旧 owner。默认每 app 一后台线程、25ms 间隔；规则调用不持有事务。
+- practice_lifecycle_job 保存用户/题库/context/round、kind、status、总数与进度、租约 owner/until、结果或安全错误。FOR UPDATE SKIP LOCKED 领取，120 秒租约，逐题提交并重新入队；条件 heartbeat/结束写屏蔽旧 owner。默认每 app 一后台线程、250ms 间隔；规则调用不持有事务。
 - finish 开始立即 phase=finishing，锁作答和重做；逐题保存 score/result/projection，不调用单题 HTTP 保存流程，不额外增加草稿 revision。成功 completed；pending/null 可完成并按 0 汇总。失败 active，已经成功的提交保留。
 - practice_round.history_frozen_at 非空且 deleted_at 为空才属于历史。列表只 SELECT 摘要字段；详情才取 collection_snapshot、practice_round_question.payload、固定拓展 digest。
 - practice_history_annotation 保存 history_id/question_id/user_id、notes JSON、独立 revision、时间。锁所属 round 后校验追加性与 revision，和回执同事务提交。
 - practice_history_asset 保存 history_id/path/blob_sha256；当前题库变动后，历史仍可授权原图片与听力。GC 还须扫描未删除历史的 extension_digest、payload 中作答/截图/白板资源和 annotation。软删除历史排除授权与 GC 引用；删除题库连带删除这些行及后台任务。
-- 状态额外保存 attempt_count、first_correct、grading_source（rule/manual，AI 预留）；每轮重置，retry 不重置，历史只冻结最后状态。V9 对旧 submission_generation 无法还原的次数/首次对错记 NULL，不能把 retry 误算为提交次数。旧历史 snapshotVersion=0 可读取已知题，标明 legacy，不虚构已丢失的未作答题；新历史为 version 1。
+- 状态额外保存 attempt_count、first_correct、grading_source（rule/manual，AI 预留）；每轮重置，retry 不重置，历史只冻结最后状态。V10 对旧 submission_generation 无法还原的次数/首次对错记 NULL，不能把 retry 误算为提交次数。旧历史 snapshotVersion=0 可读取已知题，标明 legacy，不虚构已丢失的未作答题；新历史为 version 1。
 
 ### 5.6 考试到期自动交卷
 

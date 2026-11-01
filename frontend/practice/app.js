@@ -88,7 +88,7 @@ function makeWriteQueue(pane){return createWriteQueue({
       if(active()===pane){renderOutline();updateChrome();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');renderRecovery();}
     },
     onFailed:async(qid,_action,error)=>{
-      if(error.status===409&&pane.view!=='history'){try{const latest=await loadQuestion(pane,qid,{fresh:true});pane.collection.states[qid]=latest.state;if(pane.questionId===qid)pane.payload=latest;if(active()===pane)renderOutline();}catch{/* Keep the failed input locally until a confirmed retry. */}}
+      if(error.status===409&&pane.view!=='history'){try{const latest=await loadQuestion(pane,qid,{fresh:true});pane.collection.states[qid]=latest.state;if(pane.questionId===qid)pane.payload=latest;if(active()===pane)renderOutline();}catch{/* 确认重试前保留本地未保存输入。 */}}
       if(active()===pane){saveStatus('保存失败','error');failure(error);renderRecovery();}
     }
   });}
@@ -325,7 +325,7 @@ async function finishPractice(pane,summary){
       saveStatus(value.pendingCount?'练习已完成，待评分按 0 分计，可人工核对':'练习已完成，再练一次时保存历史');return value;
     }catch(error){
       {
-        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard.update(value);pane.finishRequest=null;if(error.status===409)error.message='练习数据已更新，已刷新分值，请再次确认完成。';}catch{/* Keep the displayed summary until the server can be read. */}
+        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard.update(value);pane.finishRequest=null;if(error.status===409)error.message='练习数据已更新，已刷新分值，请再次确认完成。';}catch{/* 服务器恢复可读之前保留已显示的汇总。 */}
       }
       saveStatus('完成练习未保存','error');throw error;
     }finally{pane.loading=false;pendingWrites--;}
@@ -351,7 +351,7 @@ async function restartPractice(pane,summary){
       pane.scoreSummary=null;pane.restartRequest=null;pane.restartApplied=false;saveStatus('新一轮练习');
     }catch(error){
       if(!pane.restartApplied&&(error.status===409||error.jobFailed)){
-        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard?.update(value);pane.restartRequest=null;if(error.status===409)error.message='练习数据已更新，请重新确认后再开始新一轮。';}catch{/* Keep the displayed summary until the server can be read. */}
+        try{const value=await request(`${collectionPath(pane.kind,pane.id)}/summary`);pane.scoreSummary=value;pane.summaryCard?.update(value);pane.restartRequest=null;if(error.status===409)error.message='练习数据已更新，请重新确认后再开始新一轮。';}catch{/* 服务器恢复可读之前保留已显示的汇总。 */}
       }
       saveStatus(pane.restartApplied?'新一轮已开始，题卡加载失败':'未能开始新一轮','error');throw error;
     }finally{pane.loading=false;pendingWrites--;}

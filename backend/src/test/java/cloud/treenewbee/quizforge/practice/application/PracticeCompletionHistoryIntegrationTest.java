@@ -123,6 +123,7 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
     @Autowired org.springframework.transaction.support.TransactionTemplate quotaTransaction;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @MockitoSpyBean RuleRunnerClient runner;
+    @MockitoSpyBean cloud.treenewbee.quizforge.content.application.ContentPages pages;
     String user;
     record Sample(String collection, QuestionRow question) {}
     final Map<String, Sample> samples = new HashMap<>();
@@ -155,7 +156,7 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
             samples.put(type, new Sample(id,seed.question()));
         });
     }
-    @AfterEach void cleanupViewer() { reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper);
+    @AfterEach void cleanupViewer() { reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper, pages);
         clearInvocations(reads); deleteUser(user); }
     private void deleteUser(String id) {
         jdbc.update("DELETE a FROM practice_history_asset a JOIN practice_round r ON r.id=a.history_id WHERE r.user_id=?",id);
@@ -287,6 +288,17 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
         finally {cookie=ownCookie;deleteUser(other.userId());}
         var deleted=http.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+base(type)+"/history/"+id)).header("Cookie",cookie).header("Origin","https://submit.example.test").DELETE().build(),HttpResponse.BodyHandlers.ofString());
         assertThat(deleted.statusCode()).isEqualTo(204);assertThat(ok(request(base(type)+"/history",null)).path("records")).isEmpty();error(request(base(type)+"/history/"+id,null),404,"NOT_FOUND");
+    }
+    @Test void removedExtensionPageKeepsHistoryAndRegistersReadablePlaceholder() throws Exception {
+        String type="单选题";ok(post(type,"submit","submitted",0,answer(type,true)));
+        complete(begin(type,"finish","finish",ok(summary(type))));
+        String id=complete(begin(type,"restart","archive",ok(summary(type)))).path("historyId").asString();
+        doThrow(new java.io.IOException("removed")).when(pages).page(eq(user),anyString(),anyString());
+        var history=ok(request(base(type)+"/history/"+id,null));
+        var page=history.path("pages").properties().iterator().next().getValue();
+        assertThat(page.path("html").asString()).contains("该资源已被管理员移除");
+        assertThat(page.path("script").asString()).contains("QF.page.register({onLoad", "textContent=value.question.title", "JSON.stringify(value.answer", "JSON.stringify(value.result");
+        assertThat(history.path("questions").get(0).path("payload").path("state").path("status").asString()).isEqualTo("submitted");
     }
     @Test void archiveFailureDoesNotResetAnswersAndNewRequestCanResume() throws Exception {
         String type="单选题";complete(begin(type,"finish","finish",ok(summary(type))));

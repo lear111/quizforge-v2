@@ -69,8 +69,9 @@ public class PracticeHistoryService {
                 } catch(ApiException|java.io.IOException unavailable) {
                     // 管理员移除文件后，仍保留其余冻结信息。
                     var page=json.createObjectNode();page.set("apiVersion",json.valueToTree(Map.of("major",1,"minor",5)));
-                    page.set("extension",payload.path("extension"));page.put("html","<p>该资源已被管理员移除，题目结构、作答与评分仍保留。</p>");
-                    page.put("script","");page.put("style","");pageValues.set(digest,page);
+                    page.set("extension",payload.path("extension"));page.put("html","<p>该资源已被管理员移除，题目结构、作答与评分仍保留。</p><h3 id=title></h3><pre id=answer></pre><pre id=result></pre>");
+                    page.put("script","QF.page.register({onLoad(value){document.getElementById('title').textContent=value.question.title;document.getElementById('answer').textContent=JSON.stringify(value.answer,null,2);document.getElementById('result').textContent=JSON.stringify(value.result,null,2);}});");
+                    page.put("style","pre{white-space:pre-wrap;overflow-wrap:anywhere}");pageValues.set(digest,page);
                 }
             }
             questions.addObject().put("pageKey",digest).set("payload",payload);
