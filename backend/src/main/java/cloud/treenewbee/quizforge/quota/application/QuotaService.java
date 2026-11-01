@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
+import cloud.treenewbee.quizforge.admin.application.AdminAuditService;
 import cloud.treenewbee.quizforge.quota.infrastructure.QuotaMapper;
 import cloud.treenewbee.quizforge.quota.infrastructure.QuotaMapper.Account;
 import cloud.treenewbee.quizforge.identity.infrastructure.UserMapper;
@@ -25,8 +26,9 @@ public class QuotaService {
     private final UserMapper users;
     private final Clock clock;
     private final JsonMapper json;
-    public QuotaService(QuotaMapper mapper, UserMapper users, Clock clock, JsonMapper json) {
-        this.mapper = mapper; this.users = users; this.clock = clock; this.json = json;
+    private final AdminAuditService audit;
+    public QuotaService(QuotaMapper mapper, UserMapper users, Clock clock, JsonMapper json, AdminAuditService audit) {
+        this.mapper = mapper; this.users = users; this.clock = clock; this.json = json; this.audit = audit;
     }
     public record Amount(long usedBytes, long limitBytes, Long overrideBytes) {}
     public record Usage(Amount storage, Amount dailyDownload, LocalDate day, Instant resetsAt) {}
@@ -126,7 +128,19 @@ public class QuotaService {
         var previous = lock(userId);
         mapper.limits(userId, storage, download);
         mapper.audit(Ids.uuidV7(), actor, userId, limitsJson(previous.storageLimit(), previous.dailyDownloadLimit()), limitsJson(storage, download), clock.instant());
+        // 管理员操作统一记入后台审计日志（quota_adjustment 仍保留配额历史）。
+        var detail = new java.util.LinkedHashMap<String, Object>();
+        detail.put("previous", limits(previous.storageLimit(), previous.dailyDownloadLimit()));
+        detail.put("replacement", limits(storage, download));
+        audit.record(actor, "quota", "quota-adjusted", userId, detail);
         return view(mapper.lock(userId).orElseThrow());
+    }
+
+    private static java.util.Map<String, Object> limits(Long storage, Long download) {
+        var value = new java.util.LinkedHashMap<String, Object>();
+        value.put("storageBytes", storage);
+        value.put("dailyDownloadBytes", download);
+        return value;
     }
 
     private String limitsJson(Long storage, Long download) {

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>管理后台 · QuizForge</title>
+  <link rel="icon" href="/quizforge-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script type="module" src="/admin/admin.js"></script>
+</head>
+<body>
+  <div id="qf-admin" class="qa-app">
+    <header class="qa-header">
+      <a class="qa-brand" href="/admin/">
+        <img src="/quizforge-icon.svg" width="34" height="34" alt="">
+        <span>QuizForge<small>管理后台</small></span>
+      </a>
+      <span id="admin-account" class="qa-muted"></span>
+      <nav class="qa-header-links" aria-label="站点">
+        <a href="/practice/">练习空间</a>
+        <a href="/">账号</a>
+      </nav>
+    </header>
+    <div class="qa-layout">
+      <nav id="admin-nav" class="qa-sidebar" aria-label="后台栏目" hidden></nav>
+      <main id="admin-main" class="qa-main" aria-live="polite" tabindex="-1">
+        <p class="qa-muted">正在验证管理员身份…</p>
+      </main>
+    </div>
+    <div id="admin-toast" class="qa-toast" role="status" aria-live="polite" hidden></div>
+  </div>
+  <noscript><p>请启用 JavaScript 后使用管理后台。</p></noscript>
+</body>
+</html>

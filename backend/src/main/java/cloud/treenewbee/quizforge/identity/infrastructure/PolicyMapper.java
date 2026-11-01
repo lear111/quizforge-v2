@@ -2,13 +2,12 @@ package cloud.treenewbee.quizforge.identity.infrastructure;
 
 import java.time.Instant;
 
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
-/** 登录与注册设置（auth_policy，单行）与账号审计（account_audit）。 */
+/** 登录与注册设置（auth_policy，单行）。 */
 @Mapper
 public interface PolicyMapper {
 
@@ -35,11 +34,4 @@ public interface PolicyMapper {
              WHERE id = 1 AND revision = #{revision}
             """)
     int update(@Param("p") PolicyRow next, @Param("revision") long revision, @Param("now") Instant now);
-
-    @Insert("""
-            INSERT INTO account_audit (id, actor_id, target, action, detail, created_at)
-            VALUES (#{id}, #{actorId}, #{target}, #{action}, #{detail}, #{now})
-            """)
-    int audit(@Param("id") String id, @Param("actorId") String actorId, @Param("target") String target,
-              @Param("action") String action, @Param("detail") String detail, @Param("now") Instant now);
 }
