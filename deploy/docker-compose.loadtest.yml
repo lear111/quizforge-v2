@@ -15,6 +15,7 @@ services:
   rule-runner:
     cpus: 1.25
     mem_limit: 1536m
+    networks: [monitoring]
   nginx:
     cpus: 0.25
     mem_limit: 512m
@@ -28,6 +29,9 @@ services:
     volumes:
       - ../loadtest/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    configs:
+      - source: runner-metrics-token
+        target: /etc/prometheus/runner-token
     networks: [monitoring, public]
     cpus: 0.5
     mem_limit: 512m
@@ -67,3 +71,6 @@ networks:
 volumes:
   prometheus-data:
   grafana-data:
+configs:
+  runner-metrics-token:
+    content: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}

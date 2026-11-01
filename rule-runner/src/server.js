@@ -5,8 +5,9 @@ import {WorkerPool} from './pool.js';
 import {loadPackage} from './blobs.js';
 import {failure, LIMITS, RunnerError} from './errors.js';
 import {object} from './validation.js';
+import {OPERATIONS} from './metrics.js';
 
-const operations = new Set(['capabilities', 'validateBank', 'outlineBatch', 'scoreBatch', 'project', 'projectBatch', 'validateAnswer', 'submit', 'review', 'prepareAiGrading']);
+const operations = new Set(OPERATIONS);
 const background = new Set(['capabilities', 'validateBank', 'outlineBatch', 'scoreBatch', 'projectBatch']);
 const hash = token => createHash('sha256').update(token).digest();
 const invalid = () => { throw new RunnerError('INVALID_REQUEST', 'Invalid execution request'); };
@@ -76,6 +77,10 @@ export function createRunner({token, blobDir, poolOptions, logger = record => co
         req.resume(); reply(401, failure('UNAUTHENTICATED', 'Invalid internal token')); return;
       }
       if (req.method === 'GET' && req.url === '/v1/health') { reply(200, {ok: true, protocolVersion: 1}); return; }
+      if (req.method === 'GET' && req.url === '/v1/metrics/prometheus') {
+        res.writeHead(200, {'Content-Type': 'text/plain; version=0.0.4; charset=utf-8', 'Cache-Control': 'no-store'});
+        res.end(pool.metrics.render(pool)); return;
+      }
       if (req.method === 'GET' && req.url === '/v1/metrics') {
         reply(200, {...metrics, workers: pool.workers.size, queueLength: pool.queue.length}); return;
       }

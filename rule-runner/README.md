@@ -12,7 +12,7 @@ QF_RULE_RUNNER_TOKEN=local-secret QF_BLOB_DIR=/data/blobs npm start
 ```
 
 The service listens on port 8090 (`PORT` overrides it). Both environment variables
-are mandatory; startup fails closed without a token. All three endpoints require
+are mandatory; startup fails closed without a token. All four endpoints require
 `X-Internal-Token`, including health and metrics. Compose injects the same token
 into app and runner; its default is for local development. Set a private token
 in deployment configuration before production use. Do not publish this port.
@@ -69,7 +69,9 @@ prototypes are frozen to reject prototype modification. The pool retires workers
 on hook/request timeout, crash, output overflow, 500 served requests, or 60 seconds
 idle. Compose additionally runs as non-root, drops capabilities, disallows new
 privileges, bounds memory/PIDs and disables core dumps. Only app and runner join
-the dedicated `internal:true` network; runner has no external network attachment.
+the dedicated `internal:true` network in the base Compose. The loadtest overlay also
+attaches runner to the internal monitoring network for Prometheus; it never joins
+an external network and its HTTP port is not published.
 
 These are defense layers for **reviewed** extensions, not a claim that vm or
 Node permissions are a complete hostile-code sandbox. See the
@@ -82,6 +84,26 @@ JSON metrics include per-operation counts, sum/max duration, cumulative
 millisecond histogram buckets (10/50/100/500/1000/8000/+Inf), timeout count,
 current workers and waiting queue length. Logs contain only requestId, op,
 12-character digest prefix, elapsedMs and result code; no question/answer data.
+
+`GET /v1/metrics/prometheus` adds Prometheus text format 0.0.4, using the same
+`X-Internal-Token` check. The JSON endpoint is unchanged. No new dependency is
+required; labels are bounded operation names (or `other`) and fixed stop reasons.
+
+| Metric | Meaning |
+| --- | --- |
+| `qf_runner_queue_wait_seconds_bucket/sum/count{op}` | Monotonic time from entering the pool queue to worker assignment. One observation per dispatched request, including immediate assignment. Jobs rejected/expired/closed before assignment have no dispatch observation. |
+| `qf_runner_execution_seconds_bucket/sum/count{op}` | From immediately before worker stdin write to receipt of a complete result frame or active termination. Includes IPC, worker-side serialization and cold worker boot/VM/schema setup; **not** pure hook CPU time. Parent-side input encoding and successful response parsing are excluded. Includes failed/terminated execution, once per dispatched request. |
+| `qf_runner_worker_starts_total` | `spawn()` attempts returning a child handle, including asynchronous startup failure; not a count of ready workers. |
+| `qf_runner_worker_stops_total{reason}` | Retirements, once per worker removed from the pool. Reasons: `lru`, `max_requests`, `timeout` (request or hook), `abnormal_exit` (unexpected exit/start failure/invalid output or excessive stderr), `idle`, `shutdown`, `output_limit`. A later child close event does not double count. |
+| `qf_runner_workers` | Workers registered in the pool, busy plus idle. A removed worker may still be finishing its OS-level SIGKILL exit. |
+| `qf_runner_queue_length` | Requests waiting for assignment, excluding active work and pre-pool body/file loading. |
+
+Histogram bounds in seconds: 0.001/0.005/0.01/0.025/0.05/0.1/0.25/0.5/1/2.5/5/10/30/60/120/+Inf.
+All operation/reason series are initialized to zero. Body reading and blob validation
+occur before these pool timers; they remain included in JSON elapsedMs and Java
+client timing. Separate P95s cannot simply be added to obtain an end-to-end P95.
+Limits, priorities, per-package cap, LRU selection, request/idle timers and responses
+are unchanged. See [loadtest monitoring](../loadtest/README.md) for scraping and panels.
 
 `node --test` exercises real HTTP sockets and real Node worker processes. The
 test-only legacy oracle and all five basic type examples are frozen from
