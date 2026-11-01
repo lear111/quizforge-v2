@@ -1,16 +1,13 @@
 import {test,expect} from '@playwright/test';
 import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {registerByForm} from './accounts.mjs';
 
 async function register(page) {
   await page.goto('/practice/');
   await expect(page).toHaveURL(/\/\?returnTo=/);
   await page.getByRole('tab',{name:'注册',exact:true}).click();
-  await page.locator('#register-email').fill(`frontend-${crypto.randomUUID()}@example.test`);
-  await page.locator('#register-name').fill('界面验证');
-  await page.locator('#register-password').fill('test-password-123');
-  await page.locator('#register-confirm').fill('test-password-123');
-  await page.getByRole('button',{name:'注册并登录',exact:true}).click();
+  await registerByForm(page,'frontend','界面验证');
   await expect(page).toHaveURL(/\/practice\/$/);
 }
 async function openLibrary(page) {

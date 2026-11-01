@@ -46,6 +46,10 @@ qf:
     blob-dir: ${QF_BLOB_DIR:./data/blobs}
   security:
     allowed-origin: ${QF_PUBLIC_ORIGIN:http://localhost:8088}
+  # 匿名认证接口（登录、注册、发送验证码、找回密码）按客户端 IP 共用的每分钟上限（旧平台为 12）。
+  auth:
+    rate-limit:
+      requests-per-minute: ${QF_AUTH_RATE_LIMIT_PER_MINUTE:12}
   # 邮件、短信验证码与人机验证（L4）。密钥只通过环境变量提供，不进入仓库。
   # mode=fake 只用于本机开发与测试（验证码写入日志），且只允许本机或 .test 来源。
   verification:
@@ -54,6 +58,9 @@ qf:
     sms-pepper: ${QF_SMS_CODE_PEPPER:}
     sms-daily-limit: ${QF_SMS_DAILY_LIMIT:100}
     email-daily-limit: ${QF_EMAIL_DAILY_LIMIT:100}
+    # 同一 IP 发送验证码的上限（旧平台：10 分钟 5 次、24 小时 20 次）；只在自动化测试环境中调高。
+    ip-limit-ten-minutes: ${QF_VERIFICATION_IP_LIMIT_10MIN:5}
+    ip-limit-daily: ${QF_VERIFICATION_IP_LIMIT_DAILY:20}
     tencent:
       enabled: ${QF_TENCENT_SES_ENABLED:false}
       secret-id: ${QF_TENCENT_SECRET_ID:}

@@ -152,12 +152,12 @@
           <p id="quota-status" class="quota-note" role="status"></p>
           <button id="quota-refresh" class="text-button" type="button">刷新用量</button>
         </section>
-        <details id="contact-section" class="contact-section">
-          <summary>绑定或更换联系方式</summary>
+        <details id="contact-section" class="contact-section" hidden>
+          <summary id="contact-summary">绑定联系方式</summary>
           <form id="contact-form" novalidate>
             <fieldset>
               <div class="field">
-                <label for="contact-identifier">新的邮箱或手机号</label>
+                <label for="contact-identifier">要绑定的邮箱或手机号</label>
                 <input id="contact-identifier" name="identifier" type="text" inputmode="email" autocomplete="off" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
               </div>
               <div class="field">

@@ -23,8 +23,9 @@ import cloud.treenewbee.quizforge.shared.web.ApiException;
 /**
  * 已登录用户的账号资料、绑定与更换联系方式，以及未登录时的找回密码。
  *
- * <p>绑定 / 更换联系方式固定要求当前密码、目标联系方式的验证码与人机验证，不受登录与注册设置影响
- * （AUTH_POLICY.md）。用户身份只来自登录会话。
+ * <p>绑定联系方式固定要求当前密码、目标联系方式的验证码与人机验证，不受登录与注册设置影响
+ * （AUTH_POLICY.md）。与旧版一致，只能补绑账号缺少的那一种联系方式，已绑定的不能更换
+ * （作者决定，PR #88 D-2）。用户身份只来自登录会话。
  */
 @Service
 public class AccountService {
@@ -65,7 +66,7 @@ public class AccountService {
         return new Profile(user.id(), user.name(), user.email(), phone, user.isAdmin(), unverified);
     }
 
-    // ---------------------------------------------------------------- 绑定与更换联系方式
+    // ---------------------------------------------------------------- 绑定联系方式
 
     public void sendContactCode(String userId, Contact contact, String password, String captchaToken,
                                 String remoteIp) {
@@ -90,14 +91,12 @@ public class AccountService {
             requireBindable(latest, contact);
             Instant now = clock.instant();
             try {
-                if (contact.isEmail()) {
-                    accounts.updateEmail(userId, contact.value(), now);
-                } else if (accounts.findPhone(userId).isPresent()) {
-                    accounts.replacePhone(userId, contact.value(), now);
-                } else {
-                    accounts.insertPhone(userId, contact.value(), now);
-                }
+                // 条件写入：只有该类联系方式仍为空时才绑定，并发绑定时只有一个成功。
+                int bound = contact.isEmail() ? accounts.bindEmail(userId, contact.value(), now)
+                        : accounts.insertPhone(userId, contact.value(), now);
+                if (bound != 1) throw alreadyBound();
             } catch (DuplicateKeyException error) {
+                if (!contact.isEmail() && accounts.findPhone(userId).isPresent()) throw alreadyBound();
                 throw contactTaken();
             }
             accounts.clearUnverified(userId, contact.channel().key());
@@ -118,9 +117,7 @@ public class AccountService {
     private void requireBindable(UserRow user, Contact contact) {
         String current = contact.isEmail() ? user.email()
                 : accounts.findPhone(user.id()).map(AccountMapper.PhoneRow::phone).orElse(null);
-        if (contact.value().equals(current)) {
-            throw new ApiException(HttpStatus.CONFLICT, "CONTACT_UNCHANGED", "这已经是当前账号的联系方式");
-        }
+        if (current != null) throw alreadyBound();
         if (auth.findByContact(contact).isPresent()) throw contactTaken();
     }
 
@@ -153,6 +150,10 @@ public class AccountService {
 
     private static String resetSubject(Optional<UserRow> user) {
         return user.map(AuthService::loginSubject).orElse("none");
+    }
+
+    private static ApiException alreadyBound() {
+        return new ApiException(HttpStatus.CONFLICT, "CONTACT_ALREADY_BOUND", "此类联系方式已绑定，暂不支持换绑");
     }
 
     private static ApiException contactTaken() {

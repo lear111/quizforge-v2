@@ -1,7 +1,10 @@
 package cloud.treenewbee.quizforge;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.mysql.MySQLContainer;
 
 /**
@@ -19,7 +22,9 @@ import org.testcontainers.mysql.MySQLContainer;
         "spring.datasource.hikari.minimum-idle=0",
         "spring.datasource.hikari.maximum-pool-size=4",
         // 测试不发送真实邮件或短信：验证码由 FakeVerification 记录在内存中。
-        "qf.verification.mode=fake"
+        "qf.verification.mode=fake",
+        // 测试从同一 IP 发出大量认证请求；限频本身由 AuthRateLimitIntegrationTest 单独覆盖。
+        "qf.auth.rate-limit.requests-per-minute=100000"
 })
 public abstract class MySqlTestBase {
 
@@ -31,5 +36,17 @@ public abstract class MySqlTestBase {
 
     static {
         MYSQL.start();
+    }
+
+    @Autowired
+    private JdbcTemplate policyJdbc;
+
+    // 上线默认设置要求注册验证码（V10）；集成测试统一从“全部关闭”开始，需要验证的测试自行开启。
+    @BeforeEach
+    void openRegistrationForTests() {
+        policyJdbc.update("""
+                UPDATE auth_policy SET login_code = FALSE, login_captcha = FALSE, registration_code = FALSE,
+                       registration_captcha = FALSE, invitation_required = FALSE WHERE id = 1
+                """);
     }
 }
