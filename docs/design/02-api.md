@@ -107,8 +107,7 @@
 | `GET /api/catalog` | 我的题库列表 | `practice_collection`、`content_bank` | 只返回当前用户的实例；`extensions` 返回空列表，不列出拓展示例 |
 | `GET /api/library/index` | 题库分组视图 | 同上 | |
 | `POST /api/library/import` | `multipart/form-data` 上传 `.qbank`，文件字段为 `file` | `content_*`、`practice_collection` | 未审核拓展不阻止导入；可用性按设计 04 第 6.2 节实时推算。M2 暂不创建私人 catalog_pack，source_pack_id 为 NULL |
-| `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 删除为软删除，不进入回收站流程 |
-| `POST /api/library/export` | 导出为 `.qbank` | `content_*`、`quota_traffic` | 计流量（沿用旧云端规则） |
+| `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 实例软删除并清除作答、历史、笔记和后台任务，释放私人导入配额；不进入回收站流程 |
 | `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；没有进行中的作答时先切换到新版本（FR-10 v1.6） |
 | `GET /api/collections/{kind}/{id}/questions/{qid}` | 读题（投影 + 状态 + 白板 + 版本戳） | `content_question`、`practice_question_state`、`practice_whiteboard` | 投影走缓存（数据库设计 4.2 节） |
 | `GET .../questions/{qid}/stamp` | 只读版本戳 | `practice_question_state` | |
@@ -182,6 +181,21 @@
 `/api/settings/network*`、`/api/settings/development`、`/api/development/*`、`/api/settings/ai*`（本机 AI 配置）、`/api/editor-drafts/*` 与题目编辑接口（`.../editor`、`.../edit`）、`/quizforge-lan-ca.crt`。前端中对应的入口一并删除（ADR-006）。
 
 ---
+
+
+### 练习空间目录管理（L1.7）
+
+依据 FR-11 v1.14 / 设计 04 §6.0，主页“我的题库”是资源库，练习空间只管理练习实例。练习空间不提供导出；资源下载应由“我的题库”返回上传的原始 `.qbank`，本切片不实现资源库与下载接口。现有练习空间上传入口及 `POST /api/library/import` 暂时保留，待资源库功能接入后移走。
+
+目录管理代码位于 `practice.management`；V20 仅新增 `practice_directory_revision` 与 `practice_group`，不保存供重新打包使用的作者文档。现有 `POST /api/library/manage` 路径为前端兼容保留，不代表新增 library 资源模块。
+
+- `GET /api/catalog` 返回 `managementRevision`（当前用户的目录版本）；每个 bank 的 `path` 为稳定的实例 ID，不随显示名称或分组变化。
+- `POST /api/library/manage` 请求：`{kind:"bank",target:"item"|"group",action:"create"|"update"|"delete",path,name,group,revision}`。`revision` 必须为打开管理对话框时的 `managementRevision`。分组支持新建空文件夹；实例不提供 create，单本删除仍走 `DELETE /api/collections/bank/{id}`。
+- 修改实例时 `path` 是实例 ID，`name` 是显示名称（trim 后 1～200 个字符），`group` 为目标分组名，空字符串或 null 为根目录。分组不存在时创建。只修改显示元数据，不改变作者 UUID、题目、作答或历史。
+- 修改分组时 `path` 为原分组名、`name` 为新分组名；新建分组只传 `name`。分组名沿用旧宿主 `library-management.js:folderName`：最长 120 个 UTF-16 单元，非空，不能以点开头、空格或点结尾；禁用 `\ / : * ? " < > |`、U+0000～001F、U+007F～009F；禁用 Windows 设备名（含后缀）和 `bank.json`、`manifest.json`、`development.json`（忽略大小写）。根目录不是可改名/删除的分组。
+- 用户自己的题库空间允许同一 UUID 的多个实例（同组、跨组均可），不同内容版本也不会互相覆盖。相同内容仍复用内容行；同组显示名称重名时导入自动加后缀。资源与实例共存时的配额释放按设计 04 §6.0，由资源库接入时衔接；本切片的过渡上传与删除沿用现有记账服务。实例目录管理不承担资源库或题库广场的 UUID 校验。
+- 同一分组内实例名称忽略大小写比较（保留重音差别），重名返回 409 `NAME_TAKEN`；分组已存在返回 409 `GROUP_EXISTS`；目录版本过期返回 409 `LIBRARY_CONFLICT`，前端提示并刷新目录。
+- 删除分组返回 `{deleted:true,deletedCount,remaining,partial,message}`。每本题库独立事务，部分失败返回 HTTP 200 且 `partial:true`、`remaining>0`；客户端刷新目录版本后可继续删除。已完成的删除不回滚。进行中的完成/归档任务沿用单本删除规则：锁住对应上下文后删除任务及其关联数据，过期工作线程无法重新写入。
 
 ## 3. 设备接口（C-05，保持不变）
 

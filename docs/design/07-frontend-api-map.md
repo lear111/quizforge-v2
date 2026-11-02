@@ -15,7 +15,7 @@
 | 进入练习空间 / 刷新 | GET /api/me | 已实现 | 1（前置认证） | app.js:start；先确认会话，再加载目录 |
 | 账号页 / 退出 | GET /api/me；POST /api/auth/logout | 已实现 | 1（前置认证） | public/auth.js、app.js；退出后回到 / |
 | 我的题库 / 刷新目录 | GET /api/library/index；缺失时 GET /api/catalog | 已实现（本次只读入口） | 1 | shared/online.js、library-index-client.js；两者都缺失时显示明确空状态，不造题库数据 |
-| 导入题库包 | POST /api/library/import，multipart 字段 file | 已实现（PR #43） | 1 | library-transfer.js；128 MiB、成功后重新读目录；响应 collections 用于导入数量提示 |
+| 导入题库包 | POST /api/library/import，multipart 字段 file | 已实现（PR #43） | 1 | library-transfer.js；128 MiB、成功后重新读目录；上传入口暂留，待主页“我的题库”接入后移走 |
 | 选择题库 / 从历史返回 | GET C | 已实现 | 2 | app.js:openCollection / returnToPractice / activateReady；首次打开还会继续请求首题和拓展页面 |
 | 首题 / 切题 / 邻题预取 / 冲突后重读 | GET Q | 已实现 | 3 | app.js:loadQuestion / prefetchAdjacent；命中缓存时带 stamp 条件头 |
 | 题目拓展页面 | GET /api/extensions/{pageId 或 id}/{version}/page | 已实现 | 3 | bridge/extension-pages.js；pageId 为所绑定拓展的审核摘要；同 ID/版本不同摘要分开路由与缓存 |
@@ -39,8 +39,8 @@
 | 历史列表 / 冻结快照 | GET C/history、C/history/{historyId} | 已实现 | L1.4 | app.js、history/history-view.js |
 | 历史追加笔迹 | POST C/history/{historyId}/questions/{qid}/annotations | 已实现 | L1.4 / L1.5 | notes + 独立 revision / requestId；追加笔迹可修改擦除，冻结草稿不可改 |
 | 删除历史 | DELETE C/history/{historyId} | 已实现 | L1.4 | app.js:renderHistoryList；删除后从列表移除 |
-| 题库实例管理 / 分组 | POST /api/library/manage | 未实现 | 其余 | library-management.js；仅保留管理入口，不新增服务端逻辑 |
-| 导出题库 / 分组 | POST /api/library/export | 未实现 | 其余 | library-transfer.js；返回 Blob，失败仍显示友好提示 |
+| 题库实例管理 / 分组 | POST /api/library/manage | 已实现（L1.7） | 其余 | practice.management；显示名称、空分组、移动、分组改名/删除、managementRevision 过期返回 409 |
+| 练习空间导出 | — | 已移除（FR-11 v1.14） | — | 上传、下载最终归主页“我的题库”；下载返回原始文件，不重新打包 |
 | 考试列表 / 开始 | GET / POST C/exams | 未实现 | 其余 | exam/exam-mode.js |
 | 考试状态 / 交卷 / 删除 | GET / POST / DELETE /api/collections/exam/{id}/exam | 未实现 | 其余 | exam-mode.js；状态轮询沿用上游 |
 | 考试题卡页面 | GET /api/collections/exam/{id}/questions/{qid}/page | 未实现 | 其余 | app.js:showQuestion / prefetchAdjacent |

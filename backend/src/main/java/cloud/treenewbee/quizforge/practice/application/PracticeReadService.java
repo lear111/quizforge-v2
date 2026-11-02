@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.practice.application;
 
+import cloud.treenewbee.quizforge.practice.management.PracticeDirectoryMapper;
 import static cloud.treenewbee.quizforge.content.application.ContentPages.notFound;
 
 import java.time.Clock;
@@ -37,6 +38,7 @@ public class PracticeReadService {
     private static final Set<String> RULE_CODES = Set.of("RULE_TIMEOUT", "SCORE_UNAVAILABLE",
             "INVALID_OUTLINE_ITEMS", "INVALID_OUTLINE_STATES", "UNSUPPORTED_API_VERSION", "RULE_REJECTED");
     private final PracticeReadMapper reads;
+    private final PracticeDirectoryMapper directory;
     private final QuestionMapper questions;
     private final BankAvailability availability;
     private final ContentPages pages;
@@ -49,17 +51,21 @@ public class PracticeReadService {
 
     public PracticeReadService(PracticeReadMapper reads, QuestionMapper questions, BankAvailability availability,
             ContentPages pages, RuleRunnerClient runner, ProjectionCache projections, QuestionStamps stamps, Clock clock, JsonMapper json,
-            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews whiteboards) {
+            cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews whiteboards,
+            PracticeDirectoryMapper directory) {
         this.reads = reads; this.questions = questions; this.availability = availability; this.pages = pages;
         this.runner = runner; this.projections = projections; this.stamps = stamps; this.clock = clock; this.json = json;
         this.whiteboards = whiteboards;
+        this.directory = directory;
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Catalog catalog(String userId) {
         List<Bank> banks = reads.collections(userId).stream().map(collection -> new Bank(collection.id(), "bank",
                 collection.title(), collection.groupName(), collection.questionCount(), available(collection.bankId()))).toList();
-        List<String> groups = banks.stream().map(Bank::group).filter(group -> group != null && !group.isBlank()).distinct().toList();
-        return new Catalog(banks, List.of(), Map.of("banks", groups, "extensions", List.of()), true, false);
+        List<String> groups = java.util.stream.Stream.concat(directory.groups(userId).stream(), banks.stream().map(Bank::group))
+                .filter(group -> group != null && !group.isBlank()).distinct().sorted().toList();
+        return new Catalog(banks, List.of(), Map.of("banks", groups, "extensions", List.of()), true, false, directory.revision(userId));
     }
 
     public Overview overview(String userId, String id) {
