@@ -20,6 +20,8 @@ test('real practice finish, frozen history, append-only notes and deletion survi
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
   const open=async()=>{
     await page.goto('/practice/');
+    // 启动时会自动打开首本题库并关闭手机抽屉，等它提交页面后再操作侧栏。
+    await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
     await expect(page.locator('#collection-loading')).toBeHidden();
     if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
     await page.locator(`.library-item[data-item-id="${collection.id}"]`).click();
