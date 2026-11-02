@@ -33,9 +33,17 @@ class LifecycleJobMaintenanceTest {
         var tx = mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(call -> {
             TransactionCallback<?> callback = call.getArgument(0);
-            return callback.doInTransaction(new SimpleTransactionStatus());
+            TransactionSynchronizationManager.setActualTransactionActive(true);
+            try {
+                return callback.doInTransaction(new SimpleTransactionStatus());
+            } finally {
+                TransactionSynchronizationManager.setActualTransactionActive(false);
+            }
         });
-        when(mapper.next(any())).thenReturn(Optional.empty());
+        when(mapper.next(any())).thenAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            return Optional.empty();
+        });
         doAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             return 3;
