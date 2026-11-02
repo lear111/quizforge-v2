@@ -35,7 +35,7 @@ test('the navigation registry has unique ids and every page exports render',asyn
     const source=await readFile(resolve(root,'pages',`${page.load.toString().match(/import\('\.\/([^']+)'\)/)[1]}`),'utf8');
     assert.match(source,/export async function render\(container, context\)/,page.id);
   }
-  assert.deepEqual(ids,['users','authentication','invitations','audit']);
+  assert.deepEqual(ids,['users','authentication','invitations','notifications','audit']);
 });
 
 test('admin pages never write HTML strings into the document',async()=>{
