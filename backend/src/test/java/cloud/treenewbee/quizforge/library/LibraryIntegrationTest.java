@@ -314,7 +314,7 @@ class LibraryIntegrationTest extends MySqlTestBase {
 
     @Test void legacyDuplicateUuidGroupRefusesWholeExportWithSingleBankAdvice() throws Exception {
         var bank = imported(user, "单选题");
-        jdbc.update("INSERT INTO practice_collection (id,user_id,bank_id,title,group_name,created_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP(3))",
+        jdbc.update("INSERT INTO practice_collection (id,user_id,bank_id,title,group_name,source,created_at) VALUES (?,?,?,?,?,JSON_OBJECT(),CURRENT_TIMESTAMP(3))",
                 Ids.uuidV7(), user, bank.bankId(), "已有副本", bank.groupName());
         assertThatThrownBy(() -> exports.export(user, new LibraryExportService.Request(null, bank.groupName())))
                 .isInstanceOfSatisfying(ApiException.class, error -> {
