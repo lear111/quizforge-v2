@@ -122,9 +122,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @Test void importChargesExactExpandedBytesAndDeletingReleasesOnlyThatInstance() throws Exception {
         var user = user(false); var archive = archive();
-        var first = importOne(user, archive);
-        jdbc.update("UPDATE practice_collection SET group_name=NULL WHERE id=? AND user_id=?", first.id(), user.id());
-        var second = importOne(user, archive);
+        var first = importOne(user, archive); var second = importOne(user, archive);
         assertThat(first.bankId()).isEqualTo(second.bankId());
         assertThat(first.id()).isNotEqualTo(second.id());
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(archive.size() * 2);
@@ -174,12 +172,10 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @Test void concurrentImportsCannotExceedSingleInstanceLimit() throws Exception {
         var user = user(false); var admin = user(true); var archive = archive();
-        var otherArchive = archive();
-        assertThat(otherArchive.size()).isEqualTo(archive.size());
         quotas.adjust(admin.id(), user.id(), archive.size(), null);
         var scenario = gate.arm(); var ready = scenario.ready; var release = scenario.release;
         try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
-            var a = workers.submit(() -> attemptImport(user, archive)); var b = workers.submit(() -> attemptImport(user, otherArchive));
+            var a = workers.submit(() -> attemptImport(user, archive)); var b = workers.submit(() -> attemptImport(user, archive));
             try { assertThat(ready.await(15, TimeUnit.SECONDS)).isTrue(); } finally { release.countDown(); }
             var results = List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
             assertThat(results.stream().filter(v -> v.equals("ok")).count()).isEqualTo(1);

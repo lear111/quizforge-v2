@@ -217,9 +217,6 @@ public class ImportService {
 
     private List<ImportedCollection> persist(String userId, String filename, String group, Map<String, Extension> extensions, List<Bank> prepared) {
         library.beginImport(userId, group);
-        for (Bank bank : prepared) {
-            library.checkImportIdentity(userId, group, (String) bank.parsed().bank().get("id"), bank.hash());
-        }
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         // All shared keys are acquired in a consistent order, including partially overlapping packages.
         for (Extension extension : extensions.values().stream().sorted(Comparator.comparing(e -> e.parsed().digest())).toList()) {

@@ -144,8 +144,6 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
     }
 
     @Test void fiveRealTypesImportOpenAndProjectThroughTheOnlyCacheBoundary() throws Exception {
-        // 同一作者 UUID 可以跨分组共存；保留准备数据用于其他读取断言。
-        jdbc.update("UPDATE practice_collection SET group_name=NULL WHERE id=? AND user_id=?", collection, user);
         var imported = imports.importArchive(user, "basic-types.qbank", new ByteArrayInputStream(Files.readAllBytes(sample("basic-types.qbank"))));
         approve(); clearInvocations(runner, cache);
         for (var item : imported) {
@@ -363,7 +361,6 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
     }
 
     @Test void sameIdAndVersionWithDifferentDigestServeTheExactReferencedPage() throws Exception {
-        jdbc.update("UPDATE practice_collection SET group_name=NULL WHERE id=? AND user_id=?", collection, user);
         String original = digest();
         Map<String, byte[]> files = new LinkedHashMap<>();
         try (var zip = new java.util.zip.ZipInputStream(Files.newInputStream(sample("single-choice.qbank")))) {

@@ -190,7 +190,7 @@
 - `POST /api/library/manage` 请求：`{kind:"bank",target:"item"|"group",action:"create"|"update"|"delete",path,name,group,revision}`。`revision` 必须为打开管理对话框时的 `managementRevision`。分组支持新建空文件夹；实例不提供 create，单本删除仍走 `DELETE /api/collections/bank/{id}`。
 - 修改实例时 `path` 是实例 ID，`name` 是显示名称（trim 后 1～200 个字符），`group` 为目标分组名，空字符串或 null 为根目录。分组不存在时创建。只修改显示元数据，不改变作者 UUID、题目、作答或历史。
 - 修改分组时 `path` 为原分组名、`name` 为新分组名；新建分组只传 `name`。分组名沿用旧宿主 `library-management.js:folderName`：最长 120 个 UTF-16 单元，非空，不能以点开头、空格或点结尾；禁用 `\ / : * ? " < > |`、U+0000～001F、U+007F～009F；禁用 Windows 设备名（含后缀）和 `bank.json`、`manifest.json`、`development.json`（忽略大小写）。根目录不是可改名/删除的分组。
-- 同一用户同一分组内（根目录也算一组）作者 UUID 必须唯一，导入或移动冲突返回 409 `DUPLICATE_BANK_UUID`；同一 UUID 可以存在于不同分组，其他用户不受影响。相同 UUID 的其他版本不会被悄悄覆盖，提示走版本更新流程；本切片不实现更新。历史重复实例保留，整组导出遇到重复 UUID 时提示逐本导出。
+- 用户自己的题库空间允许同一 UUID 的多个实例（同组、跨组均可），不同内容版本也不会互相覆盖。相同内容仍复用内容行，各实例分别计入私人题库存储；同组显示名称重名时导入自动加后缀。格式 4 单个包内仍要求 UUID 唯一，整组导出遇到重复 UUID 时拒绝并提示逐本导出，不修改作者 UUID。
 - 同一分组内实例名称忽略大小写比较（保留重音差别），重名返回 409 `NAME_TAKEN`；分组已存在返回 409 `GROUP_EXISTS`；目录版本过期返回 409 `LIBRARY_CONFLICT`，前端提示并刷新目录。
 - 删除分组返回 `{deleted:true,deletedCount,remaining,partial,message}`。每本题库独立事务，部分失败返回 HTTP 200 且 `partial:true`、`remaining>0`；客户端刷新目录版本后可继续删除。已完成的删除不回滚。进行中的完成/归档任务沿用单本删除规则：锁住对应上下文后删除任务及其关联数据，过期工作线程无法重新写入。
 - `POST /api/library/export` 请求 `{bank:实例ID}` 或 `{group:分组名}`，二选一；空分组返回 422 `EMPTY_GROUP`。只读取当前用户仍存在的实例，广场来源实例也可导出。

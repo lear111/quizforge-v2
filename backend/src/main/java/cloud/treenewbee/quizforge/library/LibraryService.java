@@ -39,9 +39,6 @@ public class LibraryService {
                 var item = mapper.item(user, change.path()).orElseThrow(LibraryService::notFound);
                 String title = LibraryNames.title(change.name()), group = LibraryNames.group(change.group());
                 if (!title.equals(item.title()) || !Objects.equals(group, item.groupName())) unique(user, item.id(), group, title);
-                if (!Objects.equals(group, item.groupName()) && mapper.duplicateUuid(user, item.id(), group, item.bankId()) > 0) {
-                    throw duplicateUuid("目标分组已有相同 UUID 的题库");
-                }
                 if (group != null) mapper.addGroup(user, group);
                 changed(mapper.update(user, item.id(), title, group));
             } else {
@@ -82,17 +79,6 @@ public class LibraryService {
             candidate = title.substring(0, title.offsetByCodePoints(0, keep)) + suffix;
         }
         return candidate;
-    }
-
-    public void checkImportIdentity(String user, String group, String uuid, String hash) {
-        mapper.conflictingImport(user, group, uuid, java.util.HexFormat.of().parseHex(hash)).ifPresent(existing -> {
-            throw duplicateUuid(existing.equalsIgnoreCase(hash) ? "此分组已存在该题库" :
-                    "此分组已有相同 UUID 的其他版本，请使用版本更新流程或导入到其他分组");
-        });
-    }
-
-    private static ApiException duplicateUuid(String message) {
-        return new ApiException(HttpStatus.CONFLICT, "DUPLICATE_BANK_UUID", message);
     }
 
     public void deleteOne(String user, String id) {

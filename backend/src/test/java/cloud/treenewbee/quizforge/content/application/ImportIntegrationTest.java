@@ -203,8 +203,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForList("SELECT source->>'$.filename' FROM practice_collection", String.class)).containsOnly("test.qbank");
         assertThat(first.body()).doesNotContain("correctOptionId", "answerAndExplanation");
         for (var collection : collections) assertThat(collection.path("available").asBoolean()).isFalse();
-        // 同一分组的 UUID 唯一；跨用户仍复用共享内容并产生独立实例。
-        var second = upload(cookie(), archive);
+        var second = upload(cookie, archive);
         assertThat(second.statusCode()).isEqualTo(200);
         assertThat(count("content_bank")).isEqualTo(5);
         assertThat(count("content_question")).isEqualTo(5);
@@ -390,13 +389,13 @@ class ImportIntegrationTest extends MySqlTestBase {
     @Test
     void importSlotsRejectImmediatelyAndRecoverAfterRepeatedFullRejections() throws Exception {
         byte[] archive = archive(List.of("单选题"), "bank");
-        String cookie = cookie(), secondCookie = cookie(), thirdCookie = cookie(), fourthCookie = cookie();
+        String cookie = cookie();
         CountDownLatch entered = new CountDownLatch(2), release = new CountDownLatch(1);
         doAnswer(call -> { entered.countDown(); assertThat(release.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
                 .when(runner).execute(anyString(), any(), anyMap());
         try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = threads.submit(() -> upload(cookie, archive));
-            var second = threads.submit(() -> upload(secondCookie, archive));
+            var second = threads.submit(() -> upload(cookie, archive));
             try {
                 assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
                 for (int i=0; i<6; i++) {
@@ -409,8 +408,8 @@ class ImportIntegrationTest extends MySqlTestBase {
             CountDownLatch recovered = new CountDownLatch(2), finish = new CountDownLatch(1);
             doAnswer(call -> { recovered.countDown(); assertThat(finish.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
                     .when(runner).execute(anyString(), any(), anyMap());
-            var third = threads.submit(() -> upload(thirdCookie, archive));
-            var fourth = threads.submit(() -> upload(fourthCookie, archive));
+            var third = threads.submit(() -> upload(cookie, archive));
+            var fourth = threads.submit(() -> upload(cookie, archive));
             try {
                 assertThat(recovered.await(10, TimeUnit.SECONDS)).isTrue();
                 assertError(threads.submit(() -> upload(cookie, archive)).get(2, TimeUnit.SECONDS), 503, "IMPORT_BUSY");

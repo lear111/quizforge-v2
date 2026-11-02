@@ -50,27 +50,6 @@ public interface LibraryMapper {
     int duplicate(@Param("userId") String userId, @Param("exceptId") String exceptId,
             @Param("group") String group, @Param("title") String title);
 
-    @Select("""
-            SELECT HEX(b.content_sha256) FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
-              LEFT JOIN content_bank_document d ON d.bank_id = b.id
-            WHERE c.user_id = #{userId} AND c.deleted_at IS NULL AND BINARY c.group_name <=> BINARY #{group}
-              AND (d.author_json->>'$.id' = #{uuid} OR b.content_sha256 = #{hash}) LIMIT 1
-            """)
-    Optional<String> conflictingImport(@Param("userId") String userId, @Param("group") String group,
-            @Param("uuid") String uuid, @Param("hash") byte[] hash);
-
-    @Select("""
-            SELECT COUNT(*) FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
-              JOIN content_bank target ON target.id = #{bankId}
-              LEFT JOIN content_bank_document d ON d.bank_id = b.id
-              LEFT JOIN content_bank_document td ON td.bank_id = target.id
-            WHERE c.user_id = #{userId} AND c.deleted_at IS NULL AND c.id != #{exceptId}
-              AND BINARY c.group_name <=> BINARY #{group}
-              AND (b.id = target.id OR d.author_json->>'$.id' = td.author_json->>'$.id')
-            """)
-    int duplicateUuid(@Param("userId") String userId, @Param("exceptId") String exceptId,
-            @Param("group") String group, @Param("bankId") String bankId);
-
     @Update("""
             UPDATE practice_collection SET title = #{title}, group_name = #{group}
             WHERE user_id = #{userId} AND id = #{id} AND deleted_at IS NULL

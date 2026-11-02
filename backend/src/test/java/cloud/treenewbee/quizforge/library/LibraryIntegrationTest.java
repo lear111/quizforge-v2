@@ -112,32 +112,31 @@ class LibraryIntegrationTest extends MySqlTestBase {
         assertThat(result.title()).isEqualTo("单选题（2）");
     }
 
-    @Test void uuidIsUniqueWithinGroupButCanExistAcrossGroupsAndAfterDeletion() throws Exception {
+    @Test void sameUuidCanBeImportedAndMovedWithinOneGroupAndAcrossGroups() throws Exception {
         var first = imported(user, "单选题");
-        assertThatThrownBy(() -> imported(user, "单选题")).isInstanceOfSatisfying(ApiException.class,
-                error -> assertThat(error.code()).isEqualTo("DUPLICATE_BANK_UUID"));
+        var duplicate = imported(user, "单选题");
+        assertThat(duplicate.title()).isEqualTo("单选题（2）");
+        assertThat(duplicate.bankId()).isEqualTo(first.bankId());
         update(user, first.id(), "根目录实例", null);
         var second = imported(user, "单选题");
         assertThat(second.bankId()).isEqualTo(first.bankId());
-        assertThatThrownBy(() -> update(user, first.id(), "另一显示名称", second.groupName()))
-                .isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.code()).isEqualTo("DUPLICATE_BANK_UUID"));
+        update(user, first.id(), "另一显示名称", second.groupName());
+        assertThat(mapper.item(user, first.id()).orElseThrow().groupName()).isEqualTo(second.groupName());
         library.deleteOne(user, second.id());
         assertThat(imported(user, "单选题").id()).isNotEqualTo(second.id());
     }
 
-    @Test void sameUuidDifferentVersionCannotEnterSameGroup() throws Exception {
-        imported(user, "单选题");
+    @Test void sameUuidDifferentVersionsRemainIndependentInstancesInOneGroup() throws Exception {
+        var first = imported(user, "单选题");
         var files = ImportArchives.files(List.of("单选题"), "bank");
         ImportArchives.edit(files, ImportArchives.bank("单选题") + "/bank.json", bank -> bank.put("description", "作者的新版本"));
-        assertThatThrownBy(() -> imports.importArchive(user, "new.qbank", new ByteArrayInputStream(ImportArchives.zip(files))))
-                .isInstanceOfSatisfying(ApiException.class, error -> {
-                    assertThat(error.code()).isEqualTo("DUPLICATE_BANK_UUID");
-                    assertThat(error.getMessage()).contains("其他版本");
-                });
-        assertThat(mapper.items(user)).hasSize(1);
+        var second = imports.importArchive(user, "new.qbank", new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        assertThat(second.bankId()).isNotEqualTo(first.bankId());
+        assertThat(second.title()).isEqualTo("单选题（2）");
+        assertThat(mapper.items(user)).hasSize(2);
     }
 
-    @Test void concurrentDuplicateImportsHaveOneWinnerWithoutExtraInstanceOrCharge() throws Exception {
+    @Test void concurrentDuplicateImportsCreateTwoNamedInstancesWithSeparateCharges() throws Exception {
         byte[] archive = ImportArchives.zip(ImportArchives.files(List.of("单选题"), "bank"));
         CountDownLatch ready = new CountDownLatch(2), start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
@@ -153,10 +152,11 @@ class LibraryIntegrationTest extends MySqlTestBase {
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
             assertThat(List.of(futures.get(0).get(90, TimeUnit.SECONDS), futures.get(1).get(90, TimeUnit.SECONDS)))
-                    .containsExactlyInAnyOrder("ok", "DUPLICATE_BANK_UUID");
+                    .containsExactly("ok", "ok");
         }
-        assertThat(mapper.items(user)).hasSize(1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=?", Integer.class, user)).isEqualTo(1);
+        assertThat(mapper.items(user)).extracting(LibraryMapper.Item::title).containsExactlyInAnyOrder("单选题", "单选题（2）");
+        assertThat(mapper.items(user)).extracting(LibraryMapper.Item::bankId).containsOnly(mapper.items(user).getFirst().bankId());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=?", Integer.class, user)).isEqualTo(2);
     }
 
     @Test void concurrentRenameAndMoveUsingSameVersionHaveExactlyOneWinner() throws Exception {
