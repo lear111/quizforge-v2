@@ -27,11 +27,13 @@ public interface ExtensionReviewMapper {
             """)
     Optional<ExtensionReviewRow> findByDigest(@Param("digest") byte[] digest);
 
-    /** 导入时登记未知的拓展摘要；已有记录（任何状态）保持不变。 */
+    /**
+     * 导入时登记未知的拓展摘要；已有记录（任何状态）保持不变。用 INSERT IGNORE（与 content_extension_package 相同）：
+     * 记录已存在时只加共享锁，并发导入同一拓展不会互相等待；ON DUPLICATE KEY UPDATE 即使不改值也会加排他锁。
+     */
     @Insert("""
-            INSERT INTO admin_extension_review (digest, extension_id, version, status, created_at)
+            INSERT IGNORE INTO admin_extension_review (digest, extension_id, version, status, created_at)
             VALUES (#{digest}, #{extensionId}, #{version}, 'pending', #{now})
-            ON DUPLICATE KEY UPDATE digest = digest
             """)
     int registerPending(@Param("digest") byte[] digest, @Param("extensionId") String extensionId,
                         @Param("version") String version, @Param("now") Instant now);
