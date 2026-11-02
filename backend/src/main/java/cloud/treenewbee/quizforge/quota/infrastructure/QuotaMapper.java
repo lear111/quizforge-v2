@@ -59,4 +59,8 @@ public interface QuotaMapper {
             """)
     int audit(@Param("id") String id, @Param("actor") String actor, @Param("userId") String userId,
               @Param("previous") String previous, @Param("next") String next, @Param("now") Instant now);
+
+    /** 全站存储总用量（后台概况）。 */
+    @Select("SELECT COALESCE(SUM(storage_used), 0) FROM quota_account")
+    long totalStorageUsed();
 }
