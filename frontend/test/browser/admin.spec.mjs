@@ -25,6 +25,8 @@ test('administrators manage users, invitations and see the audit log; others see
   await expect(memberPage.locator('#admin-nav')).toBeHidden();
   await expect(memberPage.locator('.qa-table')).toHaveCount(0);
 
+  // 新 Compose 中没有其他活跃用户，先上报心跳再断言在线人数。
+  expect((await page.request.post('/api/activity',{headers:{Origin:admin.origin},data:{kind:'heartbeat'}})).status()).toBe(204);
   await page.goto('/admin/');
   await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','题库审核','拓展审核','站内通知','兑换码','AI 服务','操作日志']);
   // 默认栏目是概况：用户总数、近 7 天新注册、当前在线、存储总用量。

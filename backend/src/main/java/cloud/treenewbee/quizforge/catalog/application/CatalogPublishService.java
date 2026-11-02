@@ -115,7 +115,7 @@ public class CatalogPublishService {
         } catch (IOException error) {
             throw new UncheckedIOException("无法保存题库文件", error);
         }
-        return imports.ingest(archive, ingested -> {
+        return imports.ingest(archive, group -> { }, ingested -> {
             String packId = existingPack;
             int revision;
             Instant now = ingested.now();

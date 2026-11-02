@@ -1,6 +1,7 @@
 package cloud.treenewbee.quizforge.content.application;
 
 import cloud.treenewbee.quizforge.admin.application.ExtensionReviewService;
+import cloud.treenewbee.quizforge.practice.management.PracticeDirectoryService;
 import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
 import cloud.treenewbee.quizforge.content.archive.QbankArchiveReader;
@@ -33,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,18 +64,20 @@ public class ImportService {
     private final Path temporaryDirectory;
     private final QuotaService quotas;
     private final ExtensionReviewService reviews;
+    private final PracticeDirectoryService directory;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
             BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
             BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
             @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
-            QuotaService quotas, ExtensionReviewService reviews) {
+            QuotaService quotas, ExtensionReviewService reviews, PracticeDirectoryService directory) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
         this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
         this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
         this.temporaryDirectory = Path.of(temporaryDirectory);
         this.quotas = quotas;
         this.reviews = reviews;
+        this.directory = directory;
     }
 
     /** 导入后的一本题库：bankUuid 为 bank.json 中的 UUID（小写），bankId 为共享内容 content_bank.id。 */
@@ -95,7 +99,8 @@ public class ImportService {
     public List<ImportedCollection> importArchive(String userId, String filename, InputStream upload) {
         Path temporary = spool(upload);
         try {
-            return ingest(temporary, ingested -> createCollections(userId, filename, ingested));
+            return ingest(temporary, group -> directory.beginImport(userId, group),
+                    ingested -> createCollections(userId, filename, ingested));
         } finally { delete(temporary); }
     }
 
@@ -132,8 +137,10 @@ public class ImportService {
     /**
      * 解析、校验并存储一个 .qbank（私人导入与题库广场共用，设计 04 第 6.1 节）：相同内容只存一份，
      * 未知的拓展摘要登记为待审核。解析与规则调用在事务外完成；存储与 {@code sameTransaction} 在同一个事务中执行。
+     * {@code beforeStore} 在事务开始、写入任何内容之前执行（参数为包的分组名），用于先锁住调用方的行，保持加锁顺序
+     * （私人导入先锁用户的练习空间目录）。
      */
-    public <T> T ingest(Path archive, Function<Ingested, T> sameTransaction) {
+    public <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
         QbankPackageParser parser = new QbankPackageParser(blobs::put);
         Map<String, Long> fileSizes = new LinkedHashMap<>();
         QbankArchiveReader.read(archive, ArchiveLimits.DEFAULT, (path, bytes) -> {
@@ -151,7 +158,10 @@ public class ImportService {
             extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
         }
         List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
-        return transactions.execute(status -> sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared)));
+        return transactions.execute(status -> {
+            beforeStore.accept(parsed.manifest().group());
+            return sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared));
+        });
     }
 
     @SuppressWarnings("unchecked")
@@ -301,15 +311,15 @@ public class ImportService {
     private List<ImportedCollection> createCollections(String userId, String filename, Ingested ingested) {
         List<ImportedCollection> result = new ArrayList<>();
         for (StoredBank bank : ingested.banks()) {
-            String id = Ids.uuidV7();
-            collections.insert(new PracticeCollectionRow(id, userId, bank.bankId(), bank.title(), ingested.group(),
+            String id = Ids.uuidV7(), title = directory.importTitle(userId, bank.title(), ingested.group());
+            collections.insert(new PracticeCollectionRow(id, userId, bank.bankId(), title, ingested.group(),
                     encode(Map.of("type", "upload", "filename", filename)), null, null, bank.bankUuid(), null, "current",
                     ingested.now(), null));
             quotas.setStorage(userId, "import", id, id, bank.logicalBytes());
             List<ImportWarning> warnings = bank.omittedIds().isEmpty() ? List.of() : List.of(new ImportWarning(
                     "QUESTIONS_NOT_IN_OUTLINE", bank.omittedIds().size() + " 道题未出现在大纲中，不会显示",
                     bank.omittedIds().size(), bank.omittedIds()));
-            result.add(new ImportedCollection(id, bank.bankId(), bank.title(), ingested.group(),
+            result.add(new ImportedCollection(id, bank.bankId(), title, ingested.group(),
                     availability.isAvailable(bank.bankId()), warnings));
         }
         return List.copyOf(result);

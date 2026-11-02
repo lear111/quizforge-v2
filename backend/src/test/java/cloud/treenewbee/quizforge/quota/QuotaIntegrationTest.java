@@ -359,7 +359,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         void clear() { var old = scenario; scenario = null; if(old != null)old.release.countDown(); }
         @Override public Object intercept(org.apache.ibatis.plugin.Invocation call) throws Throwable {
             var current = scenario;
-            if (current != null && ((org.apache.ibatis.mapping.MappedStatement)call.getArgs()[0]).getId().endsWith(".BankMapper.insert")) {
+            if (current != null && ((org.apache.ibatis.mapping.MappedStatement)call.getArgs()[0]).getId().endsWith(".PracticeDirectoryMapper.initialize")) {
                 assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
                 var connection = ((org.apache.ibatis.executor.Executor)call.getTarget()).getTransaction().getConnection();
                 try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT CONNECTION_ID()")) {
