@@ -146,7 +146,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     if (focus) penButton.focus({ preventScroll: true });
   }
   function nextStrokeId() { return `ink-${Date.now().toString(36)}-${(++strokeSequence).toString(36)}-${Math.random().toString(36).slice(2,8)}`; }
-  function selectedStrokes() { const ids = new Set(selectedIds); return model.strokes.filter(stroke => ids.has(stroke.id)); }
+  function selectedStrokes() { const ids = new Set(selectedIds); return model.editableStrokes.filter(stroke => ids.has(stroke.id)); }
   function selectionBounds() { return strokeBounds(selectedStrokes()); }
   function notifyInteraction(active) {
     if (interaction === active) return;
@@ -185,7 +185,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
       expandIcon = nextIcon; expandButton.innerHTML = nextIcon;
       expandButton.setAttribute('aria-label', `展开白板工具（当前：${TOOL_LABELS[tool]}）`);
     }
-    selectedIds = selectedIds.filter(id => model.strokes.some(stroke => stroke.id === id));
+    selectedIds = selectedIds.filter(id => !model.isProtectedStroke(id) && model.strokes.some(stroke => stroke.id === id));
     selectionActions.hidden = readOnly || mode !== 'draft' || tool !== 'select-ink' || !selectedIds.length || !!gesture;
     select('[data-control="selection-count"]').textContent = `${selectedIds.length} 笔 · 拖动选区可移动`;
   }
@@ -596,7 +596,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
       try {
         if (!readOnly && active?.kind === 'ink' && active.stroke.points.length) changed = model.appendStroke(active.stroke);
         else if (!readOnly && active?.kind === 'erase') changed = model.eraseAlong(active.points, active.radius);
-        else if (!readOnly && active?.kind === 'box') { selectedIds = enclosedStrokes(model.strokes,rectangle(active.from,active.to)); if (!selectedIds.length) report('框内没有完整笔迹，请扩大选区。'); }
+        else if (!readOnly && active?.kind === 'box') { selectedIds = enclosedStrokes(model.editableStrokes,rectangle(active.from,active.to)); if (!selectedIds.length) report('框内没有完整笔迹，请扩大选区。'); }
         else if (!readOnly && active?.kind === 'move-selection') changed = model.editStrokes(translateStrokes(model.strokes,selectedIds,active.dx,active.dy));
         const camera = draftCamera();
         changed ||= !!cameraBefore && (camera.x !== cameraBefore.x || camera.y !== cameraBefore.y || camera.zoom !== cameraBefore.zoom);

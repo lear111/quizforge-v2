@@ -32,6 +32,7 @@ test('the active phase follows submission or history without a layer selector',(
 test('saved notes remain editable while frozen draft ink survives erase, move and undo',()=>{
   const value=board(),model=new WhiteboardModel(layerDocument(value,'notes'));
   model.protectStrokes(protectedInk(value,'notes'));
+  assert.deepEqual(model.editableStrokes.map(s=>s.id),['note']);
   model.editStrokes(model.strokes.map(s=>({...s,width:8})));
   assert.equal(model.strokes.find(s=>s.id==='draft').width,3);
   assert.equal(model.strokes.find(s=>s.id==='note').width,8);
