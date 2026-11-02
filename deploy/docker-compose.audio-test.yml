@@ -16,4 +16,4 @@ services:
       retries: 30
 networks:
   audio-fixture:
-    internal: true
+    driver: bridge

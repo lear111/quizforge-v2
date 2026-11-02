@@ -10,9 +10,12 @@ test.beforeEach(async({page})=>{
   test.setTimeout(180000);
   // 观察真实 HTMLAudioElement；不替换下载、解码和播放行为。
   await page.addInitScript(()=>{
-    const NativeAudio=window.Audio;window.__qfAudio=[];
-    window.Audio=function(...args){const audio=new NativeAudio(...args);window.__qfAudio.push(audio);return audio;};
-    window.Audio.prototype=NativeAudio.prototype;
+    if(window!==window.top)return;
+    window.__qfAudio=[];const nativeLoad=HTMLMediaElement.prototype.load;
+    HTMLMediaElement.prototype.load=function(...args){
+      if(this instanceof HTMLAudioElement&&!window.__qfAudio.includes(this))window.__qfAudio.push(this);
+      return Reflect.apply(nativeLoad,this,args);
+    };
   });
 });
 
@@ -60,8 +63,10 @@ test('HTTPS audio downloads anonymously in full, reports progress and cancels on
   const requests=await (await f.control('requests')).json();
   expect(requests.find(r=>r.path==='/audio/good.wav')).toEqual({path:'/audio/good.wav',cookie:false,referrer:false,authorization:false});
   const frame=page.frameLocator('.question-pane:not([hidden]):not([inert]) iframe.question-frame');
-  expect(await frame.locator('body').evaluate(()=>JSON.stringify(window.QF_PREVIEW))).not.toContain('audio.qf.test');
+  expect(await page.locator('.question-pane:not([hidden]):not([inert]) iframe.question-frame').getAttribute('srcdoc')).not.toContain('audio.qf.test');
   expect(await frame.locator('body').evaluate(async url=>{try{await fetch(url);return false;}catch{return true;}},process.env.QF_AUDIO_TEST_URL+'/health')).toBe(true);
+  const directory=resolve('../.artifacts/local/listening-url/screenshots');await mkdir(directory,{recursive:true});
+  await page.screenshot({path:resolve(directory,`audio-${info.project.name}.png`),fullPage:true});
   await f.select('gated-wav');
   await expect(f.root.locator('.qfl-status')).toContainText(/正在下载网络音频 [1-9]/);
   expect(await page.evaluate(()=>window.__qfAudio.at(-1).getAttribute('src'))).toBeFalsy();
@@ -75,9 +80,6 @@ test('HTTPS audio downloads anonymously in full, reports progress and cancels on
   await expect(f.root.locator('.qfl-status')).toContainText('正在下载网络音频');
   const closed=page.waitForEvent('requestfailed',{predicate:r=>r.url().includes('/audio/gated.wav')});
   await page.locator('#next').click();await expect(f.root).toBeHidden();await closed;await f.control('release');
-  await f.open();await f.expand();await f.ready();
-  const directory=resolve('../.artifacts/local/listening-url/screenshots');await mkdir(directory,{recursive:true});
-  await page.screenshot({path:resolve(directory,`audio-${info.project.name}.png`),fullPage:true});
 });
 
 test('HTTPS audio distinguishes access, CORS, type and both size limits; retry and unknown length work',async({page})=>{

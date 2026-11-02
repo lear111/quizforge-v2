@@ -22,7 +22,7 @@
 | 富文本静态依赖 | GET /api/sdk/{id}/{version} | 已实现 | 3 | app.js:prepareAssets、bridge/page-assets.js；固定组件的源码与构建产物位于 /shared/ |
 | 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 已实现（仅组件读取） | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
-| 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
+| 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | 本地 file：HEAD 鉴权，audio.src 同源 GET / Range；网络 url：宿主匿名完整下载为 Blob，64 MiB 上限，不经过后端 |
 <<<<<<< HEAD
 | 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 / L1.6 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；可带 data.answerState；不调用规则或投影；白名单进度与草稿、回执同事务写入；返回状态/版本增量并保留已加载投影；非声明拓展小题未知；保留失败输入与 409 恢复 |
 | 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为所选层；由 features.whiteboard 控制 |
@@ -67,7 +67,7 @@ F-01 中另有 `GET Q/stamp`；这份上游快照当前通过 GET Q 的条件头
 - stamp 的 contentVersion/packageVersion 是进程私钥 HMAC 版本戳，不暴露含答案的原始内容摘要；重启后自动失配重读。合法匹配头返回 unchanged/stamp，跳过投影；缺少/非法字段返回 400 VALIDATION_FAILED。可用性先于短响应校验，撤销审核后不能通过旧 stamp 绕过。
 - extension/type 包含 id/version/name/pageId；pageId 使用确切审核摘要。页面响应兼容旧 apiVersion/html/script/style/dependencies/contentApi/assets。答题区组件通过共同的 page-assets 适配加载受保护的 quizforge.answer-area/1.4.1 SDK；旧冻结页面自带组件时保持原样。
 - SDK JSON 在 frontend 构建时由固定的组件源码生成，不提交构建产物；后端复核用户的可用题库引用，Nginx internal 路径发送。题库图片、听力同样先鉴权再 X-Accel-Redirect，blobs 在 Nginx 只读挂载；所有响应 private/no-store，以便下一次请求重新检查撤销状态。公开路径不能绕过 internal 限制。
-- 题库听力材料只公开 id/title/revision，隐藏存储路径；GET/HEAD 发送音频，Range 由 Nginx 处理。
+- 题库听力材料公开 id/title/revision，本地 file 隐藏存储路径，GET/HEAD 经鉴权后由 Nginx 处理 Range；网络材料额外向宿主公开原始 url，由宿主匿名下载（credentials omit / no-referrer），完整读取并检查 64 MiB 上限后使用 Blob 播放。拓展 iframe 只收到 materialId，不收到地址；网络材料不提供后端代理。
 - 未提交题目 canSave=true、canSubmit=true；已提交题目两项均为 false。当前轮次 in_progress 的已提交题可重做；声明 manual-review 的拓展可人工评分，completed 轮次仍允许改分、禁止重做。canAiGrade / canWhiteboard=false。概览 readOnly 按轮次阶段决定：active 可写、finishing/completed/archiving 只读；单题能力仍按状态限制。考试、审核流程与完整练习限流待后续切片。
 
 ## 切片 4：草稿 HTTP 与回执
@@ -113,6 +113,6 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 
 ### L1.3 / L1.4 补充
 
-- 历史只使用冻结 features/题序/分组；与当前题库改名、更新及可用性无关。听力改用历史专属路径。
+- 历史只使用冻结 features/题序/分组；与当前题库改名、更新及可用性无关。本地听力改用历史专属路径；网络听力使用冻结的原始 url，并提示“网络音频，内容可能已变化”。
 - 条件读题 stamp 增加 practicePhase，完成轮次的未作答题不会在新一轮误用旧只读能力。
 - 后台一次占用一个 runner 名额，priority=background，默认 Java 舱壁 8 中为前台保留 4 个；前台仍按原来的超时、限流、重试规则执行。
