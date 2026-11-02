@@ -22,6 +22,10 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
     await expect(target.locator('#library-list')).toBeVisible();
   };
   const row = target => target.locator('.library-row').filter({has: target.locator(`.library-item[data-item-id="${bank.id}"]`)});
+  const edit = async (target, title) => {
+    await showLibrary(target);
+    await row(target).getByRole('button', {name: `编辑 ${title}`, exact: true}).click();
+  };
   const save = async target => {
     const saved = target.waitForResponse(result => result.url().endsWith('/api/library/manage') && result.request().method() === 'POST');
     await target.locator('#library-manage-confirm').click();
@@ -33,7 +37,7 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   expect((await save(page)).status()).toBe(200);
   await expect(page.locator('#library-manage-dialog')).not.toBeVisible();
   await expect(page.locator('[data-extension-group="新文件夹"]')).toBeVisible();
-  await row(page).getByRole('button', {name: `编辑 ${bank.title}`, exact: true}).click();
+  await edit(page, bank.title);
   await page.locator('#library-manage-name').fill('我的显示名称');
   await page.locator('#library-manage-group').selectOption('新文件夹');
   expect((await save(page)).status()).toBe(200);
@@ -43,8 +47,8 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   const second = await context.newPage();
   await second.goto('/practice/');
   await showLibrary(second);
-  await row(second).getByRole('button', {name: '编辑 我的显示名称', exact: true}).click();
-  await row(page).getByRole('button', {name: '编辑 我的显示名称', exact: true}).click();
+  await edit(second, '我的显示名称');
+  await edit(page, '我的显示名称');
   await page.locator('#library-manage-name').fill('最新名称');
   expect((await save(page)).status()).toBe(200);
   await expect(page.locator('#library-manage-dialog')).not.toBeVisible();
@@ -54,7 +58,7 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   await expect(second.locator('#library-list')).toContainText('最新名称');
   await second.close();
 
-  await row(page).getByRole('button', {name: '编辑 最新名称', exact: true}).click();
+  await edit(page, '最新名称');
   const downloaded = page.waitForEvent('download');
   await page.locator('#library-manage-export').click();
   const download = await downloaded;
@@ -63,10 +67,12 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   expect(archive.subarray(0, 2).toString()).toBe('PK');
   await expect(page.locator('#library-manage-status')).toContainText('已导出');
   await page.locator('#library-manage-close').click();
+  await showLibrary(page);
   await page.getByRole('button', {name: '编辑分组 新文件夹', exact: true}).click();
   await page.locator('#library-manage-name').fill('重命名文件夹');
   expect((await save(page)).status()).toBe(200);
   await expect(page.locator('#library-manage-dialog')).not.toBeVisible();
+  await showLibrary(page);
   const directory = resolve(process.env.QF_SCREENSHOT_DIR || '../.artifacts/local/library-manage');
   await mkdir(directory, {recursive: true});
   await page.screenshot({path: resolve(directory, `library-${info.project.name}.png`), fullPage: true});
