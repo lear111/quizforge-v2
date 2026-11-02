@@ -42,6 +42,9 @@ public class QuotaService {
     @Transactional
     public Usage usage(String userId) { return view(lock(userId)); }
 
+    /** 全站存储总用量（后台概况）。 */
+    public long totalStorageUsed() { return mapper.totalStorageUsed(); }
+
     private Usage view(Account account) {
         var defaults = mapper.defaults();
         var day = LocalDate.ofInstant(clock.instant(), BILLING_ZONE);

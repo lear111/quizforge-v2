@@ -2,6 +2,7 @@ import { request, RequestError } from './api.js';
 import { pages, defaultPage } from './pages/registry.js';
 import { el } from './pages/format.js';
 import { mountNotifications } from '/practice/shell/notifications.js';
+import { bindActivity } from '/practice/shell/activity.js';
 
 const main = document.getElementById('admin-main');
 const nav = document.getElementById('admin-nav');
@@ -99,6 +100,7 @@ async function start() {
   const bell = document.getElementById('admin-bell');
   bell.hidden = false;
   mountNotifications(bell);
+  bindActivity();
   window.addEventListener('hashchange', render);
   await render();
 }

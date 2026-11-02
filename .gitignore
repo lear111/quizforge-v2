@@ -36,3 +36,7 @@ tools/qbank-upgrade/**/__pycache__/
 # 账号迁移：真实旧库副本、报告与已知密码文件只放在这里
 tools/migration/local/
 tools/migration/target/
+
+# 客户端安装包只放在服务器或本机，不进入仓库
+deploy/downloads/*
+!deploy/downloads/.gitkeep

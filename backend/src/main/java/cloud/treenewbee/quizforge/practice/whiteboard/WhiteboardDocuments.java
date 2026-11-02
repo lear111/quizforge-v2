@@ -53,23 +53,28 @@ public class WhiteboardDocuments {
             if (value.has(field)) result.set(field,value.get(field).deepCopy());
         return result;
     }
-    public void requireAppendOnly(JsonNode previous, JsonNode next) {
-        var before = previous.path("strokes"); var after = next.path("strokes");
-        if (after.size() < before.size()) throw notesLocked();
-        for (int i=0;i<before.size();i++) if (!before.get(i).equals(after.get(i))) throw notesLocked();
-        if (!before.isEmpty() && (!previous.path("paper").equals(next.path("paper"))
-                || !previous.path("layout").equals(next.path("layout")))) throw notesLocked();
+    /** 两个阶段只能写当前层；完成整轮后未作答题的草稿也冻结。 */
+    public static boolean draftLocked(String roundStatus, boolean submitted) {
+        return submitted || "completed".equals(roundStatus);
+    }
+    public static void requireWritableLayer(String layer, String roundStatus, boolean submitted) {
+        boolean locked = draftLocked(roundStatus, submitted);
+        if (layer.equals("draft") && locked)
+            throw new ApiException(HttpStatus.CONFLICT, "WHITEBOARD_DRAFT_LOCKED", "作答草稿已冻结，请在追加笔迹中书写");
+        if (layer.equals("notes") && !locked)
+            throw new ApiException(HttpStatus.CONFLICT, "WHITEBOARD_NOTES_UNAVAILABLE", "提交前请在作答草稿中书写");
+    }
+    /** 防止追加层复用冻结笔迹 ID，避免渲染时覆盖原笔迹。 */
+    public void requireSeparateLayers(JsonNode frozen, JsonNode next) {
+        var ids = new HashSet<String>();
+        for (var stroke : frozen.path("strokes")) ids.add(stroke.path("id").asString());
+        for (var stroke : next.path("strokes")) if (ids.contains(stroke.path("id").asString())) throw invalid();
     }
     public int bytes(JsonNode value) { return json.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length; }
-    public static void requireDraftWritable(String roundStatus) {
-        if ("completed".equals(roundStatus))
-            throw new ApiException(HttpStatus.CONFLICT,"WHITEBOARD_DRAFT_LOCKED","本轮练习已完成，草稿已锁定，请追加笔记");
-    }
     private static void number(JsonNode value, double min, double max) {
         if (!value.isNumber() || !Double.isFinite(value.doubleValue()) || value.doubleValue()<min || value.doubleValue()>max) throw invalid();
     }
     private static void color(JsonNode value) { if (!value.isString() || !value.asString().matches("#[a-fA-F0-9]{6}")) throw invalid(); }
-    private static ApiException notesLocked() { return new ApiException(HttpStatus.CONFLICT,"WHITEBOARD_NOTES_APPEND_ONLY","已有笔记不能修改或擦除，只能追加"); }
     private static ApiException invalid() { return new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","白板笔迹格式无效"); }
     public static ApiException tooLarge() { return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE,"DRAFT_SIZE_LIMIT","两层白板合计超过 2 MiB 限制"); }
 }

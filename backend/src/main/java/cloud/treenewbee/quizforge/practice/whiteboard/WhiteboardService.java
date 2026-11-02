@@ -51,9 +51,10 @@ public class WhiteboardService {
                 if ("archiving".equals(context.completionStatus())) throw new ApiException(HttpStatus.CONFLICT,"PRACTICE_BUSY","正在保存历史，请稍后重试");
                 if ((old==null?0:old.revision())!=revision) throw conflict();
                 String roundStatus=readMapper.roundStatus(target.contextId(),userId).orElse(null);
-                var before=views.view(old,roundStatus);
-                if(layer.equals("draft"))WhiteboardDocuments.requireDraftWritable(roundStatus);
-                else documents.requireAppendOnly(before.notes(),next);
+                boolean submitted=mapper.submitted(target.contextId(),qid,userId);
+                var before=views.view(old,roundStatus,submitted);
+                WhiteboardDocuments.requireWritableLayer(layer,roundStatus,submitted);
+                documents.requireSeparateLayers(layer.equals("notes")?before.draft():before.notes(),next);
                 var draft=layer.equals("draft")?next:before.draft();
                 var notes=layer.equals("notes")?next:before.notes();
                 int size=Math.addExact(documents.bytes(draft),documents.bytes(notes));
@@ -62,7 +63,7 @@ public class WhiteboardService {
                         json.writeValueAsString(notes),size,old==null?1:revision,clock.instant());
                 if(old==null)mapper.insert(row);else if(mapper.update(row)!=1)throw conflict();
                 var response=json.createObjectNode();
-                response.set("whiteboard",json.valueToTree(new WhiteboardViews.View(draft,notes,revision+1,"completed".equals(roundStatus))));
+                response.set("whiteboard",json.valueToTree(new WhiteboardViews.View(draft,notes,revision+1,before.draftLocked())));
                 response.set("draft",draft);
                 receipts.insert(userId,requestId,hash,json.writeValueAsString(response));
                 return receipt(userId,requestId,hash); // Return the same MySQL JSON normalization on first call and replay.

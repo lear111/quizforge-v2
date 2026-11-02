@@ -25,7 +25,7 @@ public class RoundSnapshots {
         var template = prepared.template(); var question = template.question();
         var saved = reads.state(prepared.contextId(), question.id(), prepared.userId()).orElseThrow();
         var whiteboard=template.features().path("whiteboard").asBoolean(false)?whiteboards.read(prepared.contextId(),question.id(),prepared.userId(),
-                reads.roundStatus(prepared.contextId(),prepared.userId()).orElse(null)):null;
+                reads.roundStatus(prepared.contextId(),prepared.userId()).orElse(null),true):null;
         var state = new State("submitted", answer,
                 SubmissionResults.result(json, outcome.resultJson(), outcome.score(), outcome.maxScore(), outcome.gradingStatus()),
                 saved.revision(), null, outcome.outlineStatesJson() == null ? null : json.readTree(outcome.outlineStatesJson()));

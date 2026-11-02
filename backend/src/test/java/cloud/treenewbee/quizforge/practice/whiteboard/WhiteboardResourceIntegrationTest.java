@@ -51,6 +51,8 @@ class WhiteboardResourceIntegrationTest extends MySqlTestBase {
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper json;
     @Autowired SqlGate gate;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+    @Autowired cloud.treenewbee.quizforge.practice.infrastructure.PracticeContextMapper contexts;
     @MockitoSpyBean BlobStore blobs;
     @MockitoSpyBean PracticeReadMapper readMapper;
     @MockitoSpyBean WhiteboardMapper boards;
@@ -110,38 +112,70 @@ class WhiteboardResourceIntegrationTest extends MySqlTestBase {
         jdbc.update("INSERT INTO quota_account (user_id,storage_limit,storage_used) VALUES (?,0,0)",owner.user());
         var first=ok(board(owner,"first",0,"draft",document("a")));
         assertThat(first.path("whiteboard").path("revision").asLong()).isEqualTo(1);
-        ok(board(owner,"notes",1,"notes",document("n")));
-        ok(board(owner,"edit-draft",2,"draft",document("b")));
+        error(board(owner,"notes",1,"notes",document("n")),409,"WHITEBOARD_NOTES_UNAVAILABLE");
+        ok(board(owner,"edit-draft",1,"draft",document("b")));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state WHERE user_id=?",Long.class,owner.user())).isZero();
         assertThat(jdbc.queryForObject("SELECT progress_version FROM practice_context WHERE id=?",Long.class,owner.context())).isZero();
         verify(readMapper,never()).questions(anyString(),anyString(),anyString());verifyNoInteractions(runner);
         assertThat(jdbc.queryForObject("SELECT storage_used FROM quota_account WHERE user_id=?",Long.class,owner.user())).isZero();
         var read=ok(send("GET",owner.path(),owner.cookie(),null,null));
         assertThat(read.path("whiteboard").path("draft").path("strokes").get(0).path("id").asString()).isEqualTo("b");
-        assertThat(read.path("whiteboard").path("notes").path("strokes").get(0).path("id").asString()).isEqualTo("n");
+        assertThat(read.path("whiteboard").path("notes").path("strokes")).isEmpty();
+        assertThat(read.path("whiteboard").path("draftLocked").asBoolean()).isFalse();
         assertThat(read.path("capabilities").path("canWhiteboard").asBoolean()).isTrue();
         var state=jdbc.queryForMap("SELECT size_bytes,revision,updated_at FROM practice_whiteboard WHERE context_id=?",owner.context());
-        assertThat(((Number)state.get("revision")).longValue()).isEqualTo(3);assertThat(((Number)state.get("size_bytes")).intValue()).isPositive();
+        assertThat(((Number)state.get("revision")).longValue()).isEqualTo(2);assertThat(((Number)state.get("size_bytes")).intValue()).isPositive();
     }
-    @Test void noteDeletionAndModificationAreRejectedButAppendingSucceeds() throws Exception{
-        ok(board(owner,"note",0,"notes",document("n")));
-        error(board(owner,"erase",1,"notes",document()),409,"WHITEBOARD_NOTES_APPEND_ONLY");
+    @Test void submittedDraftIsFrozenWhileNotesCanBeModifiedErasedAndReplayed() throws Exception{
+        var original=ok(board(owner,"before-submit",0,"draft",document("frozen"))).path("whiteboard").path("draft");
+        markSubmitted();
+        var read=ok(send("GET",owner.path(),owner.cookie(),null,null));
+        assertThat(read.path("whiteboard").path("draftLocked").asBoolean()).isTrue();
+        error(board(owner,"erase-frozen",1,"draft",document()),409,"WHITEBOARD_DRAFT_LOCKED");
+        error(board(owner,"reuse-frozen-id",1,"notes",document("frozen")),400,"VALIDATION_FAILED");
+        ok(board(owner,"note",1,"notes",document("n")));
         var changed=document("n");((tools.jackson.databind.node.ObjectNode)changed.path("strokes").get(0)).put("width",9);
-        error(board(owner,"modify",1,"notes",changed),409,"WHITEBOARD_NOTES_APPEND_ONLY");
-        ok(board(owner,"append",1,"notes",document("n","next")));
-        assertThat(jdbc.queryForObject("SELECT revision FROM practice_whiteboard WHERE context_id=?",Long.class,owner.context())).isEqualTo(2);
+        ok(board(owner,"modify",2,"notes",changed));
+        var erased=board(owner,"erase",3,"notes",document());ok(erased);
+        assertThat(board(owner,"erase",3,"notes",document()).body()).isEqualTo(erased.body());
+        var after=ok(send("GET",owner.path(),owner.cookie(),null,null));
+        assertThat(after.path("whiteboard").path("notes").path("strokes")).isEmpty();
+        assertThat(after.path("whiteboard").path("draft")).isEqualTo(original);
+        assertThat(after.path("whiteboard").path("revision").asLong()).isEqualTo(4);
     }
-    @Test void submittedQuestionDoesNotLockBoardButCompletedRoundLocksDraftOnly() throws Exception{
+    @Test void completedRoundLocksEvenUnansweredDraftAndOnlyNotesRemainEditable() throws Exception{
         String round=Ids.uuidV7();
-        jdbc.update("INSERT INTO practice_round (id,user_id,collection_id,context_id,mode,status,collection_snapshot,created_at,updated_at) VALUES (?,?,?,?,'practice','in_progress','{}',NOW(3),NOW(3))",round,owner.user(),owner.collection(),owner.context());
+        ok(board(owner,"before-complete",0,"draft",document("a")));
+        jdbc.update("INSERT INTO practice_round (id,user_id,collection_id,context_id,mode,status,collection_snapshot,created_at,updated_at) VALUES (?,?,?,?,'practice','completed','{}',NOW(3),NOW(3))",round,owner.user(),owner.collection(),owner.context());
         jdbc.update("UPDATE practice_context SET current_round_id=? WHERE id=?",round,owner.context());
-        jdbc.update("INSERT INTO practice_question_state (context_id,question_id,user_id,status,revision,content_sha256,updated_at) VALUES (?,'q1',?,'submitted',5,UNHEX(REPEAT('aa',32)),NOW(3))",owner.context(),owner.user());
-        ok(board(owner,"submitted-draft",0,"draft",document("a")));
-        ok(board(owner,"submitted-note",1,"notes",document("n")));
-        jdbc.update("UPDATE practice_round SET status='completed' WHERE id=?",round);
-        error(board(owner,"locked",2,"draft",document()),409,"WHITEBOARD_DRAFT_LOCKED");
-        ok(board(owner,"completed-note",2,"notes",document("n","more")));
-        assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE context_id=?",Long.class,owner.context())).isEqualTo(5);
+        error(board(owner,"locked",1,"draft",document()),409,"WHITEBOARD_DRAFT_LOCKED");
+        ok(board(owner,"completed-note",1,"notes",document("n")));
+        ok(board(owner,"erase-completed-note",2,"notes",document()));
+        assertThat(ok(send("GET",owner.path(),owner.cookie(),null,null)).path("whiteboard").path("draftLocked").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state WHERE context_id=?",Long.class,owner.context())).isZero();
+    }
+    @Test void boardWaitingBehindSubmissionSeesTheCommittedFrozenStage() throws Exception{
+        ok(board(owner,"draft",0,"draft",document("frozen")));
+        var sync=new SqlGate.Barrier(owner.context(),1);
+        var response=new AtomicReference<Future<HttpResponse<String>>>();
+        try(var worker=Executors.newSingleThreadExecutor()){
+            tx.executeWithoutResult(status->{
+                contexts.lockForUpdate(owner.context(),owner.user()).orElseThrow();
+                gate.active.set(sync);
+                response.set(worker.submit(()->board(owner,"late-save",1,"draft",document("changed"))));
+                try{assertThat(sync.ready.await(20,TimeUnit.SECONDS)).isTrue();}
+                catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new AssertionError(interrupted);}
+                // 与提交相同地持有 context 锁；候选白板写入只能在本事务提交后继续。
+                markSubmitted();sync.go.countDown();
+            });
+            error(response.get().get(30,TimeUnit.SECONDS),409,"WHITEBOARD_DRAFT_LOCKED");
+        }finally{sync.go.countDown();}
+        var read=ok(send("GET",owner.path(),owner.cookie(),null,null));
+        assertThat(read.path("whiteboard").path("draft").path("strokes").get(0).path("id").asString()).isEqualTo("frozen");
+        assertThat(read.path("whiteboard").path("revision").asLong()).isEqualTo(1);
+    }
+    private void markSubmitted(){
+        jdbc.update("INSERT INTO practice_question_state (context_id,question_id,user_id,status,revision,projection,content_sha256,updated_at) VALUES (?,'q1',?,'submitted',5,'{}',UNHEX(REPEAT('aa',32)),NOW(3))",owner.context(),owner.user());
     }
     @Test void sameRequestReplaysOriginalBoardAndReusedPayloadOrStaleVersionCannotWrite() throws Exception{
         var original=board(owner,"same",0,"draft",document("first"));ok(original);
@@ -247,7 +281,7 @@ class WhiteboardResourceIntegrationTest extends MySqlTestBase {
     @Intercepts({@Signature(type=Executor.class,method="query",args={MappedStatement.class,Object.class,RowBounds.class,ResultHandler.class}),
             @Signature(type=Executor.class,method="update",args={MappedStatement.class,Object.class})})
     static class SqlGate implements Interceptor{
-        static class Barrier{final String context;final CountDownLatch ready=new CountDownLatch(2),go=new CountDownLatch(1);Barrier(String context){this.context=context;}}
+        static class Barrier{final String context;final CountDownLatch ready,go=new CountDownLatch(1);Barrier(String context){this(context,2);}Barrier(String context,int count){this.context=context;this.ready=new CountDownLatch(count);}}
         final AtomicReference<Barrier> active=new AtomicReference<>();
         final AtomicReference<Queue<String>> captured=new AtomicReference<>();
         public Object intercept(Invocation call)throws Throwable{

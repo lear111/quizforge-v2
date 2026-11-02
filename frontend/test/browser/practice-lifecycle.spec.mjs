@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
-test('real practice finish, frozen history, append-only notes and deletion survive reload',async({page},info)=>{
+test('real practice finish, frozen history, editable notes and deletion survive reload',async({page},info)=>{
   test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','Requires an explicitly isolated Compose fixture');
   test.setTimeout(180000);
   const project=process.env.QF_COMPOSE_PROJECT;
@@ -77,7 +77,8 @@ test('real practice finish, frozen history, append-only notes and deletion survi
   await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-history.png`),fullPage:true});
   await page.locator('#draft-toggle').click();
   const pane=page.locator('.question-pane:not([hidden]):not([inert])');
-  await expect(pane.getByLabel('白板层',{exact:true})).toHaveValue('notes');
+  await expect(pane.locator('.qf-board-stage')).toHaveCount(0);
+  await expect(pane.getByLabel('白板层',{exact:true})).toHaveCount(0);
   const tools=pane.locator('.qf-whiteboard-toolbar');
   if(await tools.getAttribute('data-collapsed')==='true')await tools.getByRole('button',{name:/展开白板工具/}).click();
   await tools.getByRole('button',{name:'画笔，选中后再次点击选择颜色',exact:true}).click();

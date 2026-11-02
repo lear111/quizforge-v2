@@ -99,6 +99,11 @@ public class AccountAdminService {
         return userAdmin.count();
     }
 
+    /** [from, to) 内按北京时间日期统计的注册数。 */
+    public List<UserAdminMapper.DailyRegistrations> registrationsBetween(Instant from, Instant to) {
+        return userAdmin.registrationsBetween(from, to);
+    }
+
     /** 是否为未被封禁的管理员（每次请求从数据库读取，撤销管理员或封禁立即生效）。 */
     public boolean isAdmin(String userId) {
         return users.findById(userId).map(UserRow::isAdmin).orElse(false) && !accounts.isBlocked(userId);

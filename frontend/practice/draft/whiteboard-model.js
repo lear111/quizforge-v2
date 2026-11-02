@@ -143,6 +143,7 @@ export class WhiteboardModel {
   get canUndo() { return this.undoStack.length > 0; }
   get canRedo() { return this.redoStack.length > 0; }
   get strokes() { return this.draft.strokes; }
+  get editableStrokes() { return this.draft.strokes.filter(stroke=>!this.isProtectedStroke(stroke.id)); }
   isProtectedStroke(id) { return this.protectedInk.has(id); }
   get viewport() { return { ...this.draft.viewport }; }
   get paper() { return { ...this.draft.paper }; }
