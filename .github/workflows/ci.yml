@@ -104,7 +104,7 @@ jobs:
           QF_VERIFICATION_IP_LIMIT_10MIN: "1000"
           QF_VERIFICATION_IP_LIMIT_DAILY: "10000"
           QF_EMAIL_DAILY_LIMIT: "10000"
-        run: docker compose -f deploy/docker-compose.yml up -d --build
+        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.audio-test.yml up -d --build
 
       - name: Wait for health through Nginx
         run: |
@@ -133,7 +133,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps --no-shell chromium
-          QF_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME" QF_READ_BROWSER_TESTS=1 npx playwright test
+          QF_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME" QF_READ_BROWSER_TESTS=1 QF_AUDIO_TEST_URL=https://audio.qf.test:8447 npx playwright test
       - name: Browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -162,8 +162,8 @@ jobs:
 
       - name: Show logs on failure
         if: failure()
-        run: docker compose -f deploy/docker-compose.yml logs --no-color
+        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.audio-test.yml logs --no-color
 
       - name: Stop stack
         if: always()
-        run: docker compose -f deploy/docker-compose.yml down -v
+        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.audio-test.yml down -v

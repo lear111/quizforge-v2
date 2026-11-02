@@ -84,3 +84,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - 宿主 bridge 增加答题区模型绘制、截图上传和本次提交的 snapshot 绑定，沿用现有 1.4.1 组件源码，未修改拓展或 SDK。
 - app / write-queue 使用独立白板 revision；两层合成显示、分层保存，笔记不进入正式作答。白板模型保护已存笔迹，笔记模式不允许改变纸面。
 - 用户中心文案改为只有私人题库计入存储，并按 main #78 移除每日下载流量卡片。新增资源/白板单元与真实浏览器测试。
+
+## 2026-11-02：HTTPS 网络听力材料
+
+- 宿主 `practice/listening/network-audio.js` 独立完成地址复核、匿名下载、64 MiB 流式计数与取消；不复用附带登录信息的 API request，也不把网络地址传给拓展 iframe。
+- `listening-player.js` 在完整下载后使用 Blob URL，切换/离开时取消并释放旧资源，历史查看提示网络内容可能变化。本地文件继续由 nginx 传输。
+- 合成音频 HTTPS 测试服务仅通过 `deploy/docker-compose.audio-test.yml` 启动；测试域名由 Chromium 映射到本机，测试证书不进入源码，正式页面不忽略证书错误。

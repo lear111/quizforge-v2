@@ -72,13 +72,19 @@ final class BankStructureRules {
         if (!bank.containsKey("listening")) return ids;
         Map<String, Object> config = object(bank.get("listening"), fail);
         keys(config, Set.of("materials", "examMaterialId"), fail);
+        int index = 0;
         for (Object raw : array(config.get("materials"), 1, 50, fail)) {
             Map<String, Object> row = object(raw, fail);
-            keys(row, Set.of("id", "title", "file"), fail);
-            if (!(row.get("id") instanceof String id) || !id.matches("[A-Za-z0-9_-]{1,80}") || !ids.add(id)) fail.accept("听力材料 ID 无效或重复");
-            text(row, "title", 160, fail);
-            if (!(row.get("file") instanceof String file) || !file.startsWith("assets/") || file.split("/", -1).length != 2
-                    || !assets.containsKey(file) || assets.get(file).type() != ResourceType.AUDIO) fail.accept("听力材料必须指向本题库 assets/ 中的音频");
+            String at = "listening.materials[" + index++ + "]（材料「" + row.get("id") + "」）";
+            Consumer<String> materialFail = detail -> fail.accept(at + "：" + detail);
+            keys(row, Set.of("id", "title", "file", "url"), materialFail);
+            if (!(row.get("id") instanceof String id) || !id.matches("[A-Za-z0-9_-]{1,80}") || !ids.add(id)) materialFail.accept("id 无效或重复");
+            text(row, "title", 160, materialFail);
+            if (row.containsKey("file") == row.containsKey("url")) materialFail.accept("file 与 url 必须二选一");
+            if (row.containsKey("url")) {
+                if (!NetworkAudioUrl.isValid(row.get("url"))) materialFail.accept("url 必须是规范化的 HTTPS 公网音频地址，不能含账号密码或片段");
+            } else if (!(row.get("file") instanceof String file) || !file.startsWith("assets/") || file.split("/", -1).length != 2
+                    || !assets.containsKey(file) || assets.get(file).type() != ResourceType.AUDIO) materialFail.accept("file 必须指向本题库 assets/ 中的音频");
         }
         if (config.containsKey("examMaterialId") && !ids.contains(config.get("examMaterialId"))) fail.accept("examMaterialId 指向未声明的听力材料");
         return ids;

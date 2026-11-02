@@ -85,6 +85,27 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(original, self.source.read_bytes())
         self.assertEqual([], list(self.root.glob(".qbank-upgrade-*")))
 
+    def test_network_audio_is_preserved_with_local_audio_and_in_examples(self):
+        files = fixture()
+        url = "https://media.example.com/a%20b.mp3?sig=a%2fb"
+        mixed = {"materials": [{"id": "local", "title": "本地", "file": "media/a.mp3"},
+                               {"id": "net", "title": "网络", "url": url}], "examMaterialId": "net"}
+        edit(files, BANK+"/bank.json", lambda b: b.update(listening=mixed))
+        files[BANK+"/media/a.mp3"] = b"ID3synthetic"
+        edit(files, EXT+"/examples/bank.json", lambda b: b.update(listening={"materials": [{"id": "net", "title": "网络", "url": url}]}))
+        report, out = self.convert(files)
+        self.assertEqual(url, json.loads(out[BANK+"/bank.json"])["listening"]["materials"][1]["url"])
+        self.assertEqual(url, json.loads(out[EXT+"/examples/bank.json"])["listening"]["materials"][0]["url"])
+        self.assertEqual(b"ID3synthetic", out[BANK+"/assets/a.mp3"])
+        self.assertEqual(1, len(report["rewrittenAudioReferences"]))
+
+    def test_network_audio_requires_exactly_one_source(self):
+        for extra in ({}, {"file": "media/a.mp3", "url": "https://media.example.com/a.mp3"}):
+            with self.subTest(extra=extra):
+                files = fixture()
+                edit(files, BANK+"/bank.json", lambda b: b.update(listening={"materials": [{"id": "m", "title": "材料", **extra}]}))
+                self.rejects(files, ".materials[0].file/url")
+
     def test_group_versions_ids_outline_and_extension_bytes(self):
         files = fixture()
         report, converted = self.convert(files)

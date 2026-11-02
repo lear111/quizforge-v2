@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import cloud.treenewbee.quizforge.shared.web.ApiException;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -172,6 +173,26 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
     @AfterAll void cleanup() throws Exception {
         deleteUser(seedUser); RUNNER.stop(); http.close();
         try(var files=Files.walk(ROOT)) { for(Path p:files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p); }
+    }
+
+    @Test void networkListeningHistoryKeepsOriginalUrlAfterCurrentBankChanges() throws Exception {
+        String type="单选题", bank=samples.get(type).question().bankId();
+        String url="https://media.example.com/original%20audio.mp3?sig=x%2fy";
+        jdbc.update("UPDATE content_bank SET listening=? WHERE id=?", JSON.writeValueAsString(Map.of("materials",
+                List.of(Map.of("id","network","title","网络听力","url",url)))), bank);
+        try {
+            ok(post(type,"draft","draft",0,answer(type,true)));
+            complete(begin(type,"finish","finish",ok(summary(type))));
+            String id=complete(begin(type,"restart","archive",ok(summary(type)))).path("historyId").asString();
+            jdbc.update("UPDATE content_bank SET listening=? WHERE id=?", JSON.writeValueAsString(Map.of("materials",
+                    List.of(Map.of("id","network","title","新地址","url","https://media.example.com/new.mp3")))), bank);
+            var history=histories.detail(user,samples.get(type).collection(),id);
+            assertThat(history.path("collection").path("listening").path("materials").get(0).path("url").asString()).isEqualTo(url);
+            assertThat(history.path("collection").path("listeningSource").path("materials").get(0).path("url").asString()).isEqualTo(url);
+            assertThat(histories.list(user,samples.get(type).collection()).toString()).doesNotContain(url);
+            org.assertj.core.api.Assertions.assertThatThrownBy(()->histories.listening(user,samples.get(type).collection(),id,"network"))
+                    .isInstanceOfSatisfying(ApiException.class,e->assertThat(e.code()).isEqualTo("AUDIO_NETWORK_SOURCE"));
+        } finally { jdbc.update("UPDATE content_bank SET listening=NULL WHERE id=?",bank); }
     }
 
     @ParameterizedTest @ValueSource(strings={"单选题","多选题","判断题","简答题","简答题（答题区）"})

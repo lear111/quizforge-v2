@@ -43,6 +43,13 @@
       <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 
+    <!-- 与浏览器一致的 WHATWG 地址规范化；仅解析，不访问网络。 -->
+    <dependency>
+      <groupId>io.github.stephanebastian</groupId>
+      <artifactId>whatwg-url</artifactId>
+      <version>0.8.8</version>
+    </dependency>
+
     <!-- Security -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
