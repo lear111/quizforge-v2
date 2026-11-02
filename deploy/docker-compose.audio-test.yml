@@ -1,0 +1,19 @@
+# 仅用于本机与 CI 浏览器验收，不加入正式部署。
+services:
+  audio-test:
+    build: ../frontend/test/audio-server
+    ports:
+      - "127.0.0.1:8447:8443"
+    networks: [audio-fixture]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://127.0.0.1:8443/health',context=ssl._create_unverified_context()).read()"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+networks:
+  audio-fixture:
+    driver: bridge

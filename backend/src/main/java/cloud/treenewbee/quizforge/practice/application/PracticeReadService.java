@@ -253,6 +253,7 @@ public class PracticeReadService {
         JsonNode config = decode(collection.listening());
         if (config != null) for (JsonNode material : config.path("materials")) {
             if (material.path("id").asString().equals(materialId)) {
+                if (material.has("url")) throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "AUDIO_NETWORK_SOURCE", "网络听力材料由浏览器直接读取");
                 return pages.listening(userId, collection.bankId(), material.path("file").asString());
             }
         }
@@ -266,7 +267,12 @@ public class PracticeReadService {
         for (JsonNode material : config.path("materials")) {
             String id = material.path("id").asString();
             String revision = stamps.stamp(collection.id(), id, 0, collection.contentSha256(), collection.contentSha256()).contentVersion();
-            materials.add(Map.of("id", id, "title", material.path("title").asString(), "revision", revision));
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", id);
+            entry.put("title", material.path("title").asString());
+            entry.put("revision", revision);
+            if (material.has("url")) entry.put("url", material.path("url").asString());
+            materials.add(entry);
         }
         Map<String, Object> result = new LinkedHashMap<>(); result.put("materials", materials);
         if (config.has("examMaterialId")) result.put("examMaterialId", config.path("examMaterialId").asString());

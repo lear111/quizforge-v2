@@ -1,3 +1,4 @@
+import {downloadNetworkAudio} from './network-audio.js';
 import {clampPosition,fitWidth,DEFAULT_WIDTH} from './geometry.js';
 import {createPlayerDrag} from './player-drag.js';
 import {dockedPosition,TOOLBAR_ANCHORS} from '../draft/whiteboard-dock.js';
@@ -7,7 +8,7 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
   const window=document.defaultView,root=document.createElement('section');root.className='qf-listening';root.hidden=true;root.setAttribute('aria-label','悬浮听力播放器');
   const icon=(path,extra='')=>`<svg viewBox="0 0 24 24" aria-hidden="true" ${extra}>${path}</svg>`;
   const playIcon=icon('<path class="qfl-play-icon" d="M8 5v14l11-7Z"/><path class="qfl-pause-icon" d="M7 5h4v14H7zm6 0h4v14h-4z"/>');
-  root.innerHTML=`<div class="qfl-content"><div class="qfl-expanded"><header class="qfl-head" tabindex="0" aria-label="拖动听力播放器"><span class="qfl-grip" aria-hidden="true">⠿</span><button class="qfl-material" type="button" aria-label="选择听力材料" aria-haspopup="listbox" aria-expanded="false"><span><small class="qfl-kicker"></small><strong class="qfl-title"></strong></span>${icon('<path d="m7 10 5 5 5-5"/>')}</button><button class="qfl-collapse qfl-icon" type="button" aria-label="最小化听力播放器">${icon('<path d="M6 12h12"/>')}</button></header><ul class="qfl-menu qfl-material-menu" role="listbox" aria-label="听力材料" hidden></ul><div class="qfl-player"></div><p class="qfl-status" role="status" hidden></p><button class="qfl-retry" type="button" hidden>重新读取材料</button></div><div class="qfl-compact"><button class="qfl-toggle" type="button" aria-label="播放音频"><svg class="qfl-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18"/><circle class="qfl-ring-progress" cx="20" cy="20" r="18" pathLength="100"/></svg>${playIcon}</button><div class="qfl-mini-info" tabindex="0" aria-label="拖动听力播放器"><strong></strong><span></span></div><button class="qfl-expand qfl-icon" type="button" aria-label="展开听力播放器">${icon('<path d="M14 4h6v6M10 20H4v-6M20 4l-6 6M4 20l6-6"/>')}</button></div></div><span class="qfl-resize" tabindex="0" role="slider" aria-label="调整听力播放器宽度" aria-valuemin="300" aria-valuemax="560" aria-valuenow="360" title="左右拖动调整宽度，双击恢复默认"></span>`;
+  root.innerHTML=`<div class="qfl-content"><div class="qfl-expanded"><header class="qfl-head" tabindex="0" aria-label="拖动听力播放器"><span class="qfl-grip" aria-hidden="true">⠿</span><button class="qfl-material" type="button" aria-label="选择听力材料" aria-haspopup="listbox" aria-expanded="false"><span><small class="qfl-kicker"></small><strong class="qfl-title"></strong></span>${icon('<path d="m7 10 5 5 5-5"/>')}</button><button class="qfl-collapse qfl-icon" type="button" aria-label="最小化听力播放器">${icon('<path d="M6 12h12"/>')}</button></header><ul class="qfl-menu qfl-material-menu" role="listbox" aria-label="听力材料" hidden></ul><div class="qfl-player"></div><p class="qfl-status" role="status" hidden></p><p class="qfl-warning" role="note" hidden>网络音频，内容可能已变化</p><button class="qfl-retry" type="button" hidden>重新读取材料</button></div><div class="qfl-compact"><button class="qfl-toggle" type="button" aria-label="播放音频"><svg class="qfl-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18"/><circle class="qfl-ring-progress" cx="20" cy="20" r="18" pathLength="100"/></svg>${playIcon}</button><div class="qfl-mini-info" tabindex="0" aria-label="拖动听力播放器"><strong></strong><span></span></div><button class="qfl-expand qfl-icon" type="button" aria-label="展开听力播放器">${icon('<path d="M14 4h6v6M10 20H4v-6M20 4l-6 6M4 20l6-6"/>')}</button></div></div><span class="qfl-resize" tabindex="0" role="slider" aria-label="调整听力播放器宽度" aria-valuemin="300" aria-valuemax="560" aria-valuenow="360" title="左右拖动调整宽度，双击恢复默认"></span>`;
   root.insertAdjacentHTML('beforeend',`<div class="qfl-drag-ball" aria-hidden="true">${icon('<path d="M4 14v-3a8 8 0 0 1 16 0v3M4 12H3v7h4v-7H4zm16 0h1v7h-4v-7h3z"/>')}</div>`);
   const $=selector=>root.querySelector(selector),content=$('.qfl-content'),handle=$('.qfl-head'),miniHandle=$('.qfl-mini-info'),resize=$('.qfl-resize'),materialButton=$('.qfl-material'),materialMenu=$('.qfl-material-menu'),status=$('.qfl-status');
   const player=(createPlayer||window.QFAudioPlayer.create)($('.qfl-player'),{badge:null,exclusive:true,ariaLabel:'公共听力播放器'});
@@ -27,13 +28,13 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
       button.addEventListener('click',()=>{player.setSpeed(rate);closeMenus();speedButton.focus();});item.append(button);speedMenu.append(item);
     }
   }
-  let pane=null,scope=null,questionId=null,selected=null,config=null,exam=false,collapsed=window.matchMedia('(max-width:600px)').matches,examStarted=false,ordinaryExpanded=false,destroyed=false,position=null,width=DEFAULT_WIDTH,geometry=null,motion=null,anchor=null,resizing=null,observer=null,abort=null,generation=0,pendingSeek=0,loading=false,loadedKey=null,error=null;
+  let pane=null,scope=null,questionId=null,selected=null,config=null,exam=false,collapsed=window.matchMedia('(max-width:600px)').matches,examStarted=false,ordinaryExpanded=false,destroyed=false,position=null,width=DEFAULT_WIDTH,geometry=null,motion=null,anchor=null,resizing=null,observer=null,abort=null,generation=0,pendingSeek=0,loading=false,loadedKey=null,error=null,objectUrl=null,downloadProgress=null;
   const progress=new Map(),geometries=new Map();
   try{const value=JSON.parse(storage.getItem('quizforge-listening-geometry-v2'));if(value?.position&&Number.isFinite(value.position.x)&&Number.isFinite(value.position.y))position=value.position;if(Number.isFinite(value?.width))width=value.width;if(TOOLBAR_ANCHORS.includes(value?.anchor))anchor=value.anchor;}catch{}
   function remember(){if(scope&&selected&&loadedKey)progress.set(`${scope}:${selected}`,player.getCurrentTime());}
   function cancel(){generation++;abort?.abort();abort=null;loading=false;}
   function save(){if(scope)geometries.set(scope,{position,width,anchor});try{storage.setItem('quizforge-listening-geometry-v2',JSON.stringify({position,width,anchor}));}catch{}}
-  function release(){player.pause();player.setSource('');loadedKey=null;}
+  function release(){player.pause();player.setSource('');if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=null;loadedKey=null;downloadProgress=null;}
   function area(){return {width:pane?.viewport.clientWidth||1,height:pane?.viewport.clientHeight||1};}
   function place(next=position){
     if(root.hidden||!pane||motion?.dragging)return;
@@ -84,7 +85,9 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
     $('.qfl-toggle').dataset.playing=String(value);$('.qfl-toggle').setAttribute('aria-label',value?'暂停音频':'播放音频');$('.qfl-toggle').disabled=loading||!!error;
     $('.qfl-mini-info strong').textContent=material?.title||'听力材料';$('.qfl-mini-info span').textContent=loading?'正在读取…':error?'读取失败，展开重试':`${time(player.getCurrentTime())} / ${time(player.getDuration())}`;
     for(const button of root.querySelectorAll('.qfa-toggle,.qfa-back,.qfa-forward'))button.disabled=loading||!!error||!loadedKey;
-    status.textContent=error||(loading?'正在读取听力材料…':'');status.hidden=!error&&!loading;$('.qfl-retry').hidden=!error;
+    const progressText=downloadProgress?downloadProgress.total?`正在下载网络音频 ${Math.floor(downloadProgress.loaded/downloadProgress.total*100)}%`:`正在下载网络音频 ${(downloadProgress.loaded/1024/1024).toFixed(1)} MiB`:'正在读取听力材料…';
+    status.textContent=error||(loading?progressText:'');status.hidden=!error&&!loading;$('.qfl-retry').hidden=!error;
+    $('.qfl-warning').hidden=!(pane?.view==='history'&&material?.url);
     const ratio=player.getDuration()>0?Math.min(1,player.getCurrentTime()/player.getDuration()):0;$('.qfl-ring-progress').style.strokeDashoffset=String(100-ratio*100);
     const current=config?.materials.findIndex(row=>row.id===selected)??-1;$('.qfl-kicker').textContent=`听力材料 ${current+1} / ${config?.materials.length||0}`;$('.qfl-title').textContent=material?.title||'听力材料';
     const active=materialMenu.querySelector('[aria-selected="true"] small');if(active)active.textContent=time(player.getCurrentTime());
@@ -108,9 +111,16 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
     const controller=new AbortController();abort=controller;
     try{
       const source=`/api/collections/${encodeURIComponent(pane.kind)}/${encodeURIComponent(pane.id)}${pane.view==='history'?`/history/${encodeURIComponent(pane.historyEntry.id)}`:''}/listening/${encodeURIComponent(id)}`;
-      await request(source,{method:'HEAD',responseType:'response',headers:{Accept:'audio/*'},signal:controller.signal});
-      if(destroyed||version!==generation||owner!==pane)return;
-      loadedKey=key;loading=false;player.setSource(source);player.setSpeed(1);render();
+      let resolved=source;
+      if(material.url){
+        const blob=await downloadNetworkAudio(material.url,{signal:controller.signal,onProgress:value=>{if(version===generation&&!destroyed){downloadProgress=value;playing();}}});
+        if(destroyed||version!==generation||owner!==pane)return;
+        objectUrl=URL.createObjectURL(blob);resolved=objectUrl;
+      }else{
+        await request(source,{method:'HEAD',responseType:'response',headers:{Accept:'audio/*'},signal:controller.signal});
+        if(destroyed||version!==generation||owner!==pane)return;
+      }
+      loadedKey=key;loading=false;player.setSource(resolved);player.setSpeed(1);render();
     }catch(e){if(destroyed||version!==generation||controller.signal.aborted)return;loading=false;error=e.message||'听力材料读取失败，请重试。';render();}
     finally{if(abort===controller)abort=null;}
   }
@@ -169,5 +179,5 @@ export function createListeningPlayer({document,request,createPlayer,storage=doc
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();const bounds=fitWidth(width,area());width=event.key==='Home'?bounds.minWidth:event.key==='End'?bounds.maxWidth:bounds.width+(event.key==='ArrowRight'?20:-20);place();save();
   });
-  return {setContext,destroy(){if(destroyed)return;motion?.destroy();remember();save();cancel();destroyed=true;document.removeEventListener('pointerdown',outside);observer?.disconnect();shield(false);player.pause();player.destroy();root.remove();}};
+  return {setContext,destroy(){if(destroyed)return;motion?.destroy();remember();save();cancel();destroyed=true;document.removeEventListener('pointerdown',outside);observer?.disconnect();shield(false);release();player.destroy();root.remove();}};
 }

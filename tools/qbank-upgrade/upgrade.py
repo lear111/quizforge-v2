@@ -435,12 +435,19 @@ class Converter:
         ids = set()
         for index, raw in enumerate(array(config.get("materials"), at+".materials", 50)):
             pos = f"{at}.materials[{index}]"
-            row = obj(raw, pos, {"id", "title", "file"})
+            row = obj(raw, pos, {"id", "title", "file", "url"})
             mid = row.get("id")
             if not isinstance(mid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", mid) or mid in ids:
                 fail(pos+".id", "听力材料 ID 无效或重复")
             ids.add(mid)
             text(row.get("title"), pos+".title", 160)
+            if ("file" in row) == ("url" in row):
+                fail(pos+".file/url", "file 与 url 必须二选一")
+            if "url" in row:
+                if not isinstance(row["url"], str) or not row["url"]:
+                    fail(pos+".url", "网络音频地址必须为非空字符串")
+                # 地址逐字保留，不下载；完整的 WHATWG 与公网校验由 V2 导入器执行。
+                continue
             file = row.get("file")
             if isinstance(file, str) and file.startswith("media/"):
                 if root+"/"+file not in self.renames:

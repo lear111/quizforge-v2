@@ -144,7 +144,7 @@
 | --- | --- | --- |
 | `POST /api/resources` | 上传作答图片 `{mime, data(base64)}`，4 MiB 上限 | |
 | `GET /api/resources/{sha256}` | 读取图片：鉴权后由 Nginx 发送（`X-Accel-Redirect`） | 发送方式改变，对前端透明 |
-| `GET /api/collections/{kind}/{id}/listening/{materialId}` | 听力音频：鉴权后由 Nginx 发送，支持 Range | **前端改为直接 `<audio src>`**（ADR-007） |
+| `GET /api/collections/{kind}/{id}/listening/{materialId}` | 本地听力音频：鉴权后由 Nginx 发送，支持 Range | 本地 file 使用 `<audio src>`（ADR-007）；网络 url 由宿主匿名下载为 Blob（格式 4 v0.8 §4.2.1），该路径返回 422 AUDIO_NETWORK_SOURCE，不做代理 |
 | `GET /api/extensions/{id}/{version}/page` | 拓展页面资源 `{apiVersion, html, script, style, dependencies}` | 由拓展包摘要定位文件；结果按摘要长期缓存 |
 | `GET /api/sdk/{id}/{version}` | SDK 与富文本组件 | 静态版本化资源，可由 Nginx 直接提供 |
 
@@ -244,7 +244,7 @@ L1.3/L1.4 按验收清单恢复顺序限制：先 finish 完成，再 restart �
 | GET C/history | 200 `{records:[摘要]}` | 不含完整题目或快照；仅已归档且未删除的历史 |
 | GET C/history/{historyId} | 200 冻结 collection / questions / pages / summary | snapshotVersion=1；历史模式；不重新执行规则或读当前题目 |
 | POST C/history/{historyId}/questions/{qid}/annotations | 200 `{whiteboard}` | `{requestId,revision,notes}`；只追加，独立版本，合计 2 MiB，冲突 409 |
-| GET/HEAD C/history/{historyId}/listening/{materialId} | Nginx 音频 | 来源为冻结配置与历史资源授权，不依赖当前题库 |
+| GET/HEAD C/history/{historyId}/listening/{materialId} | Nginx 本地音频 | 来源为冻结配置与历史资源授权，不依赖当前题库；网络 url 原样冻结，由浏览器读取，此路径返回 422 AUDIO_NETWORK_SOURCE |
 | DELETE C/history/{historyId} | 204 | 所属用户软删除历史、删除追加笔记，资源授权随之失效 |
 
 完成允许 pending/null（按 0 计总分并单列待评分数），之后可人工评分；宿主保留拓展的 score/gradingStatus。失败恢复可编辑，已经成功的提交保留，新的 finish 请求只处理剩余草稿。归档失败恢复 completed，当前状态与白板不清空，未完成的历史不可见。相同 requestId 重放同一 202 与 jobId；已失败任务使用新 requestId 重试。网络断开不取消任务。

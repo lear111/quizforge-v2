@@ -326,6 +326,19 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         assertThat(insertGate.connections).hasSize(2);
     }
 
+    @Test void networkListeningAddressIsHostOnlyAndNeverProxied() throws Exception {
+        String url = "https://media.example.com/audio%20one.mp3?sig=unchanged%2fb";
+        jdbc.update("UPDATE content_bank SET listening=? WHERE id=?", JSON.writeValueAsString(Map.of("materials",
+                List.of(Map.of("id", "network", "title", "网络听力", "url", url)))), bank);
+        try {
+            var metadata = body(get(base(), cookie)).path("listening").path("materials").get(0);
+            assertThat(metadata.path("url").asString()).isEqualTo(url);
+            assertThat(metadata.has("file")).isFalse();
+            assertThat(get(base()+"/questions/"+qid(), cookie).body()).doesNotContain(url, "media.example.com");
+            error(get(base()+"/listening/network", cookie), 422, "AUDIO_NETWORK_SOURCE");
+        } finally { jdbc.update("UPDATE content_bank SET listening=NULL WHERE id=?", bank); }
+    }
+
     @Test void listeningMetadataHidesPathsAndHeadUsesTheSameOwnershipChecks() throws Exception {
         String sha = blobs.put("ID3-read-test-audio".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         jdbc.update("INSERT INTO content_bank_asset (bank_id,path,blob_sha256) VALUES (?,'assets/LISTENING.MP3',UNHEX(?))", bank, sha);

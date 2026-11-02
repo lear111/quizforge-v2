@@ -83,8 +83,10 @@ public class PracticeHistoryService {
     public ContentPages.FileResponse listening(String user,String collection,String id,String material) throws java.io.IOException {
         owned(user,collection);var header=mapper.find(id,user,collection).orElseThrow(ContentPages::notFound);
         var snapshot=json.readTree(header.collectionSnapshot());
-        for(var item:snapshot.path("listeningSource").path("materials"))if(item.path("id").asString().equals(material))
+        for(var item:snapshot.path("listeningSource").path("materials"))if(item.path("id").asString().equals(material)) {
+            if(item.has("url")) throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT,"AUDIO_NETWORK_SOURCE","网络听力材料由浏览器直接读取");
             return pages.listening(user,snapshot.path("sourceBankId").asString(),item.path("file").asString());
+        }
         throw ContentPages.notFound();
     }
     public JsonNode annotate(String user,String collection,String id,String qid,String request,long revision,JsonNode document) {

@@ -70,6 +70,16 @@ class PracticeCollectionSnapshotTest {
         verify(mapper).questions(BANK, CONTEXT, USER);
     }
 
+    @Test void snapshotFreezesOriginalNetworkUrlWithoutLoadingBytes() {
+        String url = "https://media.example.com/a%20b.mp3?sig=x%2fy";
+        when(mapper.collection(USER, COLLECTION)).thenReturn(Optional.of(new PracticeReadRows.Collection(
+                COLLECTION, BANK, "标题", "分组", null, "{}",
+                json.writeValueAsString(java.util.Map.of("materials", List.of(java.util.Map.of("id", "intro", "title", "网络", "url", url)))), DIGEST, 3)));
+        var snapshot = json.readTree(reads.collectionSnapshot(USER, COLLECTION));
+        assertThat(snapshot.path("listening").path("materials").get(0).path("url").asString()).isEqualTo(url);
+        verifyNoInteractions(pages, runner, cache);
+    }
+
     @ParameterizedTest @CsvSource({"owner,missing", "owner,another-users-collection", "outsider,collection"})
     void snapshotUsesReadOwnershipCheckBeforeLoadingQuestions(String user, String collection) {
         assertThatThrownBy(() -> reads.collectionSnapshot(user, collection))
