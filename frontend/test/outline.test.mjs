@@ -32,4 +32,5 @@ test('draft children distinguish reported empty, answered and unavailable progre
   assert.equal(draftChildStatus(undefined,{status:'unanswered'}),'unanswered');
   assert.equal(draftChildStatus(undefined,{status:'draft',answerState:null}),'unknown');
   assert.equal(draftChildStatus(undefined,{status:'draft',answerState:{status:'unanswered'}}),'unanswered');
+  assert.equal(draftChildStatus(undefined,{status:'unanswered',answerState:{status:'unanswered',outlineStates:null}}),'unknown');
 });

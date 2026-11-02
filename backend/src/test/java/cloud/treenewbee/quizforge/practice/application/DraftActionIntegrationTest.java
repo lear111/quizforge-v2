@@ -1,10 +1,6 @@
 package cloud.treenewbee.quizforge.practice.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -60,18 +56,20 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         registry.add("qf.rule-runner.base-url", () -> "http://" + RUNNER.getHost() + ":" + RUNNER.getMappedPort(8090));
         registry.add("qf.rule-runner.token", () -> TOKEN);
         registry.add("qf.rule-runner.default-deadline", () -> "60s");
-        // 语义测试不把 CI 冷启动耗时当作规则超时；短时限另有真实超时用例与单元断言。
-        registry.add("qf.practice.draft-validation-deadline", () -> "5s");
     }
 
     @Autowired AuthService auth;
     @Autowired ImportService imports;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @Autowired DraftSqlGate gate;
     @MockitoSpyBean PracticeReadMapper readMapper;
     @MockitoSpyBean PracticeReadService reads;
     @MockitoSpyBean cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
-    @Autowired cloud.treenewbee.quizforge.content.infrastructure.BlobStore blobs;
+    @MockitoSpyBean DraftOutlineService outlines;
+    @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.DraftOutlineMapper outlineMapper;
+    @MockitoSpyBean cloud.treenewbee.quizforge.practice.projection.ProjectionCache projections;
+    @MockitoSpyBean cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper questionMapper;
     final List<String> extraQuestions = new ArrayList<>();
     @Value("${local.server.port}") int port;
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -107,107 +105,119 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertThat(receipts(owner)).isEqualTo(1);
     }
 
-    @Test void realValidationStoresPartProgressAndReplayDoesNotCallRulesAgain() throws Exception {
+    @Test void reportedProgressPersistsWithDraftAndReplayNeverRewritesIt() throws Exception {
         Viewer v = partsViewer();
-        useRules(v, true);
-        clearInvocations(runner);
-        var body = partDraft("parts", 0, Map.of("left", "答了", "right", ""));
-        var response = post(v, body);
-        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
-        assertThat(json(response).path("state").path("outlineStates"))
+        var body = reportedDraft("parts", 0, "p1");
+        var first = post(v, body);
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        assertThat(json(first).path("state").path("outlineStates"))
                 .isEqualTo(JSON.readTree("[{\"id\":\"p1\",\"status\":\"draft\"},{\"id\":\"p2\",\"status\":\"unanswered\"}]"));
-        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(json(response).path("state"));
-        assertThat(post(v, body).body()).isEqualTo(response.body());
-        verify(runner, times(1)).execute(eq("validateAnswer"), any(), anyMap(), eq(Duration.ofSeconds(5)));
-        assertThat(response.body()).doesNotContain("correctOptionId", "standardAnswer", "outlineScore");
+        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(json(first).path("state"));
+        clearInvocations(outlineMapper);
+        // answerState 只是显示元数据；同一作答回执仍返回首次保存的进度。
+        assertThat(post(v, reportedDraft("parts", 0, "p2")).body()).isEqualTo(first.body());
+        verifyNoInteractions(outlineMapper);
+        assertThat(first.body()).doesNotContain("correctOptionId", "standardAnswer", "question", "projected", "feedback");
     }
 
-    @Test void extensionWithoutValidateAnswerFallsBackToNonemptyAnswer() throws Exception {
+    @Test void noRunnerOrProjectionIsUsedEvenForColdQuestionAndUnavailableRunner() throws Exception {
         Viewer v = partsViewer();
-        useRules(v, false);
-        var empty = post(v, partDraft("empty", 0, Map.of()));
-        assertThat(json(empty).path("state").path("outlineStates").get(0).path("status").asString()).isEqualTo("unanswered");
-        var filled = post(v, partDraft("filled", 1, Map.of("text", "作答")));
-        assertThat(json(filled).path("state").path("outlineStates").valueStream().map(s -> s.path("status").asString()))
-                .containsExactly("draft", "draft");
-    }
-
-    @Test void realRuleDeadlineFailureKeepsDraftAndNextRequestStillWorks() throws Exception {
-        Viewer v = partsViewer();
-        useScript(v, "QF.defineType({project(){return {maxScore:1}},grade(){return {score:0,maxScore:1,correct:false,feedback:null}},validateAnswer(){while(true){}},getScore(){return {score:0,maxScore:1}}});");
-        long start = System.nanoTime();
-        var timed = post(v, partDraft("timeout", 0, Map.of("text", "先保存")));
-        assertThat(timed.statusCode()).as(timed.body()).isEqualTo(200);
-        assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(10));
-        assertThat(json(timed).path("state").path("outlineStates").isNull()).isTrue();
-        useRules(v, false);
-        var next = post(v, partDraft("recovered", 1, Map.of("text", "仍可保存")));
-        assertThat(next.statusCode()).as(next.body()).isEqualTo(200);
-        assertThat(json(next).path("state").path("outlineStates").get(0).path("status").asString()).isEqualTo("draft");
-    }
-
-    @Test void validationFailureSavesAnswerAndReplaysUnknownProgressWithoutRetryingRules() throws Exception {
-        Viewer v = partsViewer();
+        clearInvocations(runner, projections, questionMapper, reads);
         doThrow(new cloud.treenewbee.quizforge.rules.RuleRunnerException("仅测试：不可用"))
-                .when(runner).execute(eq("validateAnswer"), any(), anyMap(), any(Duration.class));
-        var body = partDraft("unavailable", 0, Map.of("text", "保留此答案"));
-        var response = post(v, body);
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(json(response).path("state").path("outlineStates").isNull()).isTrue();
-        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(json(response).path("state"));
-        assertThat(post(v, body).body()).isEqualTo(response.body());
-        verify(runner, times(1)).execute(eq("validateAnswer"), any(), anyMap(), any(Duration.class));
+                .when(runner).execute(anyString(), any(), anyMap());
+        doThrow(new AssertionError("保存草稿不能访问投影缓存"))
+                .when(projections).get(any(), any());
+        var response = post(v, reportedDraft("cold", 0, "p1"));
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        verifyNoInteractions(runner, projections, questionMapper);
+        verify(reads, never()).prepareDraft(anyString(), anyString(), anyString());
+        verify(reads, never()).ruleQuestion(anyString(), anyString(), anyString());
+        assertThat(json(response).has("question")).isFalse();
     }
 
-    @Test void slowValidationOutsideTransactionCannotOverwriteNewerDraftProgress() throws Exception {
+    @Test void unreportedProgressFallsBackToAnswerOnlyAndLeavesChildrenUnknown() throws Exception {
+        Viewer v = partsViewer();
+        var empty = post(v, partDraft("empty", 0, Map.of()));
+        assertThat(json(empty).path("state").path("answerState").path("status").asString()).isEqualTo("unanswered");
+        var filled = post(v, partDraft("filled", 1, Map.of("text", "作答")));
+        assertThat(json(filled).path("state").path("answerState").path("status").asString()).isEqualTo("draft");
+        assertThat(json(filled).path("state").path("outlineStates").isNull()).isTrue();
+    }
+
+    @Test void delayedOldRequestCannotOverwriteNewerAnswerAndProgress() throws Exception {
+        Viewer v = partsViewer();
+        assertThat(post(v, reportedDraft("seed", 0, "p1")).statusCode()).isEqualTo(200);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            if (calls.incrementAndGet() == 1) {
+                assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                entered.countDown();
+                assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            }
+            return call.callRealMethod();
+        }).when(outlines).calculate(any(), anyBoolean(), any(), any());
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var old = pool.submit(() -> post(v, reportedDraft("older", 1, "p1")));
+            assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+            try {
+                var newer = pool.submit(() -> post(v, reportedDraft("newer", 1, "p2"))).get(15, TimeUnit.SECONDS);
+                assertThat(newer.statusCode()).as(newer.body()).isEqualTo(200);
+            } finally { release.countDown(); }
+            error(old.get(30, TimeUnit.SECONDS), 409, "REVISION_CONFLICT");
+        } finally { release.countDown(); }
+        var state = json(get(v.path(), v.cookie())).path("state");
+        assertThat(state.path("revision").asLong()).isEqualTo(2);
+        assertThat(state.path("outlineStates").get(1).path("status").asString()).isEqualTo("draft");
+        assertThat(outlineMapper.update(v.context(), v.user(), v.qid(), 1, "[]", null)).isZero();
+        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(state);
+    }
+
+    @Test void progressFailureRollsBackDraftAndReceiptInTheSameTransaction() throws Exception {
+        Viewer v = partsViewer();
+        jdbc.execute("ALTER TABLE practice_question_state ADD CONSTRAINT test_progress_failure CHECK (answer_state IS NULL)");
+        try { error(post(v, reportedDraft("progress-failure", 0, "p1")), 500, "INTERNAL_ERROR"); }
+        finally { jdbc.execute("ALTER TABLE practice_question_state DROP CHECK test_progress_failure"); }
+        assertThat(stateCount(v)).isZero();
+        assertThat(receipts(v)).isZero();
+    }
+
+    @Test void answerProgressAndReceiptAreInvisibleUntilTheSingleTransactionCommits() throws Exception {
         Viewer v = partsViewer();
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        var seen = new java.util.concurrent.atomic.AtomicInteger();
         doAnswer(call -> {
-            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            if (seen.incrementAndGet() == 1) {
-                entered.countDown();
-                assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
-                return cloud.treenewbee.quizforge.rules.RuleResult.success(JSON.readTree("{\"valid\":true}"));
-            }
-            return cloud.treenewbee.quizforge.rules.RuleResult.rejected("RULE_TIMEOUT");
-        }).when(runner).execute(eq("validateAnswer"), any(), anyMap(), any(Duration.class));
-        try (var pool = Executors.newFixedThreadPool(2)) {
-            var first = pool.submit(() -> post(v, partDraft("older", 0, Map.of("text", "旧"))));
-            assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            entered.countDown();
+            assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            return sqlSession.getMapper(cloud.treenewbee.quizforge.practice.infrastructure.DraftOutlineMapper.class)
+                    .update(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3),
+                            call.getArgument(4), call.getArgument(5));
+        }).when(outlineMapper).update(eq(v.context()), eq(v.user()), eq(v.qid()), anyLong(), any(), any());
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var saved = pool.submit(() -> post(v, reportedDraft("atomic", 0, "p1")));
             try {
-                // 第一个请求停在规则调用时，新草稿已能提交事务并清除旧状态。
-                var second = pool.submit(() -> post(v, partDraft("newer", 1, Map.of("text", "新")))).get(15, TimeUnit.SECONDS);
-                assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
-                assertThat(json(second).path("state").path("revision").asLong()).isEqualTo(2);
-                assertThat(json(second).path("state").path("outlineStates").isNull()).isTrue();
+                assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+                assertThat(stateCount(v)).isZero();
+                assertThat(receipts(v)).isZero();
             } finally { release.countDown(); }
-            assertThat(first.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            assertThat(saved.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
         } finally { release.countDown(); }
-        var current = json(get(v.path(), v.cookie())).path("state");
-        assertThat(current.path("revision").asLong()).isEqualTo(2);
-        assertThat(current.path("answer").path("text").asString()).isEqualTo("新");
-        assertThat(current.path("outlineStates").isNull()).isTrue();
+        assertThat(stateCount(v)).isEqualTo(1);
+        assertThat(receipts(v)).isEqualTo(1);
     }
 
     @Test void declaredAnswerStateUsesOnlyWhitelistedDraftStatusesAndIds() throws Exception {
         Viewer v = partsViewer();
-        var q = reads.ruleQuestion(v.user(), v.collection(), v.qid());
-        assertThat(q.rulePackage().answerStateDeclared()).isTrue();
-        doReturn(cloud.treenewbee.quizforge.rules.RuleResult.success(JSON.readTree("{\"valid\":true}")))
-                .when(runner).execute(eq("validateAnswer"), any(), anyMap(), any(Duration.class));
-        var body = partDraft("reported", 0, Map.of("selectedOptionId", "a"));
-        body.put("data", Map.of("answer", Map.of("selectedOptionId", "a"), "answerState",
-                Map.of("status", "draft", "outlineStates", List.of(Map.of("id", "p1", "status", "draft")))));
-        var response = post(v, body);
+        var response = post(v, reportedDraft("reported", 0, "p1"));
         assertThat(json(response).path("state").path("outlineStates").get(0).path("status").asString()).isEqualTo("draft");
-        body = partDraft("bad-reported", 1, Map.of("selectedOptionId", "a"));
+        var body = partDraft("bad-reported", 1, Map.of("selectedOptionId", "a"));
         body.put("data", Map.of("answer", Map.of("selectedOptionId", "a"), "answerState",
-                Map.of("outlineStates", List.of(Map.of("id", "p1", "status", "correct")))));
-        var rejectedState = post(v, body);
-        assertThat(rejectedState.statusCode()).isEqualTo(200);
-        assertThat(json(rejectedState).path("state").path("outlineStates").isNull()).isTrue();
+                Map.of("status", "draft", "outlineStates", List.of(Map.of("id", "p1", "status", "correct")))));
+        var invalidState = post(v, body);
+        assertThat(invalidState.statusCode()).isEqualTo(200);
+        assertThat(json(invalidState).path("state").path("outlineStates").isNull()).isTrue();
     }
 
     private Viewer partsViewer() {
@@ -221,21 +231,11 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         return new Viewer(owner.user(), owner.cookie(), owner.collection(), owner.bank(), owner.context(), qid);
     }
 
-    private void useRules(Viewer v, boolean hooks) throws Exception {
-        String script = "QF.defineType({project(){return {maxScore:1}},grade(){return {score:0,maxScore:1,correct:false,feedback:null}},"
-                + (hooks ? "validateAnswer(){return true},getScore(data,state){return {score:0,maxScore:1,outlineStates:[{id:'p1',status:state.answer.left?'draft':'unanswered'},{id:'p2',status:state.answer.right?'draft':'unanswered'}]}}"
-                         : "getScore(){return {score:0,maxScore:1}}") + "});";
-        useScript(v, script);
-    }
-
-    private void useScript(Viewer v, String script) throws Exception {
-        var ref = new cloud.treenewbee.quizforge.rules.RulePackage.FileRef(blobs.put(script.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        var schema = new cloud.treenewbee.quizforge.rules.RulePackage.FileRef(blobs.put("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        var spec = new cloud.treenewbee.quizforge.rules.RulePackage(ref.sha256(),
-                new cloud.treenewbee.quizforge.rules.RulePackage.ApiVersion(1, 1), false, false, ref, schema, schema);
-        var original = reads.ruleQuestion(v.user(), v.collection(), v.qid());
-        doReturn(new PracticeReadService.RuleQuestion(original.data(), spec, original.outline()))
-                .when(reads).ruleQuestion(v.user(), v.collection(), v.qid());
+    private Map<String,Object> reportedDraft(String id, long revision, String child) {
+        var body = partDraft(id, revision, Map.of("selectedOptionId", "a"));
+        body.put("data", Map.of("answer", Map.of("selectedOptionId", "a"), "answerState",
+                Map.of("status", "draft", "outlineStates", List.of(Map.of("id", child, "status", "draft")))));
+        return body;
     }
 
     private Map<String,Object> partDraft(String id, long revision, Object answer) {
@@ -432,7 +432,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertThat(json(response).path("state").path("revision").asLong()).isEqualTo(revision);
         assertThat(json(response).path("state").path("status").asString()).isEqualTo("draft");
         assertThat(json(response).path("state").path("answer").path("selectedOptionId").asString()).isEqualTo(answer);
-        assertThat(json(response).path("question").path("data").isObject()).isTrue();
+        assertThat(json(response).has("question")).isFalse();
     }
     private void assertState(Viewer viewer, long revision, String answer) {
         var state = jdbc.queryForMap("SELECT revision,answer FROM practice_question_state WHERE context_id=? AND question_id=?", viewer.context(), viewer.qid());

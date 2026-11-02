@@ -1,13 +1,14 @@
 package cloud.treenewbee.quizforge.practice.application;
 
 import cloud.treenewbee.quizforge.practice.application.PracticeViews.*;
+import cloud.treenewbee.quizforge.practice.infrastructure.DraftOutlineMapper;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/** HTTP adaptation; the existing service owns the atomic draft and receipt writes. */
+/** 草稿、显示进度与回执在原有短事务中提交，不执行拓展代码。 */
 @Service
 public class DraftActionService {
     private final PracticeReadService reads;
@@ -15,32 +16,46 @@ public class DraftActionService {
     private final QuestionStamps stamps;
     private final JsonMapper json;
     private final DraftOutlineService outlines;
+    private final DraftOutlineMapper mapper;
 
-    public DraftActionService(PracticeReadService reads, IdempotentDraftService drafts, QuestionStamps stamps, JsonMapper json,
-            DraftOutlineService outlines) {
-        this.reads = reads; this.drafts = drafts; this.stamps = stamps; this.json = json;
+    public DraftActionService(PracticeReadService reads, IdempotentDraftService drafts, QuestionStamps stamps,
+            JsonMapper json, DraftOutlineService outlines, DraftOutlineMapper mapper) {
+        this.reads = reads;
+        this.drafts = drafts;
+        this.stamps = stamps;
+        this.json = json;
         this.outlines = outlines;
+        this.mapper = mapper;
     }
 
-    public DraftResponse save(String userId, String collectionId, String qid, String requestId, long revision,
+    public DraftSaved save(String userId, String collectionId, String qid, String requestId, long revision,
             JsonNode answer, String contentVersion) {
         return save(userId, collectionId, qid, requestId, revision, answer, contentVersion, null);
     }
 
-    public DraftResponse save(String userId, String collectionId, String qid, String requestId, long revision,
+    public DraftSaved save(String userId, String collectionId, String qid, String requestId, long revision,
             JsonNode answer, String contentVersion, JsonNode reported) {
-        var prepared = reads.prepareDraft(userId, collectionId, qid);
-        if (contentVersion != null && !contentVersion.equals(prepared.template().stamp().contentVersion())) {
+        var target = reads.prepareDraftSave(userId, collectionId, qid);
+        var version = stamps.stamp(target.contextId(), qid, 0, target.contentSha256(), target.extensionDigest());
+        if (contentVersion != null && !contentVersion.equals(version.contentVersion()))
             throw new ApiException(HttpStatus.CONFLICT, "CONTENT_CONFLICT", "题目内容版本已变化，请刷新后重试");
-        }
-        String receipt = drafts.save(userId, requestId, prepared.contextId(), qid, revision,
-                json.writeValueAsString(answer), prepared.contentSha256());
-        long saved = json.readTree(receipt).path("revision").asLong();
-        var progress = outlines.complete(userId, collectionId, qid, prepared.contextId(), requestId, saved, answer, reported, receipt);
-        var template = prepared.template();
-        // Do not re-read live state: replaying revision N after N+1 must return the saved answer/revision N.
-        return new DraftResponse(saved, template.question(), new State("draft", answer, null, saved, progress.answerState(), progress.outlineStates()),
-                template.draft(), stamps.stamp(prepared.contextId(), qid, saved, prepared.contentSha256(), prepared.extensionDigest()),
-                template.extension(), template.features(), template.capabilities(), null, template.whiteboard());
+        var progress = outlines.calculate(target.outline(), target.answerStateDeclared(), answer, reported);
+        String receipt = drafts.save(userId, requestId, target.contextId(), qid, revision,
+                json.writeValueAsString(answer), target.contentSha256(), saved -> {
+                    if (mapper.update(target.contextId(), userId, qid, saved, encode(progress.outlineStates()),
+                            encode(progress.answerState())) != 1) throw new IllegalStateException("草稿进度写入失败");
+                    var response = json.createObjectNode().put("revision", saved);
+                    response.set("draftProgress", json.valueToTree(progress));
+                    return json.writeValueAsString(response);
+                });
+        var savedReceipt = json.readTree(receipt);
+        long saved = savedReceipt.path("revision").asLong();
+        var stored = savedReceipt.path("draftProgress");
+        return new DraftSaved(saved, new State("draft", answer, null, saved,
+                nullable(stored.path("answerState")), nullable(stored.path("outlineStates"))),
+                stamps.stamp(target.contextId(), qid, saved, target.contentSha256(), target.extensionDigest()));
     }
+
+    private String encode(JsonNode node) { return node == null ? null : json.writeValueAsString(node); }
+    private static JsonNode nullable(JsonNode node) { return node.isMissingNode() || node.isNull() ? null : node; }
 }

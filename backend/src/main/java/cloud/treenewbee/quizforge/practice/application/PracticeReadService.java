@@ -125,6 +125,20 @@ public class PracticeReadService {
 
     public record PreparedDraft(String contextId, byte[] contentSha256, byte[] extensionDigest, QuestionResponse template, String userId) {}
 
+    public record DraftSaveTarget(String contextId, byte[] contentSha256, byte[] extensionDigest,
+            JsonNode outline, boolean answerStateDeclared) {}
+
+    /** 保存路径只检查归属、审核与本题元数据，绝不访问投影缓存或 rule-runner。 */
+    public DraftSaveTarget prepareDraftSave(String userId, String id, String qid) {
+        collection(userId, id);
+        var question = reads.draftQuestion(userId, id, qid).orElseThrow(() -> notFound());
+        boolean declared = false;
+        for (JsonNode capability : decode(question.manifest()).path("requiresApi").path("capabilities"))
+            if ("answer-state".equals(capability.asString())) declared = true;
+        return new DraftSaveTarget(context(userId, id), question.contentSha256(), question.extensionDigest(),
+                decode(question.outline()), declared);
+    }
+
     /** Resolve ownership and immutable projection before entering the draft/receipt transaction. */
     public PreparedDraft prepareDraft(String userId, String id, String qid) {
         var source = source(userId, id, qid);
@@ -172,14 +186,12 @@ public class PracticeReadService {
     }
 
     /** Internal rule input; ownership, availability and exact question lookup match the read path. */
-    public record RuleQuestion(JsonNode data, RulePackage rulePackage, JsonNode outline) {
-        public RuleQuestion(JsonNode data, RulePackage rulePackage) { this(data, rulePackage, null); }
-    }
+    public record RuleQuestion(JsonNode data, RulePackage rulePackage) {}
 
     public RuleQuestion ruleQuestion(String userId, String collectionId, String questionId) {
         var source = source(userId, collectionId, questionId);
         return new RuleQuestion(json.readTree(source.question().data()),
-                pages.rulePackage(pages.extension(source.question().extensionDigest())), decode(source.question().outline()));
+                pages.rulePackage(pages.extension(source.question().extensionDigest())));
     }
 
     private record QuestionSource(PracticeReadRows.Collection collection, QuestionRow question) {}

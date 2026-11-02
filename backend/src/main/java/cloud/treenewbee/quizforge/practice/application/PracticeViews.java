@@ -30,6 +30,8 @@ public final class PracticeViews {
         }
     }
     public record Unchanged(boolean unchanged, Stamp stamp) {}
+    /** 草稿仅返回增量，前端保留已经加载的安全题目投影。 */
+    public record DraftSaved(long revision, State state, Stamp stamp) {}
     public record DraftResponse(long revision, Question question, State state, JsonNode draft, Stamp stamp,
             Extension extension, JsonNode features, Capabilities capabilities, Object aiTask,
             cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews.View whiteboard) {

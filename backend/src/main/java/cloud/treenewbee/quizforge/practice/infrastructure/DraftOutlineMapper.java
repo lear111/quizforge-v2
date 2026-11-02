@@ -18,13 +18,4 @@ public interface DraftOutlineMapper {
             @Param("questionId") String questionId, @Param("revision") long revision,
             @Param("outlineStates") String outlineStates, @Param("answerState") String answerState);
 
-    // 回执只扩展一次：重放不重新校验，也不能把旧进度重新应用到当前题。
-    @Update("""
-            UPDATE practice_request_receipt
-            SET response = JSON_SET(response, '$.draftProgress', JSON_EXTRACT(#{progress}, '$'))
-            WHERE user_id = #{userId} AND request_id = #{requestId}
-              AND JSON_CONTAINS_PATH(response, 'one', '$.draftProgress') = 0
-            """)
-    int claim(@Param("userId") String userId, @Param("requestId") String requestId,
-            @Param("progress") String progress);
 }

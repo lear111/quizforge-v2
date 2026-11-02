@@ -24,7 +24,7 @@
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
 | 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
 <<<<<<< HEAD
-| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 / L1.6 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；可带 data.answerState；事务外校验进度，版本条件回写 answerState / outlineStates；校验失败仍保存答案，小题状态未知；保留失败输入与 409 恢复 |
+| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 / L1.6 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；可带 data.answerState；不调用规则或投影；白名单进度与草稿、回执同事务写入；返回状态/版本增量并保留已加载投影；非声明拓展小题未知；保留失败输入与 409 恢复 |
 | 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为所选层；由 features.whiteboard 控制 |
 =======
 | 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；保留失败输入与 409 恢复 |
