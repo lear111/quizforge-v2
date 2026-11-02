@@ -152,6 +152,23 @@
           <p id="quota-status" class="quota-note" role="status"></p>
           <button id="quota-refresh" class="text-button" type="button">刷新用量</button>
         </section>
+        <section id="ai-section" class="ai-section" aria-labelledby="ai-title">
+          <h2 id="ai-title">AI 余额</h2>
+          <p class="ai-balance"><span id="ai-balance">—</span><span id="ai-overdrawn" class="ai-overdrawn" hidden>欠费</span></p>
+          <form id="redeem-form" class="redeem-form" novalidate>
+            <label for="redeem-code">兑换码</label>
+            <div class="code-row">
+              <input id="redeem-code" name="code" type="text" maxlength="64" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="AI-XXXX-XXXX-XXXX-XXXX">
+              <button class="secondary code-button" type="submit">兑换</button>
+            </div>
+          </form>
+          <p id="ai-status" class="quota-note" role="status"></p>
+          <details id="ai-ledger-section" class="ai-ledger">
+            <summary>余额流水</summary>
+            <ol id="ai-ledger" class="ai-ledger-list"></ol>
+            <button id="ai-ledger-more" class="text-button" type="button" hidden>加载更多</button>
+          </details>
+        </section>
         <details id="contact-section" class="contact-section" hidden>
           <summary id="contact-summary">绑定联系方式</summary>
           <form id="contact-form" novalidate>

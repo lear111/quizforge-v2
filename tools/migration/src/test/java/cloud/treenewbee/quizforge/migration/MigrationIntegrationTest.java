@@ -86,7 +86,7 @@ class MigrationIntegrationTest {
         assertThat(codes(inspect.json())).contains("EMAIL_NOT_NORMALIZED", "STALE_UNVERIFIED_CONTACT")
                 .doesNotContain("EMAIL_COLLISION_CI");
         assertThat(inspect.json().path("summary").path("phoneOnly").asInt()).isEqualTo(1);
-        assertThat(inspect.json().path("aiDefaultCredit").path("status").asString()).isEqualTo("pending-L5.1");
+        assertThat(inspect.json().path("aiDefaultCredit").path("status").asString()).isEqualTo("planned");
 
         Run migrate = run("migrate", "--source", source.toString());
         assertThat(migrate.exit()).as(migrate.err()).isZero();
@@ -332,20 +332,51 @@ class MigrationIntegrationTest {
         }
     }
 
-    // ------------------------------------------------------------------ 默认额度（待 L5.1）
+    // ------------------------------------------------------------------ 默认额度
 
     @Test
-    void defaultCreditIsAnOptionalStepPendingL51() throws Exception {
+    void migrationGrantsTheDefaultCreditExactlyOncePerUser() throws Exception {
         Path source = sampleSource();
-        assertThat(run("migrate", "--source", source.toString()).exit()).isZero();
+        Run migrate = run("migrate", "--source", source.toString());
+        assertThat(migrate.exit()).as(migrate.err()).isZero();
+        JsonNode section = migrate.json().path("aiDefaultCredit");
+        assertThat(section.path("status").asString()).isEqualTo("granted");
+        assertThat(section.path("kind").asString()).isEqualTo("default_credit");
+        assertThat(section.path("granted").asInt()).isEqualTo(3);
+        assertCreditedOnce(3);
+
+        // 补发命令可重复执行：已发放的用户不再发放，余额与流水不变。
+        for (int i = 0; i < 2; i++) {
+            Run grant = run("grant-default-credit");
+            assertThat(grant.exit()).as(grant.err()).isZero();
+            assertThat(grant.json().path("aiDefaultCredit").path("granted").asInt()).isZero();
+            assertCreditedOnce(3);
+        }
+
+        // 迁移后才出现的、没有余额行的用户（例如手工补录）由补发命令开户并发放一次。
+        try (Connection target = target(); Statement statement = target.createStatement()) {
+            statement.executeUpdate("INSERT INTO account_user (id, email, name, password_hash, password_algo, created_at, "
+                    + "updated_at) SELECT '00000000-0000-7000-8000-00000000abcd', 'late@example.test', '补录', password_hash, "
+                    + "password_algo, created_at, updated_at FROM account_user LIMIT 1");
+        }
         Run grant = run("grant-default-credit");
-        assertThat(grant.exit()).isEqualTo(3);
-        assertThat(grant.err()).contains("待 L5.1");
-        JsonNode section = grant.json().path("aiDefaultCredit");
-        assertThat(section.path("status").asString()).isEqualTo("pending-L5.1");
-        assertThat(section.path("amountUnits").asLong()).isEqualTo(10_000);
-        assertThat(section.path("users").asInt()).isEqualTo(3);
-        assertThat(section.path("aiTablesPresent").asBoolean()).isFalse();
+        assertThat(grant.exit()).as(grant.err()).isZero();
+        assertThat(grant.json().path("aiDefaultCredit").path("granted").asInt()).isEqualTo(1);
+        assertCreditedOnce(4);
+
+        Run verify = run("verify", "--source", source.toString());
+        assertThat(codes(verify.json())).doesNotContain("AI_CREDIT_MISMATCH");
+        assertThat(verify.json().path("aiDefaultCredit").path("status").asString()).isEqualTo("verified");
+    }
+
+    private void assertCreditedOnce(int users) throws Exception {
+        assertThat(count("ai_account")).isEqualTo(users);
+        assertThat(count("ai_ledger")).isEqualTo(users);
+        try (Connection target = target(); Statement statement = target.createStatement()) {
+            assertThat(strings(statement, "SELECT DISTINCT CONCAT(a.balance, '/', a.ledger_seq, '/', l.seq, '/', l.delta, '/', "
+                    + "l.balance_after, '/', l.kind, '/', l.ref = a.user_id) FROM ai_account a JOIN ai_ledger l "
+                    + "ON l.user_id = a.user_id")).containsExactly("10000/1/1/10000/10000/default_credit/1");
+        }
     }
 
     @Test

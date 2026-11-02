@@ -1,4 +1,5 @@
 import {quotaCards} from './quota.js';
+import {bindAiBalance} from './ai-balance.js';
 import {bindActivity} from '/practice/shell/activity.js';
 
 function practiceReturn() {
@@ -405,6 +406,7 @@ function showAccount(data) {
   document.title = '账号 · QuizForge';
   for (const form of [loginForm, registerForm, resetForm, contactForm]) form.reset();
   void loadQuota();
+  void refreshAi();
 }
 
 async function loadQuota() {
@@ -430,6 +432,7 @@ async function loadQuota() {
 }
 
 byId('quota-refresh').addEventListener('click', () => { if (!pending) void loadQuota(); });
+const refreshAi = bindAiBalance(request);
 byId('contact-section').addEventListener('toggle', () => {
   if (byId('contact-section').open) {
     void refreshConfig().then(() => syncCaptcha(contactForm));

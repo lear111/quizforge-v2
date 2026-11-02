@@ -56,6 +56,8 @@ services:
       # 只允许本机或 .test 来源）；正式部署设 QF_VERIFICATION_MODE=provider，密钥只放在 git 忽略的
       # deploy/.env 中，provider 模式下两个摘要密钥缺失时启动失败。
       QF_VERIFICATION_MODE: ${QF_VERIFICATION_MODE:-fake}
+      # 兑换码完整码的加密密钥（32 字节 Base64，只放在 deploy/.env）；本机 fake 模式可不设。
+      QF_AI_MASTER_KEY: ${QF_AI_MASTER_KEY:-}
       QF_EMAIL_CODE_PEPPER: ${QF_EMAIL_CODE_PEPPER:-}
       QF_SMS_CODE_PEPPER: ${QF_SMS_CODE_PEPPER:-}
       QF_SMS_DAILY_LIMIT: ${QF_SMS_DAILY_LIMIT:-100}

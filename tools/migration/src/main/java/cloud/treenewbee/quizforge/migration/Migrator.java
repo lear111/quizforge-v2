@@ -2,13 +2,16 @@ package cloud.treenewbee.quizforge.migration;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 迁移（详细设计 09 第 5.3 节）：
  * <ul>
  *   <li>目标库账号相关表必须全部为空，否则拒绝（防止迁入已有用户的库或重复迁移）；</li>
- *   <li>全部写入在一个事务内；提交前在同一事务里逐用户核对，任何失败整体回滚；</li>
+ *   <li>全部写入在一个事务内，包括为每个用户开户并发放 1 元默认 AI 额度（{@link DefaultCredit}）；
+ *       提交前在同一事务里逐用户核对，任何失败整体回滚；</li>
  *   <li>{@code dryRun} 完整执行并核对后回滚。</li>
  * </ul>
  */
@@ -20,7 +23,7 @@ public final class Migrator {
         void afterInsert(int insertedCount) throws SQLException;
     }
 
-    public record Result(int migrated, boolean committed, List<Finding> findings) {
+    public record Result(int migrated, int credited, boolean committed, List<Finding> findings) {
     }
 
     private final TargetDatabase target;
@@ -55,17 +58,20 @@ public final class Migrator {
                     target.insert(account);
                     failure.afterInsert(++inserted);
                 }
-                List<Finding> mismatches = Verifier.compare(plan, target.readAccounts(), target);
+                List<String> ids = plan.accounts().stream().map(AccountPlan.Account::id).toList();
+                int credited = DefaultCredit.LEDGER.grant(connection, ids, DefaultCredit.AMOUNT_UNITS, Instant.now());
+                List<Finding> mismatches = new ArrayList<>(Verifier.compare(plan, target.readAccounts(), target));
+                mismatches.addAll(DefaultCredit.verify(connection, ids, DefaultCredit.AMOUNT_UNITS));
                 if (!mismatches.isEmpty()) {
                     connection.rollback();
-                    return new Result(0, false, mismatches);
+                    return new Result(0, 0, false, mismatches);
                 }
                 if (dryRun) {
                     connection.rollback();
-                    return new Result(inserted, false, List.of());
+                    return new Result(inserted, credited, false, List.of());
                 }
                 connection.commit();
-                return new Result(inserted, true, List.of());
+                return new Result(inserted, credited, true, List.of());
             } catch (SQLException | RuntimeException error) {
                 connection.rollback();
                 if (error instanceof MigrationException known) throw known;

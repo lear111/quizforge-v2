@@ -1,5 +1,5 @@
 import { query } from '../api.js';
-import { el, time, bytes, badge, shortId } from './format.js';
+import { el, time, bytes, badge, shortId, money, parseMoney } from './format.js';
 
 const PAGE_SIZE = 20;
 const MIB = 1024 * 1024;
@@ -76,7 +76,8 @@ async function renderDetail(container, context, id) {
       el('p', {}, el('a', { href: `#notifications/${user.id}`, text: '给该用户发通知' })),
       // 不能封禁自己（服务器同样拒绝），自己的详情页不显示封禁表单。
       user.id === context.me?.id ? null : blockForm(user, context, refresh),
-      quotaForm(user, storage, context, refresh));
+      quotaForm(user, storage, context, refresh),
+      await aiSection(user, context, refresh));
   }
   await refresh();
 }
@@ -154,4 +155,51 @@ function quotaForm(user, storage, context, refresh) {
     }
   });
   return form;
+}
+
+const LEDGER_KINDS = { default_credit: '默认额度', redeem: '兑换码', ai_call: 'AI 调用', admin: '管理员调整',
+  migration: '迁移', refund: '退款' };
+
+// AI 余额：显示余额与最近流水，增减都必须填写原因（写 admin 流水与操作日志）。
+async function aiSection(user, context, refresh) {
+  const { balance, ledger } = await context.request(`/api/admin/users/${encodeURIComponent(user.id)}/ai`);
+  const amount = el('input', { type: 'text', name: 'delta', inputmode: 'decimal', placeholder: '例如 5 或 -1.5',
+    autocomplete: 'off' });
+  const reason = el('textarea', { name: 'reason', maxlength: '200', rows: '2', placeholder: '原因（必填，最多 200 字）' });
+  const submit = el('button', { type: 'submit', class: 'qa-button', text: '调整余额' });
+  const form = el('form', { class: 'qa-form', 'data-action': 'ai-balance' },
+    el('label', {}, '增减金额（元，负数为扣减）', amount), el('label', {}, '原因', reason), submit);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const delta = parseMoney(amount.value);
+    if (!delta) { context.toast('请输入非零金额，最多四位小数', 'danger'); amount.focus(); return; }
+    if (!reason.value.trim()) { context.toast('请填写调整原因', 'danger'); reason.focus(); return; }
+    if (!confirm(`确定给“${user.name}”${delta > 0 ? '增加' : '扣减'} ${money(Math.abs(delta))}？`)) return;
+    submit.disabled = true;
+    try {
+      await context.request(`/api/admin/users/${encodeURIComponent(user.id)}/ai-balance`, 'POST',
+        { delta, reason: reason.value.trim() });
+      context.toast('余额已调整', 'success');
+      await refresh();
+    } catch (error) {
+      context.toast(error.message, 'danger');
+      submit.disabled = false;
+    }
+  });
+  const rows = ledger.items.map((entry) => el('tr', {},
+    el('td', { text: time(entry.createdAt) }),
+    el('td', { text: LEDGER_KINDS[entry.kind] ?? entry.kind }),
+    el('td', { class: entry.delta < 0 ? 'qa-negative' : '', text: `${entry.delta > 0 ? '+' : ''}${money(entry.delta)}` }),
+    el('td', { text: money(entry.balanceAfter) }),
+    el('td', { text: entry.actor ? `${entry.actor.name ?? shortId(entry.actor.id)}：${entry.reason ?? ''}` : (entry.reason ?? '—') })));
+  return el('section', { class: 'qa-panel', 'data-section': 'ai' },
+    el('h2', { text: 'AI 余额' }),
+    el('p', { 'data-ai-balance': String(balance.balance) }, `当前余额 ${money(balance.balance)}`,
+      balance.overdrawn ? badge('欠费', 'danger') : null),
+    el('div', { class: 'qa-table-wrap' }, el('table', { class: 'qa-table' },
+      el('thead', {}, el('tr', {}, ...['时间', '类型', '变动', '变动后余额', '说明'].map((text) => el('th', { scope: 'col', text })))),
+      el('tbody', {}, ...rows))),
+    rows.length ? (ledger.nextBefore ? el('p', { class: 'qa-muted', text: '只显示最近 20 条流水。' }) : null)
+      : el('p', { class: 'qa-muted', text: '还没有流水' }),
+    el('h3', { text: '调整余额' }), form);
 }

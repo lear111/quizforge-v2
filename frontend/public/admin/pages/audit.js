@@ -16,6 +16,9 @@ const ACTIONS = {
   'notification-deleted': '删除通知',
   'notification-pinned': '置顶通知',
   'notification-unpinned': '取消置顶通知',
+  'ai-balance-adjusted': '调整 AI 余额',
+  'ai-codes-created': '生成 AI 兑换码',
+  'ai-code-revoked': '停用 AI 兑换码',
 };
 
 export async function render(container, context) {

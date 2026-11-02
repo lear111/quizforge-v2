@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
  * inspect              --source 副本.sqlite [--report 报告.json]
  * migrate              --source 副本.sqlite --target-url jdbc:mysql://… [--target-user 用户] [--dry-run] [--report …]
  * verify               --source 副本.sqlite --target-url … [--known-passwords 文件.json] [--login-url http://…] [--report …]
- * grant-default-credit --target-url … [--report …]      （待 L5.1 完成后执行）
+ * grant-default-credit --target-url … [--report …]      （为还没有默认额度的用户补发，可重复执行）
  * </pre>
  *
  * 目标库密码只从环境变量 QF_MIGRATION_TARGET_PASSWORD 读取，不出现在命令行与报告中。
@@ -73,7 +74,7 @@ public final class MigrationCli {
         AccountPlan plan = AccountPlan.build(data);
         Report report = new Report("inspect", started).source(data).findings(plan.findings())
                 .accounts(plan, null, "planned")
-                .put("aiDefaultCredit", DefaultCredit.reportSection(plan.accounts().size(), false));
+                .put("aiDefaultCredit", DefaultCredit.reportSection("planned", plan.accounts().size(), null));
         return finish(report, options, out);
     }
 
@@ -93,8 +94,9 @@ public final class MigrationCli {
             report.findings(result.findings()).put("migrated", result.migrated()).put("committed", result.committed());
             report.accounts(plan, result.committed() ? result.migrated() : null,
                     result.findings().isEmpty() ? (dryRun ? "dry-run-ok" : "ok") : "not-migrated");
-            report.put("aiDefaultCredit", DefaultCredit.reportSection(plan.accounts().size(),
-                    DefaultCredit.aiTablesPresent(target.connection())));
+            report.put("aiDefaultCredit", DefaultCredit.reportSection(result.committed() ? "granted"
+                    : result.findings().isEmpty() && dryRun ? "dry-run-ok" : "not-granted",
+                    plan.accounts().size(), result.committed() || dryRun ? result.credited() : null));
             return finish(report, options, out);
         } catch (SQLException error) {
             throw new MigrationException("TARGET_UNREACHABLE", "读取目标库失败：" + error.getMessage());
@@ -119,27 +121,43 @@ public final class MigrationCli {
                         "未提供 --known-passwords：须用已知密码的邮箱账号与只有手机号的账号各至少一个确认能登录")));
             }
             report.accounts(plan, target.readAccounts().size(), "ok");
-            report.put("aiDefaultCredit", DefaultCredit.reportSection(plan.accounts().size(),
-                    DefaultCredit.aiTablesPresent(target.connection())));
+            List<Finding> credit = DefaultCredit.verify(target.connection(),
+                    plan.accounts().stream().map(AccountPlan.Account::id).toList(), DefaultCredit.AMOUNT_UNITS);
+            report.findings(credit);
+            report.put("aiDefaultCredit", DefaultCredit.reportSection(credit.isEmpty() ? "verified" : "mismatch",
+                    plan.accounts().size(), null));
             return finish(report, options, out);
         } catch (SQLException error) {
             throw new MigrationException("TARGET_UNREACHABLE", "读取目标库失败：" + error.getMessage());
         }
     }
 
+    /** 为目标库中还没有默认额度流水的用户补发（同一事务内发放并核对）；已发放的用户不变，可重复执行。 */
     private static int grantDefaultCredit(Map<String, String> options, Map<String, String> env, Instant started,
                                           PrintStream out, PrintStream err) {
         try (TargetDatabase target = target(options, env)) {
-            boolean present = DefaultCredit.aiTablesPresent(target.connection());
-            int users = target.readAccounts().size();
+            if (target.schemaVersion() < TargetDatabase.MIN_SCHEMA_VERSION) {
+                err.println("目标库结构版本低于 V" + TargetDatabase.MIN_SCHEMA_VERSION + "，还没有 AI 余额与流水表");
+                return 3;
+            }
+            Connection connection = target.connection();
+            List<String> ids = List.copyOf(target.readAccounts().keySet());
             Report report = new Report("grant-default-credit", started)
-                    .target(target.databaseName(), target.schemaVersion())
-                    .put("aiDefaultCredit", DefaultCredit.reportSection(users, present));
-            finish(report, options, out);
-            // L5.1 接入 DefaultCredit.Granter 后，在这里于一个事务内为全部迁移用户发放并核对。
-            err.println("默认额度待 L5.1 完成后执行：" + (present ? "AI 表已存在，但发放接口尚未接入本工具"
-                    : "V2 尚无 AI 余额与流水表") + "（见 DefaultCredit 的接口说明）");
-            return 3;
+                    .target(target.databaseName(), target.schemaVersion());
+            connection.setAutoCommit(false);
+            try {
+                int granted = DefaultCredit.LEDGER.grant(connection, ids, DefaultCredit.AMOUNT_UNITS, Instant.now());
+                List<Finding> findings = DefaultCredit.verify(connection, ids, DefaultCredit.AMOUNT_UNITS);
+                if (findings.isEmpty()) connection.commit(); else connection.rollback();
+                report.findings(findings).put("aiDefaultCredit", DefaultCredit.reportSection(
+                        findings.isEmpty() ? "granted" : "not-granted", ids.size(), findings.isEmpty() ? granted : null));
+            } catch (SQLException | RuntimeException error) {
+                connection.rollback();
+                throw new MigrationException("MIGRATION_FAILED", "发放默认额度失败，已整体回滚：" + error.getMessage());
+            } finally {
+                connection.setAutoCommit(true);
+            }
+            return finish(report, options, out);
         } catch (SQLException error) {
             throw new MigrationException("TARGET_UNREACHABLE", "读取目标库失败：" + error.getMessage());
         }

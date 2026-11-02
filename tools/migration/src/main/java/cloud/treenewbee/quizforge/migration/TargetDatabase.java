@@ -16,15 +16,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * V2 的 MySQL。迁移只写账号四张表；所有时间按 UTC 的 DATETIME(3) 读写，不依赖连接时区。
+ * V2 的 MySQL。迁移只写账号四张表与 AI 余额、流水；所有时间按 UTC 的 DATETIME(3) 读写，不依赖连接时区。
  */
 public final class TargetDatabase implements AutoCloseable {
 
-    /** 迁移前必须为空的表（详细设计 09 第 5.3 节）。 */
+    /** 迁移前必须为空的表（详细设计 09 第 5.3 节）；AI 余额与流水随账号一起迁入，同样必须为空。 */
     static final List<String> ACCOUNT_TABLES = List.of(
-            "account_user", "account_user_phone", "account_unverified_contact", "account_block", "auth_session");
-    /** 需要 V9（verified_at、account_unverified_contact）及之后的结构。 */
-    static final int MIN_SCHEMA_VERSION = 9;
+            "account_user", "account_user_phone", "account_unverified_contact", "account_block", "auth_session",
+            "ai_account", "ai_ledger");
+    /** 需要 V16（AI 余额与流水）及之后的结构。 */
+    static final int MIN_SCHEMA_VERSION = 16;
 
     private final Connection connection;
 

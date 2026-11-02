@@ -51,6 +51,13 @@ qf:
     blob-dir: ${QF_BLOB_DIR:./data/blobs}
   security:
     allowed-origin: ${QF_PUBLIC_ORIGIN:http://localhost:8088}
+  # AI 余额与兑换码（L5.1）。金额单位 0.0001 元；master-key 为 32 字节的 Base64，用于加密保存兑换码完整码，
+  # provider 模式或非本机来源下缺少时启动失败。
+  ai:
+    master-key: ${QF_AI_MASTER_KEY:}
+    default-credit: ${QF_AI_DEFAULT_CREDIT:10000}
+    reconcile:
+      interval-ms: ${QF_AI_RECONCILE_INTERVAL_MS:3600000}
   # 匿名认证接口（登录、注册、发送验证码、找回密码）按客户端 IP 共用的每分钟上限（旧平台为 12）。
   auth:
     rate-limit:

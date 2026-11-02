@@ -38,3 +38,20 @@ export function badge(text, tone = '') {
 export function shortId(id) {
   return typeof id === 'string' ? id.slice(0, 8) : '—';
 }
+
+// AI 余额以 0.0001 元为单位的整数保存；显示为元，至少两位小数、最多四位。
+export function money(units) {
+  if (!Number.isFinite(units)) return '—';
+  const sign = units < 0 ? '-' : '';
+  const abs = Math.abs(units);
+  const fraction = String(abs % 10000).padStart(4, '0').replace(/0{1,2}$/, '');
+  return `${sign}¥${Math.floor(abs / 10000)}.${fraction}`;
+}
+
+/** 把“元”的输入解析为 0.0001 元的整数；格式不对返回 null。 */
+export function parseMoney(text) {
+  const match = /^([+-]?)(\d{1,7})(?:\.(\d{1,4}))?$/.exec(String(text).trim());
+  if (!match) return null;
+  const units = Number(match[2]) * 10000 + Number((match[3] ?? '').padEnd(4, '0'));
+  return match[1] === '-' ? -units : units;
+}
