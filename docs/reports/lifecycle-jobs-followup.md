@@ -28,7 +28,7 @@
 
 复现方法：`LifecycleJobSchedulingMigrationTest.upgradeBackfillsSparseArchiveCursorAndClaimUsesOrderedRangeInsteadOfFilesort`。独立 Testcontainers MySQL 8.4，先运行 Flyway 至 V11，写入 10000 条 completed/failed 合成任务、100 条 queued 和 1 条过期 running。ANALYZE TABLE 后对旧 SQL 做 EXPLAIN；迁移至最新版本，对 Mapper 注解中的真实新 SQL 做 EXPLAIN，再把终态历史增至 20000 条复验。固定查询时间为 UTC `2026-11-01 12:00:00`。
 
-旧 SQL（SELECT 为原有会话任务字段）：
+旧 SQL（SELECT 为原有练习任务字段）：
 
 ```sql
 SELECT id,user_id,collection_id,context_id,round_id,kind,status,total,completed,
@@ -70,11 +70,12 @@ over (NULL < available_at <= '2026-11-01 12:00:00.000')
 
 ## 测试对应
 
-新增 18 项，无固定 sleep：
+新增 19 项，无固定 sleep：
 
 | 规则 | 测试 |
 | --- | --- |
 | 空闲退避、5 秒封顶、恢复 250ms | `LifecycleJobPollerTest.emptyPollsBackOffToFiveSecondsAndWorkResetsTo250ms` |
+| 保留自定义工作间隔，不把空闲上限误用到工作节奏 | `customActiveIntervalIsPreservedWhileIdleWaitStaysWithinFiveSeconds` |
 | 立即唤醒、取消竞态 | `wakeCancelsIdleWaitAndStaleCallbackCannotExecuteOrScheduleAgain` |
 | 执行时唤醒、不并发执行 | `wakeDuringTickRunsImmediatelyAfterItWithoutConcurrentTicks` |
 | 异常继续、关闭、重复 start | `errorStillSchedulesAnotherPoll`、`closeCancelsPendingTickAndWakeCannotRestartIt`、`repeatedStartAndWakeBeforeStartDoNotCreateExtraCallbacks` |
@@ -89,7 +90,7 @@ over (NULL < available_at <= '2026-11-01 12:00:00.000')
 | 快照与游标原子回滚、旧 owner 不能推进 | `archiveCursorAndSnapshotRollbackTogetherAndOldOwnerCannotAdvanceIt` |
 | 旧归档游标升级与前后 EXPLAIN | `LifecycleJobSchedulingMigrationTest.upgradeBackfillsSparseArchiveCursorAndClaimUsesOrderedRangeInsteadOfFilesort` |
 
-本机新增测试 `mvn verify -Dtest=LifecycleJobFollowupIntegrationTest,LifecycleJobSchedulingMigrationTest,LifecycleJobPollerTest,LifecycleJobMaintenanceTest`：18 项、失败 0、错误 0、跳过 0。另一次 clean verify 中原有 `PracticeCompletionHistoryIntegrationTest` 26 项和 `PracticeCompletionMigrationTest` 1 项通过。
+本机新增测试使用 `mvn verify -Dtest=LifecycleJobFollowupIntegrationTest,LifecycleJobSchedulingMigrationTest,LifecycleJobPollerTest,LifecycleJobMaintenanceTest`。首轮 18 项、失败 0、错误 0、跳过 0；之后增加第 19 项自定义间隔兼容测试，最终结果见 PR 描述。另一次 clean verify 中原有 `PracticeCompletionHistoryIntegrationTest` 26 项和 `PracticeCompletionMigrationTest` 1 项通过。
 
 首轮分支手动 CI：后端 mvn verify 3228 项、失败 0、错误 0、跳过 3 项既有 archive 测试；账号迁移工具 17 项通过。最终四个 job 与浏览器数量以 PR 描述的最终提交验证记录为准。
 

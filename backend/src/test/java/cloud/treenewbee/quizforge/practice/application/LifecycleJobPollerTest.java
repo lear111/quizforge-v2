@@ -63,6 +63,18 @@ class LifecycleJobPollerTest {
     }
 
     @Test
+    void customActiveIntervalIsPreservedWhileIdleWaitStaysWithinFiveSeconds() {
+        poller = new LifecycleJobPoller(worker, found::get, 10000);
+        poller.start();
+        found.set(true);
+        latest().run().run();
+        assertThat(latest().delay()).isEqualTo(10000);
+        found.set(false);
+        latest().run().run();
+        assertThat(latest().delay()).isEqualTo(5000);
+    }
+
+    @Test
     void wakeCancelsIdleWaitAndStaleCallbackCannotExecuteOrScheduleAgain() {
         poller.start();
         for (int i = 0; i < 5; i++) {

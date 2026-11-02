@@ -24,8 +24,8 @@ final class LifecycleJobPoller implements AutoCloseable {
     LifecycleJobPoller(ScheduledExecutorService worker, BooleanSupplier tick, long interval) {
         this.worker = worker;
         this.tick = tick;
-        this.interval = Math.max(10, Math.min(MAX_IDLE_MS, interval));
-        this.idleDelay = this.interval;
+        this.interval = Math.max(10, interval);
+        this.idleDelay = Math.min(MAX_IDLE_MS, this.interval);
     }
 
     synchronized void start() {
@@ -39,7 +39,7 @@ final class LifecycleJobPoller implements AutoCloseable {
         if (!started || closed) {
             return;
         }
-        idleDelay = interval;
+        idleDelay = Math.min(MAX_IDLE_MS, interval);
         if (running) {
             wakeRequested = true;
         } else {
@@ -72,8 +72,9 @@ final class LifecycleJobPoller implements AutoCloseable {
             synchronized (this) {
                 running = false;
                 if (!closed) {
-                    idleDelay = found || wakeRequested ? interval : Math.min(MAX_IDLE_MS, idleDelay * 2);
-                    schedule(wakeRequested ? 0 : idleDelay);
+                    idleDelay = found || wakeRequested ? Math.min(MAX_IDLE_MS, interval)
+                            : Math.min(MAX_IDLE_MS, idleDelay * 2);
+                    schedule(wakeRequested ? 0 : found ? interval : idleDelay);
                     wakeRequested = false;
                 }
             }
