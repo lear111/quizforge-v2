@@ -119,6 +119,8 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - blobs:/data/blobs:ro
+      # 客户端安装包与 manifest.json（作者放在宿主机目录，见 tools/downloads/README.md）。
+      - ${QF_DOWNLOADS_DIR:-./downloads}:/data/downloads:ro
     depends_on:
       - app
     networks: [internal, public]

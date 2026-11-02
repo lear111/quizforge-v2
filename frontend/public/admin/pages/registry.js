@@ -7,6 +7,7 @@
 // 页面只调用 /api/admin/** 等服务器接口；管理员身份由服务器检查，页面不做权限判断。
 
 export const pages = Object.freeze([
+  { id: 'overview', label: '概况', group: '概览', load: () => import('./overview.js') },
   { id: 'users', label: '用户管理', group: '用户与账号', load: () => import('./users.js') },
   { id: 'authentication', label: '登录与注册设置', group: '用户与账号', load: () => import('./authentication.js') },
   { id: 'invitations', label: '邀请码', group: '用户与账号', load: () => import('./invitations.js') },
@@ -14,4 +15,4 @@ export const pages = Object.freeze([
   { id: 'audit', label: '操作日志', group: '系统', load: () => import('./audit.js') },
 ]);
 
-export const defaultPage = 'users';
+export const defaultPage = 'overview';

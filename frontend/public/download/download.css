@@ -1,0 +1,50 @@
+/* 下载页：Hub 页面的独立主题（与账号页一致的紫色），不使用练习空间的主题。 */
+:root {
+  --bg: #f8f8fb; --surface: #fff; --ink: #16151b; --text: #4a4955; --muted: #777480; --line: #dedce5;
+  --accent: #754ce2; --accent-ink: #6239cd; --accent-soft: #f1ecff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink); background: var(--bg);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+a { color: var(--accent-ink); }
+:focus-visible { outline: 3px solid #baa3f3; outline-offset: 3px; }
+.site-header { width: min(1120px, 100%); margin: 0 auto; padding: 26px 32px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; color: inherit; }
+.brand img { border-radius: 12px; box-shadow: 0 4px 12px #754ce226; }
+.brand strong { display: block; font-size: 18px; font-weight: 750; }
+.brand-caption { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+.header-links { display: flex; gap: 18px; font-size: 14px; }
+main { flex: 1; width: min(880px, 100%); margin: 0 auto; padding: 12px 24px 48px; }
+.intro h1 { margin: 12px 0 8px; font-size: 28px; }
+.intro p, .muted, .status { color: var(--muted); font-size: 14px; line-height: 1.7; }
+.download-list { display: grid; gap: 16px; margin: 20px 0; }
+.download-card { padding: 22px 24px; border: 1px solid #e9e6ef; border-radius: 18px; background: var(--surface);
+  box-shadow: 0 2px 5px #16151b03, 0 16px 48px -24px #3a28551c; }
+.download-card.primary { border-color: #d7c9f6; }
+.download-card h2 { margin: 0; font-size: 20px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.version { color: var(--text); font-size: 14px; font-weight: 500; }
+.label { padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 12px; }
+.download-button { display: inline-flex; margin: 6px 0 16px; padding: 11px 20px; border-radius: 10px; background: var(--accent);
+  color: #fff; font-weight: 600; text-decoration: none; }
+.download-button:hover { background: var(--accent-ink); }
+.download-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13px; }
+.download-card dt { color: var(--muted); }
+.download-card dd { margin: 0; overflow-wrap: anywhere; }
+.hash-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.hash { font-family: ui-monospace, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.text-button { padding: 0; border: 0; background: none; color: var(--accent-ink); font: inherit; font-size: 12px; cursor: pointer; }
+.notes { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0edf5; }
+.notes h3 { margin: 0 0 6px; font-size: 14px; }
+.notes p { margin: 0; white-space: pre-wrap; color: var(--text); font-size: 14px; line-height: 1.7; }
+.verify { margin-top: 28px; }
+.verify h2 { font-size: 16px; }
+.verify p { color: var(--text); font-size: 14px; line-height: 1.8; }
+.verify code { padding: 1px 6px; border-radius: 6px; background: #f1eff6; font-size: 12px; overflow-wrap: anywhere; }
+footer { padding: 0 20px 24px; color: var(--muted); font-size: 12px; text-align: center; }
+@media (max-width: 480px) {
+  .site-header { padding: 20px; }
+  main { padding: 8px 16px 32px; }
+  .download-card { padding: 18px; }
+}

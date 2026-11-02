@@ -64,4 +64,15 @@ public interface UserAdminMapper {
 
     @Select("SELECT COUNT(*) FROM account_user")
     long count();
+
+    record DailyRegistrations(java.time.LocalDate day, long registered) {
+    }
+
+    /** 按北京时间的日期统计注册数（created_at 以 UTC 保存，+08:00 换算）。 */
+    @Select("""
+            SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) AS day, COUNT(*) AS registered
+              FROM account_user WHERE created_at >= #{since}
+             GROUP BY day ORDER BY day
+            """)
+    List<DailyRegistrations> registrationsSince(@Param("since") Instant since);
 }

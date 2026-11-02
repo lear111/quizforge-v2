@@ -100,3 +100,12 @@ textarea { width: 100%; resize: vertical; }
 .qa-notice h3 { margin: 0 0 4px; font-size: 15px; color: var(--qa-ink); }
 .qa-notice-body { margin: 8px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .qa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 概况 */
+.qa-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.qa-card { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.qa-card strong { font-size: 26px; color: var(--qa-ink); }
+.qa-bars { width: 40%; min-width: 120px; }
+.qa-bar { display: block; height: 6px; margin: 3px 0; border-radius: 3px; min-width: 2px; }
+.qa-bar.registered { background: #c9b8f2; }
+.qa-bar.active { background: var(--qa-accent); }
