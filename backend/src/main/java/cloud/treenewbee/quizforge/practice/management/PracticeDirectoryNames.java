@@ -1,10 +1,10 @@
-package cloud.treenewbee.quizforge.library;
+package cloud.treenewbee.quizforge.practice.management;
 
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import org.springframework.http.HttpStatus;
 
-public final class LibraryNames {
-    private LibraryNames() {}
+public final class PracticeDirectoryNames {
+    private PracticeDirectoryNames() {}
 
     public static String title(String value) {
         if (value == null || value.trim().isEmpty() || value.trim().codePointCount(0, value.trim().length()) > 200) {

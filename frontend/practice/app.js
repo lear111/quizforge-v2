@@ -653,10 +653,9 @@ async function applyLibraryChange(result,operation){
     notice(result.message||(result.deleted?'题库及其作答、历史记录和笔记已删除，存储空间已释放。':'目录已更新。'));
 }
 const libraryManager=bindLibraryManagement({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,
-  onExport:(row,target)=>target==='item'?libraryTransfer.exportBank(row,{throwOnError:true}):libraryTransfer.exportGroup(row,{throwOnError:true}),
   onConflict:()=>refreshCatalog(),
   onChanged:(result,operation)=>transitionTo(()=>applyLibraryChange(result,operation))});
-const libraryTransfer=bindLibraryTransfer({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,onMessage:notice,
+bindLibraryTransfer({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,
   onImported:result=>transitionTo(async()=>{
     await refreshCatalog();questionsCache.clear();pagesCache.clear();
     if(!activeKey){const first=catalog.banks.find(row=>!row.error&&row.availability?.available!==false);if(first)await openCollection(first.kind||'bank',first.id);}

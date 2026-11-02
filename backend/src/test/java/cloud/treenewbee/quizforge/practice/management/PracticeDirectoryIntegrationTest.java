@@ -1,4 +1,4 @@
-package cloud.treenewbee.quizforge.library;
+package cloud.treenewbee.quizforge.practice.management;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -7,7 +7,6 @@ import static org.mockito.Mockito.*;
 import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.content.application.ImportService;
 import cloud.treenewbee.quizforge.content.domain.ImportArchives;
-import cloud.treenewbee.quizforge.content.infrastructure.BlobStore;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
 import cloud.treenewbee.quizforge.practice.application.PracticeReadService;
 import cloud.treenewbee.quizforge.quota.application.PrivateCollectionService;
@@ -16,10 +15,8 @@ import cloud.treenewbee.quizforge.shared.id.Ids;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import java.io.ByteArrayInputStream;
 import java.nio.file.*;
-import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.zip.ZipFile;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,7 +30,7 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 import tools.jackson.databind.json.JsonMapper;
 
 @Timeout(180)
-class LibraryIntegrationTest extends MySqlTestBase {
+class PracticeDirectoryIntegrationTest extends MySqlTestBase {
     static final Path ROOT = temporary();
     static final String TOKEN = "library-test-token";
     static final GenericContainer<?> RUNNER = new GenericContainer<>(new ImageFromDockerfile()
@@ -51,16 +48,13 @@ class LibraryIntegrationTest extends MySqlTestBase {
         registry.add("qf.rule-runner.default-deadline", () -> "60s");
     }
 
-    @Autowired LibraryService library;
-    @Autowired LibraryMapper mapper;
-    @Autowired LibraryExportService exports;
-    @Autowired LibraryExportMapper exportMapper;
+    @Autowired PracticeDirectoryService library;
+    @Autowired PracticeDirectoryMapper mapper;
     @Autowired ImportService imports;
     @Autowired PracticeReadService reads;
     @Autowired QuotaService quotas;
     @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
-    @Autowired BlobStore blobs;
     @Autowired JsonMapper json;
     @org.springframework.beans.factory.annotation.Value("${local.server.port}") int port;
     @org.springframework.beans.factory.annotation.Value("${qf.security.allowed-origin}") String origin;
@@ -70,6 +64,16 @@ class LibraryIntegrationTest extends MySqlTestBase {
     @BeforeEach void prepare() { user = user(); }
     @AfterEach void restore() { reset(deletion); }
     @AfterAll static void stop() { RUNNER.stop(); }
+
+    @Test void v20CreatesOnlyPracticeDirectoryTables() {
+        assertThat(jdbc.queryForList("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_name IN
+                    ('practice_directory_revision', 'practice_group', 'library_catalog', 'library_group', 'content_bank_document')
+                """, String.class)).containsExactlyInAnyOrder("practice_directory_revision", "practice_group");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE version='20' AND success=TRUE", Integer.class))
+                .isEqualTo(1);
+    }
 
     @Test void renameChangesOnlyDisplayNameAndRejectsCaseInsensitiveDuplicate() throws Exception {
         var first = imported(user, "单选题");
@@ -154,8 +158,8 @@ class LibraryIntegrationTest extends MySqlTestBase {
             assertThat(List.of(futures.get(0).get(90, TimeUnit.SECONDS), futures.get(1).get(90, TimeUnit.SECONDS)))
                     .containsExactly("ok", "ok");
         }
-        assertThat(mapper.items(user)).extracting(LibraryMapper.Item::title).containsExactlyInAnyOrder("单选题", "单选题（2）");
-        assertThat(mapper.items(user)).extracting(LibraryMapper.Item::bankId).containsOnly(mapper.items(user).getFirst().bankId());
+        assertThat(mapper.items(user)).extracting(PracticeDirectoryMapper.Item::title).containsExactlyInAnyOrder("单选题", "单选题（2）");
+        assertThat(mapper.items(user)).extracting(PracticeDirectoryMapper.Item::bankId).containsOnly(mapper.items(user).getFirst().bankId());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=?", Integer.class, user)).isEqualTo(2);
     }
 
@@ -169,7 +173,7 @@ class LibraryIntegrationTest extends MySqlTestBase {
                 ready.countDown();
                 assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
                 try {
-                    library.manage(user, new LibraryService.Change("bank", "item", "update", bank.id(), name, name, revision));
+                    library.manage(user, new PracticeDirectoryService.Change("bank", "item", "update", bank.id(), name, name, revision));
                     return "ok";
                 } catch (ApiException error) { return error.code(); }
             }));
@@ -181,17 +185,15 @@ class LibraryIntegrationTest extends MySqlTestBase {
         assertThat(mapper.revision(user)).isEqualTo(revision + 1);
     }
 
-    @Test void ownershipIsEnforcedForManagementAndExport() throws Exception {
+    @Test void ownershipIsEnforcedForManagement() throws Exception {
         var bank = imported(user, "单选题");
         String other = user();
         assertThatThrownBy(() -> update(other, bank.id(), "越权", null)).isInstanceOfSatisfying(ApiException.class,
                 error -> assertThat(error.status().value()).isEqualTo(404));
-        assertThatThrownBy(() -> exports.export(other, new LibraryExportService.Request(bank.id(), null)))
-                .isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.status().value()).isEqualTo(404));
         assertThat(mapper.item(user, bank.id()).orElseThrow().title()).isEqualTo(bank.title());
     }
 
-    @Test void realHttpUsesSessionIdentityValidatesRevisionAndHandsDownloadToNginx() throws Exception {
+    @Test void realHttpUsesSessionIdentityAndValidatesRevision() throws Exception {
         var session = auth.register(UUID.randomUUID() + "@example.test", "HTTP 测试", "password123", "test");
         try (var http = java.net.http.HttpClient.newHttpClient()) {
             var uri = java.net.URI.create("http://localhost:" + port);
@@ -205,19 +207,12 @@ class LibraryIntegrationTest extends MySqlTestBase {
                     "{\"kind\":\"bank\",\"target\":\"group\",\"action\":\"create\",\"name\":\"HTTP\",\"revision\":0}")).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
             assertThat(created.statusCode()).isEqualTo(200);
             var foreign = imported(user, "单选题");
-            var exportRequest = java.net.http.HttpRequest.newBuilder(uri.resolve("/api/library/export"))
-                    .header("Origin", origin).header("Content-Type", "application/json")
-                    .header("Cookie", "__Host-qf_session=" + session.token());
-            var denied = http.send(exportRequest.POST(java.net.http.HttpRequest.BodyPublishers.ofString(
-                    json.writeValueAsString(Map.of("bank", foreign.id())))).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+            var denied = http.send(post.POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                    json.writeValueAsString(Map.of("kind", "bank", "target", "item", "action", "update",
+                            "path", foreign.id(), "name", "越权", "revision", mapper.revision(session.userId()))))).build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
             assertThat(denied.statusCode()).isEqualTo(404);
-            var own = imported(session.userId(), "单选题");
-            var download = http.send(exportRequest.POST(java.net.http.HttpRequest.BodyPublishers.ofString(
-                    json.writeValueAsString(Map.of("bank", own.id())))).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
-            assertThat(download.statusCode()).isEqualTo(200);
-            assertThat(download.headers().firstValue("X-Accel-Redirect").orElseThrow()).matches("/_qf_exports/[0-9a-f-]{36}\\.qbank");
-            assertThat(download.headers().firstValue("Cache-Control").orElseThrow()).contains("no-store");
-            assertThat(download.body()).isEmpty();
+            assertThat(mapper.item(user, foreign.id()).orElseThrow().title()).isEqualTo(foreign.title());
         }
     }
 
@@ -256,122 +251,8 @@ class LibraryIntegrationTest extends MySqlTestBase {
         assertThat(quotas.usage(user).storage().usedBytes()).isZero();
     }
 
-    @Test void singleAndGroupExportsReallyReimportAllFiveTypesWithoutPracticeData() throws Exception {
-        var result = imports.importArchive(user, "five.qbank", new ByteArrayInputStream(ImportArchives.zip(ImportArchives.files(ImportArchives.TYPES, "group"))));
-        var single = exports.export(user, new LibraryExportService.Request(result.getFirst().id(), null));
-        try (var input = Files.newInputStream(single.path())) {
-            assertThat(imports.importArchive(user(), "single.qbank", input)).hasSize(1);
-        }
-        var group = exports.export(user, new LibraryExportService.Request(null, ImportArchives.GROUP));
-        try (ZipFile zip = new ZipFile(group.path().toFile())) {
-            assertThat(zip.stream().map(entry -> entry.getName()).toList()).noneMatch(path -> path.contains("practice_") || path.contains("whiteboard") || path.contains("history"));
-        }
-        try (var input = Files.newInputStream(group.path())) {
-            assertThat(imports.importArchive(user(), "group.qbank", input)).hasSize(5);
-        }
-        assertThat(group.warnings()).isEmpty();
-    }
-
-    @Test void rawAuthorValuesOmittedQuestionsAndNetworkAudioSurviveExport() throws Exception {
-        var files = ImportArchives.files(List.of("单选题"), "bank");
-        String url = "https://audio.example.org/%E5%90%AC%E5%8A%9B.mp3?version=1";
-        ImportArchives.edit(files, ImportArchives.bank("单选题") + "/bank.json", bank -> {
-            bank.put("listening", Map.of("materials", List.of(Map.of("id", "audio", "title", "网络材料", "url", url))));
-            @SuppressWarnings("unchecked") var first = (Map<String, Object>) ((List<?>) bank.get("questions")).getFirst();
-            var omitted = new LinkedHashMap<>(first);
-            omitted.put("id", "omitted");
-            bank.put("questions", List.of(first, omitted));
-        });
-        var bank = imports.importArchive(user, "raw.qbank", new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_question WHERE bank_id=?", Integer.class, bank.bankId())).isEqualTo(1);
-        var exported = exports.export(user, new LibraryExportService.Request(bank.id(), null));
-        try (ZipFile zip = new ZipFile(exported.path().toFile())) {
-            var entry = zip.stream().filter(item -> item.getName().startsWith("question-banks/") && item.getName().endsWith("/bank.json")).findFirst().orElseThrow();
-            var document = json.readTree(zip.getInputStream(entry));
-            assertThat(document.path("id").asString()).isEqualTo(ImportArchives.BANK_IDS.get("单选题"));
-            assertThat(document.path("questions").size()).isEqualTo(2);
-            assertThat(document.path("listening").path("materials").get(0).path("url").asString()).isEqualTo(url);
-        }
-        try (var input = Files.newInputStream(exported.path())) { assertThat(imports.importArchive(user(), "again.qbank", input)).hasSize(1); }
-    }
-
-    @Test void catalogOriginCanExportCurrentVersion() throws Exception {
-        var bank = imported(user, "判断题");
-        jdbc.update("UPDATE practice_collection SET source=JSON_OBJECT('type','catalog'),source_pack_id=? WHERE id=?", Ids.uuidV7(), bank.id());
-        var exported = exports.export(user, new LibraryExportService.Request(bank.id(), null));
-        try (var input = Files.newInputStream(exported.path())) { assertThat(imports.importArchive(user(), "catalog.qbank", input)).hasSize(1); }
-    }
-
-    @Test void movingToNewGroupRewritesOnlyRequiredBindingsAndReimports() throws Exception {
-        var bank = imported(user, "单选题");
-        update(user, bank.id(), "显示名", "新分组");
-        var exported = exports.export(user, new LibraryExportService.Request(null, "新分组"));
-        assertThat(exported.warnings()).anyMatch(message -> message.contains("重新审核"));
-        try (var input = Files.newInputStream(exported.path())) {
-            assertThat(imports.importArchive(user(), "moved.qbank", input)).hasSize(1);
-        }
-    }
-
-    @Test void legacyDuplicateUuidGroupRefusesWholeExportWithSingleBankAdvice() throws Exception {
-        var bank = imported(user, "单选题");
-        jdbc.update("INSERT INTO practice_collection (id,user_id,bank_id,title,group_name,source,created_at) VALUES (?,?,?,?,?,JSON_OBJECT(),CURRENT_TIMESTAMP(3))",
-                Ids.uuidV7(), user, bank.bankId(), "已有副本", bank.groupName());
-        assertThatThrownBy(() -> exports.export(user, new LibraryExportService.Request(null, bank.groupName())))
-                .isInstanceOfSatisfying(ApiException.class, error -> {
-                    assertThat(error.code()).isEqualTo("DUPLICATE_BANK_UUID");
-                    assertThat(error.getMessage()).contains("逐本导出");
-                });
-    }
-
-    @Test void legacyExportWarnsAndHasStableDerivedUuid() throws Exception {
-        var bank = imported(user, "单选题");
-        var original = exportMapper.document(user, bank.id()).orElseThrow();
-        jdbc.update("DELETE FROM content_bank_document WHERE bank_id=?", bank.bankId());
-        try {
-            var first = exports.export(user, new LibraryExportService.Request(bank.id(), null));
-            var second = exports.export(user, new LibraryExportService.Request(bank.id(), null));
-            assertThat(first.warnings()).anyMatch(message -> message.contains("未引用题目无法恢复"));
-            assertThat(exportedUuid(first.path())).isEqualTo(exportedUuid(second.path()))
-                    .isEqualTo(UUID.nameUUIDFromBytes(("qf-legacy-bank:" + bank.bankId()).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString());
-            try (var input = Files.newInputStream(first.path())) { assertThat(imports.importArchive(user(), "legacy.qbank", input)).hasSize(1); }
-        } finally {
-            mapper.preserve(bank.bankId(), original.authorJson(), original.authorBindings());
-        }
-    }
-
-    @Test void reimportOfSharedLegacyContentBackfillsAuthorDocumentWithoutChangingBankId() throws Exception {
-        var first = imported(user, "单选题");
-        var original = exportMapper.document(user, first.id()).orElseThrow();
-        jdbc.update("DELETE FROM content_bank_document WHERE bank_id=?", first.bankId());
-        try {
-            var second = imported(user(), "单选题");
-            assertThat(second.bankId()).isEqualTo(first.bankId());
-            var download = exports.export(user, new LibraryExportService.Request(first.id(), null));
-            assertThat(exportedUuid(download.path())).isEqualTo(ImportArchives.BANK_IDS.get("单选题"));
-            assertThat(download.warnings()).isEmpty();
-        } finally {
-            mapper.preserve(first.bankId(), original.authorJson(), original.authorBindings());
-        }
-    }
-
-    @Test void overLimitDeletesPartialTemporaryFileAndDoesNotTouchTraffic() throws Exception {
-        var bank = imported(user, "单选题");
-        var small = new LibraryExportService(mapper, exportMapper, blobs, json, Clock.systemUTC(), ROOT.toString(), 100);
-        assertThatThrownBy(() -> small.export(user, new LibraryExportService.Request(bank.id(), null)))
-                .isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.status().value()).isEqualTo(413));
-        try (var paths = Files.list(ROOT.resolve("exports"))) { assertThat(paths.map(path -> path.getFileName().toString()).toList()).noneMatch(name -> name.endsWith(".tmp")); }
-        assertThat(quotas.usage(user).dailyDownload().usedBytes()).isZero();
-    }
-
-    private String exportedUuid(Path path) throws Exception {
-        try (ZipFile zip = new ZipFile(path.toFile())) {
-            var entry = zip.stream().filter(item -> item.getName().startsWith("question-banks/") && item.getName().endsWith("/bank.json")).findFirst().orElseThrow();
-            return json.readTree(zip.getInputStream(entry)).path("id").asString();
-        }
-    }
-
-    private LibraryService.Result change(String owner, String target, String action, String path, String name, String group) {
-        return library.manage(owner, new LibraryService.Change("bank", target, action, path, name, group, mapper.revision(owner)));
+    private PracticeDirectoryService.Result change(String owner, String target, String action, String path, String name, String group) {
+        return library.manage(owner, new PracticeDirectoryService.Change("bank", target, action, path, name, group, mapper.revision(owner)));
     }
     private void update(String owner, String id, String name, String group) { change(owner, "item", "update", id, name, group); }
     private ImportService.ImportedCollection imported(String owner, String type) throws Exception {

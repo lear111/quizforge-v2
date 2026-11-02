@@ -592,7 +592,7 @@ class ImportIntegrationTest extends MySqlTestBase {
     private int count(String table) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class); }
     private void assertNoBusinessData() { for(String table : tables()) assertThat(count(table)).as(table).isZero(); }
     private void clearBusiness() { for (String table : tables()) jdbc.update("DELETE FROM " + table); }
-    private List<String> tables() { return List.of("practice_collection", "content_question", "content_bank_asset", "content_bank_document", "content_bank", "content_extension_file", "content_extension_package", "admin_extension_review"); }
+    private List<String> tables() { return List.of("practice_collection", "content_question", "content_bank_asset", "content_bank", "content_extension_file", "content_extension_package", "admin_extension_review"); }
     private static Path temporary() { try { return Files.createTempDirectory("qf-import-test-").toRealPath(); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }
     private static Path directory(String name) { try { return Files.createDirectories(ROOT.resolve(name)); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }
 

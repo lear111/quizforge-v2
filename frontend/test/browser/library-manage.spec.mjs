@@ -5,7 +5,7 @@ import {registerByApi} from './accounts.mjs';
 
 const expect = baseExpect.configure({timeout: 30000});
 
-test('existing dialogs manage empty groups, names, moves, conflicts, downloads and irreversible group deletion', async ({page, context}, info) => {
+test('existing dialogs manage empty groups, names, moves, conflicts and irreversible group deletion', async ({page, context}, info) => {
   test.skip(process.env.QF_READ_BROWSER_TESTS !== '1', '需要独立的本机 Compose');
   test.setTimeout(240000);
   const {origin} = await registerByApi(page, 'library', '目录管理验收');
@@ -32,6 +32,8 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
     return saved;
   };
   await showLibrary(page);
+  await expect(page.locator('#library-import')).toBeVisible();
+  await expect(page.locator('#library-manage-export')).toHaveCount(0);
   await page.locator('#library-new-group').click();
   await page.locator('#library-manage-name').fill('新文件夹');
   expect((await save(page)).status()).toBe(200);
@@ -58,15 +60,6 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   await expect(second.locator('#library-list')).toContainText('最新名称');
   await second.close();
 
-  await edit(page, '最新名称');
-  const downloaded = page.waitForEvent('download');
-  await page.locator('#library-manage-export').click();
-  const download = await downloaded;
-  expect(download.suggestedFilename()).toMatch(/\.qbank$/);
-  const archive = await readFile(await download.path());
-  expect(archive.subarray(0, 2).toString()).toBe('PK');
-  await expect(page.locator('#library-manage-status')).toContainText('已导出');
-  await page.locator('#library-manage-close').click();
   await showLibrary(page);
   await page.getByRole('button', {name: '编辑分组 新文件夹', exact: true}).click();
   await page.locator('#library-manage-name').fill('重命名文件夹');
@@ -85,9 +78,4 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   expect((await save(page)).status()).toBe(200);
   await expect(page.locator('#library-manage-dialog')).not.toBeVisible();
   await expect(page.locator(`.library-item[data-item-id="${bank.id}"]`)).toHaveCount(0);
-  const reimport = await page.request.post('/api/library/import', {
-    headers: {Origin: origin}, multipart: {file: {name: 'roundtrip.qbank', mimeType: 'application/zip', buffer: archive}},
-  });
-  expect(reimport.status(), await reimport.text()).toBe(200);
-  expect((await reimport.json()).collections).toHaveLength(1);
 });

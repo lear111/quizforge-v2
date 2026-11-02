@@ -1,7 +1,6 @@
 package cloud.treenewbee.quizforge.content.application;
 
-import cloud.treenewbee.quizforge.library.LibraryMapper;
-import cloud.treenewbee.quizforge.library.LibraryService;
+import cloud.treenewbee.quizforge.practice.management.PracticeDirectoryService;
 import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
 import cloud.treenewbee.quizforge.content.archive.QbankArchiveReader;
@@ -60,22 +59,19 @@ public class ImportService {
     private final Clock clock;
     private final Path temporaryDirectory;
     private final QuotaService quotas;
-    private final LibraryService library;
-    private final LibraryMapper libraryMapper;
+    private final PracticeDirectoryService directory;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
             BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
             BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
             @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
-            QuotaService quotas, LibraryService library,
-            LibraryMapper libraryMapper) {
+            QuotaService quotas, PracticeDirectoryService directory) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
         this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
         this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
         this.temporaryDirectory = Path.of(temporaryDirectory);
         this.quotas = quotas;
-        this.library = library;
-        this.libraryMapper = libraryMapper;
+        this.directory = directory;
     }
 
     public record ImportWarning(String code, String message, int count, List<String> questionIds) {}
@@ -216,7 +212,7 @@ public class ImportService {
     }
 
     private List<ImportedCollection> persist(String userId, String filename, String group, Map<String, Extension> extensions, List<Bank> prepared) {
-        library.beginImport(userId, group);
+        directory.beginImport(userId, group);
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         // All shared keys are acquired in a consistent order, including partially overlapping packages.
         for (Extension extension : extensions.values().stream().sorted(Comparator.comparing(e -> e.parsed().digest())).toList()) {
@@ -241,10 +237,6 @@ public class ImportService {
                 created = false;
             }
             ids.put(bank.hash(), id);
-            Map<String, String> bindings = new LinkedHashMap<>();
-            extensions.forEach((path, extension) -> bindings.put(path, extension.parsed().digest()));
-            // 独立文档表的忽略插入可补全旧内容，不升级 content_bank 上的共享锁。
-            libraryMapper.preserve(id, encode(author), encode(bindings));
             if (!created) continue;
             List<QuestionRow> rows = new ArrayList<>();
             for (int index = 0; index < bank.questions().size(); index++) {
@@ -265,7 +257,7 @@ public class ImportService {
         }
         List<ImportedCollection> result = new ArrayList<>();
         for (Bank bank : prepared) {
-            String id = Ids.uuidV7(), bankId = ids.get(bank.hash()), title = library.importTitle(userId, bank.parsed().folderName(), group);
+            String id = Ids.uuidV7(), bankId = ids.get(bank.hash()), title = directory.importTitle(userId, bank.parsed().folderName(), group);
             collections.insert(new PracticeCollectionRow(id, userId, bankId, title, group,
                     encode(Map.of("type", "upload", "filename", filename)), null, null, bank.parsed().bankKey(), null, "current", now, null));
             quotas.setStorage(userId, "import", id, id, bank.logicalBytes());

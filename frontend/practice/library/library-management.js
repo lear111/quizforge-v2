@@ -1,4 +1,4 @@
-export function bindLibraryManagement({request,getContext,beforeChange,onChanged,onExport,onConflict}){
+export function bindLibraryManagement({request,getContext,beforeChange,onChanged,onConflict}){
   const $=selector=>document.querySelector(selector),dialog=$('#library-manage-dialog'),form=$('#library-manage-form');
   let operation=null,subject=null,returnEdit=null,busy=false;
   const close=()=>{if(!busy)dialog.close();};
@@ -25,7 +25,7 @@ export function bindLibraryManagement({request,getContext,beforeChange,onChanged
     const hint=removing?`将删除「${row?.title||row?.name||row?.path}」${target==='group'?`中的 ${count} 本题库`:''}。作答、历史记录与笔记将一并删除，无法恢复。`:
       target==='group'?'分组是文件夹，可以暂时为空；改名不会重置作答与历史。':'仅修改显示名称或分组，不影响题库身份、作答与历史。';
     $('#library-manage-hint').textContent=hint;
-    $('#library-manage-more').hidden=action!=='update';$('#library-manage-export').hidden=kind!=='bank'||!onExport;$('#library-manage-export').textContent=target==='group'?'导出分组':'导出题库';
+    $('#library-manage-more').hidden=action!=='update';
     $('#library-manage-cancel').textContent=readOnly?'关闭':'取消';
     const select=$('#library-manage-group');select.closest('label').hidden=target==='group';$('#library-manage-cancel').hidden=false;select.replaceChildren(new Option('未分组（根目录）',''));
     for(const path of catalog.groups?.[kind==='bank'?'banks':'extensions']||[]){
@@ -39,13 +39,6 @@ export function bindLibraryManagement({request,getContext,beforeChange,onChanged
     if(busy||operation?.action!=='update')return;
     const previous={target:operation.target,row:subject,name:$('#library-manage-name').value,group:$('#library-manage-group').value};
     open(previous.target,previous.row,'delete');returnEdit=previous;
-  });
-  $('#library-manage-export').addEventListener('click',async()=>{
-    if(busy||operation?.action!=='update'||operation.kind!=='bank'||!onExport)return;
-    setBusy(true);error('');status('正在导出已保存的内容…');
-    try{if(await onExport(subject,operation.target)===false)throw new Error('正在导入或导出，请稍后重试。');status('已导出当前保存的内容。');}
-    catch(failure){status('');error(failure.message);}
-    finally{setBusy(false);}
   });
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(busy||!operation||operation.kind==='extension'&&operation.action!=='delete')return;const value={...operation};

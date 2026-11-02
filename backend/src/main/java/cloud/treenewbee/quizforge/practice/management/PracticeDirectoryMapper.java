@@ -1,32 +1,32 @@
-package cloud.treenewbee.quizforge.library;
+package cloud.treenewbee.quizforge.practice.management;
 
 import java.util.List;
 import java.util.Optional;
 import org.apache.ibatis.annotations.*;
 
 @Mapper
-public interface LibraryMapper {
+public interface PracticeDirectoryMapper {
     record Item(String id, String bankId, String title, String groupName) {}
 
-    @Insert("INSERT INTO library_catalog (user_id) VALUES (#{userId}) ON DUPLICATE KEY UPDATE revision = revision")
+    @Insert("INSERT INTO practice_directory_revision (user_id) VALUES (#{userId}) ON DUPLICATE KEY UPDATE revision = revision")
     int initialize(@Param("userId") String userId);
 
-    @Select("SELECT revision FROM library_catalog WHERE user_id = #{userId} FOR UPDATE")
+    @Select("SELECT revision FROM practice_directory_revision WHERE user_id = #{userId} FOR UPDATE")
     long lock(@Param("userId") String userId);
 
-    @Select("SELECT COALESCE((SELECT revision FROM library_catalog WHERE user_id = #{userId}), 0)")
+    @Select("SELECT COALESCE((SELECT revision FROM practice_directory_revision WHERE user_id = #{userId}), 0)")
     long revision(@Param("userId") String userId);
 
-    @Update("UPDATE library_catalog SET revision = revision + 1 WHERE user_id = #{userId}")
+    @Update("UPDATE practice_directory_revision SET revision = revision + 1 WHERE user_id = #{userId}")
     int bump(@Param("userId") String userId);
 
-    @Select("SELECT name FROM library_group WHERE user_id = #{userId} ORDER BY name")
+    @Select("SELECT name FROM practice_group WHERE user_id = #{userId} ORDER BY name")
     List<String> groups(@Param("userId") String userId);
 
-    @Insert("INSERT IGNORE INTO library_group (user_id, name) VALUES (#{userId}, #{name})")
+    @Insert("INSERT IGNORE INTO practice_group (user_id, name) VALUES (#{userId}, #{name})")
     int addGroup(@Param("userId") String userId, @Param("name") String name);
 
-    @Delete("DELETE FROM library_group WHERE user_id = #{userId} AND name = #{name}")
+    @Delete("DELETE FROM practice_group WHERE user_id = #{userId} AND name = #{name}")
     int removeGroup(@Param("userId") String userId, @Param("name") String name);
 
     @Select("""
@@ -57,9 +57,4 @@ public interface LibraryMapper {
     int update(@Param("userId") String userId, @Param("id") String id,
             @Param("title") String title, @Param("group") String group);
 
-    @Insert("INSERT IGNORE INTO content_bank_document (bank_id, author_json, author_bindings) VALUES (#{id}, #{document}, #{bindings})")
-    int preserve(@Param("id") String id, @Param("document") String document, @Param("bindings") String bindings);
-
-    @Select("SELECT CAST(author_json AS CHAR CHARACTER SET utf8mb4) FROM content_bank_document WHERE bank_id = #{id}")
-    String author(@Param("id") String id);
 }

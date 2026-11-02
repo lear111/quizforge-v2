@@ -1,4 +1,4 @@
-package cloud.treenewbee.quizforge.library;
+package cloud.treenewbee.quizforge.practice.management;
 
 import cloud.treenewbee.quizforge.quota.application.PrivateCollectionService;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
@@ -11,13 +11,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
-public class LibraryService {
-    private static final Logger LOG = LoggerFactory.getLogger(LibraryService.class);
-    private final LibraryMapper mapper;
+public class PracticeDirectoryService {
+    private static final Logger LOG = LoggerFactory.getLogger(PracticeDirectoryService.class);
+    private final PracticeDirectoryMapper mapper;
     private final PrivateCollectionService deletion;
     private final TransactionTemplate transactions;
 
-    public LibraryService(LibraryMapper mapper, PrivateCollectionService deletion, TransactionTemplate transactions) {
+    public PracticeDirectoryService(PracticeDirectoryMapper mapper, PrivateCollectionService deletion, TransactionTemplate transactions) {
         this.mapper = mapper;
         this.deletion = deletion;
         this.transactions = transactions;
@@ -29,26 +29,26 @@ public class LibraryService {
     public Result manage(String user, Change change) {
         if (!"bank".equals(change.kind()) || !List.of("item", "group").contains(change.target() == null ? "" : change.target())
                 || !List.of("create", "update", "delete").contains(change.action() == null ? "" : change.action())) {
-            throw LibraryNames.invalid("不支持的目录操作");
+            throw PracticeDirectoryNames.invalid("不支持的目录操作");
         }
         if ("group".equals(change.target()) && "delete".equals(change.action())) return deleteGroup(user, change);
         return transactions.execute(status -> {
             check(user, change.revision());
             if ("item".equals(change.target())) {
-                if (!"update".equals(change.action())) throw LibraryNames.invalid("不支持的题库操作");
-                var item = mapper.item(user, change.path()).orElseThrow(LibraryService::notFound);
-                String title = LibraryNames.title(change.name()), group = LibraryNames.group(change.group());
+                if (!"update".equals(change.action())) throw PracticeDirectoryNames.invalid("不支持的题库操作");
+                var item = mapper.item(user, change.path()).orElseThrow(PracticeDirectoryService::notFound);
+                String title = PracticeDirectoryNames.title(change.name()), group = PracticeDirectoryNames.group(change.group());
                 if (!title.equals(item.title()) || !Objects.equals(group, item.groupName())) unique(user, item.id(), group, title);
                 if (group != null) mapper.addGroup(user, group);
                 changed(mapper.update(user, item.id(), title, group));
             } else {
-                String name = LibraryNames.group(change.name());
-                if (name == null) throw LibraryNames.invalid("请输入分组名");
+                String name = PracticeDirectoryNames.group(change.name());
+                if (name == null) throw PracticeDirectoryNames.invalid("请输入分组名");
                 if (mapper.groups(user).contains(name) && !("update".equals(change.action()) && name.equals(change.path()))) {
                     throw new ApiException(HttpStatus.CONFLICT, "GROUP_EXISTS", "已存在同名分组");
                 }
                 if ("update".equals(change.action())) {
-                    String old = LibraryNames.group(change.path());
+                    String old = PracticeDirectoryNames.group(change.path());
                     if (old == null || !mapper.groups(user).contains(old)) throw notFound();
                     for (var item : mapper.items(user)) {
                         if (!old.equals(item.groupName())) continue;
@@ -91,14 +91,14 @@ public class LibraryService {
     }
 
     private Result deleteGroup(String user, Change change) {
-        String group = LibraryNames.group(change.path());
-        if (group == null) throw LibraryNames.invalid("不能删除根目录");
+        String group = PracticeDirectoryNames.group(change.path());
+        if (group == null) throw PracticeDirectoryNames.invalid("不能删除根目录");
         List<String> ids = transactions.execute(status -> {
             check(user, change.revision());
             if (!mapper.groups(user).contains(group)) throw notFound();
             // 先占用目录版本；之后每本删除都在独立短事务内执行。
             changed(mapper.bump(user));
-            return mapper.items(user).stream().filter(item -> group.equals(item.groupName())).map(LibraryMapper.Item::id).toList();
+            return mapper.items(user).stream().filter(item -> group.equals(item.groupName())).map(PracticeDirectoryMapper.Item::id).toList();
         });
         int count = 0;
         for (String id : ids) {
@@ -131,7 +131,7 @@ public class LibraryService {
     }
 
     private void check(String user, Long expected) {
-        if (expected == null || expected < 0) throw LibraryNames.invalid("缺少目录版本，请刷新后重试");
+        if (expected == null || expected < 0) throw PracticeDirectoryNames.invalid("缺少目录版本，请刷新后重试");
         mapper.initialize(user);
         if (mapper.lock(user) != expected) throw new ApiException(HttpStatus.CONFLICT, "LIBRARY_CONFLICT", "目录已在其他页面修改，请刷新后重试");
     }
