@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import cloud.treenewbee.quizforge.ai.application.AiBalanceService;
 import cloud.treenewbee.quizforge.identity.application.AuthPolicyService.Policy;
 import cloud.treenewbee.quizforge.identity.application.VerificationCodeService.SendRequest;
 import cloud.treenewbee.quizforge.identity.domain.Contact;
@@ -60,12 +61,13 @@ public class AuthService {
     private final AuthPolicyService policies;
     private final VerificationCodeService codes;
     private final InvitationService invitations;
+    private final AiBalanceService aiBalance;
     private final Clock clock;
     private final TransactionTemplate transactions;
 
     public AuthService(UserMapper users, AccountMapper accounts, SessionMapper sessions, PasswordHasher hasher,
                        AuthPolicyService policies, VerificationCodeService codes, InvitationService invitations,
-                       Clock clock, TransactionTemplate transactions) {
+                       AiBalanceService aiBalance, Clock clock, TransactionTemplate transactions) {
         this.users = users;
         this.accounts = accounts;
         this.sessions = sessions;
@@ -73,6 +75,7 @@ public class AuthService {
         this.policies = policies;
         this.codes = codes;
         this.invitations = invitations;
+        this.aiBalance = aiBalance;
         this.clock = clock;
         this.transactions = transactions;
     }
@@ -128,6 +131,8 @@ public class AuthService {
             // 关闭注册验证码时，联系方式明确标为未验证；不伪造验证时间。
             if (!codeVerified) accounts.markUnverified(userId, contact.channel().key(), contact.value());
             if (latest.invitationRequired()) invitations.consume(request.invitationCode(), userId);
+            // 新用户默认 1 元 AI 额度（FR-09 v1.12），与创建账号在同一事务内。
+            aiBalance.openWithDefaultCredit(userId);
             return createSession(userId, userAgent);
         };
         if (codeVerified) {

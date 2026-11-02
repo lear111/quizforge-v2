@@ -109,3 +109,4 @@ textarea { width: 100%; resize: vertical; }
 .qa-bar { display: block; height: 6px; margin: 3px 0; border-radius: 3px; min-width: 2px; }
 .qa-bar.registered { background: #c9b8f2; }
 .qa-bar.active { background: var(--qa-accent); }
+.qa-negative { color: var(--qa-danger); }

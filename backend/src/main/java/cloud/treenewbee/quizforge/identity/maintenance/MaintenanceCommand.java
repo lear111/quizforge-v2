@@ -11,6 +11,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import cloud.treenewbee.quizforge.QuizForgeApplication;
+import cloud.treenewbee.quizforge.ai.application.AiReconciler;
 import cloud.treenewbee.quizforge.identity.application.AccountAdminService;
 import cloud.treenewbee.quizforge.identity.application.AuthPolicyService;
 import tools.jackson.databind.json.JsonMapper;
@@ -22,10 +23,12 @@ import tools.jackson.databind.json.JsonMapper;
  * java -jar app.jar maintenance promote &lt;邮箱或手机号&gt;
  * java -jar app.jar maintenance demote &lt;邮箱或手机号&gt;
  * java -jar app.jar maintenance auth-login-recovery &lt;已有管理员的邮箱或手机号&gt;
+ * java -jar app.jar maintenance ai-reconcile
  * </pre>
  *
  * <p>以非 Web 方式启动应用：不监听端口、不执行 Flyway（须与正在运行的应用为同一版本），
- * 使用与应用相同的数据库环境变量。成功时输出一行 JSON 并返回 0，失败时返回 1。
+ * 使用与应用相同的数据库环境变量。成功时输出一行 JSON 并返回 0，失败时返回 1；
+ * ai-reconcile 发现不一致时同样输出结果并返回 3。
  */
 public final class MaintenanceCommand {
 
@@ -46,7 +49,7 @@ public final class MaintenanceCommand {
     public static int run(String[] args, Map<String, Object> properties, PrintStream out, PrintStream err) {
         List<String> command = List.of(args);
         if (!valid(command)) {
-            err.println("用法：maintenance promote|demote|auth-login-recovery <邮箱或手机号>");
+            err.println("用法：maintenance promote|demote|auth-login-recovery <邮箱或手机号> 或 maintenance ai-reconcile");
             return 2;
         }
         Map<String, Object> defaults = new LinkedHashMap<>();
@@ -54,6 +57,8 @@ public final class MaintenanceCommand {
         defaults.put("spring.main.banner-mode", "off");
         defaults.put("spring.main.lazy-initialization", "true");
         defaults.put("logging.level.root", "WARN");
+        // 命令只执行一次，不启动定时对账。
+        defaults.put("qf.ai.reconcile.enabled", "false");
         defaults.putAll(properties);
         // 以命令行参数传入，优先级高于 application.yml（例如必须覆盖 spring.flyway.enabled=true）。
         String[] overrides = defaults.entrySet().stream()
@@ -65,7 +70,7 @@ public final class MaintenanceCommand {
                 .run(overrides)) {
             Object result = execute(command, context);
             out.println(JSON.writeValueAsString(result));
-            return 0;
+            return result instanceof AiReconciler.Result reconcile && !reconcile.consistent() ? 3 : 0;
         } catch (RuntimeException error) {
             Throwable cause = error;
             while (cause.getCause() != null && !(cause instanceof IllegalArgumentException)) cause = cause.getCause();
@@ -77,8 +82,9 @@ public final class MaintenanceCommand {
     }
 
     private static Object execute(List<String> command, ConfigurableApplicationContext context) {
-        var admins = context.getBean(AccountAdminService.class);
         String action = command.getFirst();
+        if (action.equals("ai-reconcile")) return context.getBean(AiReconciler.class).run();
+        var admins = context.getBean(AccountAdminService.class);
         String identifier = command.get(1);
         return switch (action) {
             case "promote", "demote" -> {
@@ -95,6 +101,7 @@ public final class MaintenanceCommand {
     }
 
     private static boolean valid(List<String> command) {
+        if (command.size() == 1) return command.getFirst().equals("ai-reconcile");
         return command.size() == 2 && List.of("promote", "demote", "auth-login-recovery").contains(command.getFirst());
     }
 }

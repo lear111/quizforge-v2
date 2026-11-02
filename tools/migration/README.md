@@ -20,9 +20,9 @@ java -jar tools/migration/target/quizforge-migration.jar inspect --source tools/
 | `inspect --source 副本 [--report 文件]` | 只读检查：完整性与外键检查、表结构核对、逐用户转换，报告用户数、冲突与无法迁移的记录。不连接目标库 |
 | `migrate --source 副本 --target-url JDBC [--target-user 用户] [--dry-run] [--report 文件]` | 迁移。`--dry-run` 完整执行并在同一事务内核对后回滚 |
 | `verify --source 副本 --target-url JDBC [--known-passwords 文件] [--login-url V2地址] [--report 文件]` | 逐用户核对全部字段；用已知密码确认原密码能登录 |
-| `grant-default-credit --target-url JDBC [--report 文件]` | 可选步骤：为老用户发放 1 元默认 AI 额度。**待 L5.1 完成后执行**，目前返回 3 并在报告中标明 `pending-L5.1` |
+| `grant-default-credit --target-url JDBC [--report 文件]` | 为目标库中还没有默认额度流水的用户补发 1 元（`migrate` 已在迁移事务内发放，正常情况下本命令发放 0 人）；可重复执行 |
 
-退出码：0 成功；1 报告中有 ERROR 或执行失败（已整体回滚）；2 参数错误；3 步骤尚不可执行。
+退出码：0 成功；1 报告中有 ERROR 或执行失败（已整体回滚）；2 参数错误；3 目标库结构版本过低（`grant-default-credit`）。
 `--target-user` 默认为 `quizforge`。报告写入不存在的文件（不覆盖），同时输出到标准输出。
 
 ## 规则
@@ -31,7 +31,7 @@ java -jar tools/migration/target/quizforge-migration.jar inspect --source tools/
 - **结构核对：** `users`、`user_phones`、`unverified_contacts`、`user_blocks` 的列必须与旧版完全一致（兼容旧 Node 库 `users.email NOT NULL`），未知列直接拒绝。
 - **字段映射**（09 第 1.1 节）：密码哈希逐字节原样写入、`password_algo = scrypt-v1`；邮箱去首尾空白并转小写；`users.created`（ISO-8601）截断到毫秒；`user_phones.verified` 为 0 时未验证，否则为验证时刻（写入 `verified_at`）；只迁移与当前联系方式一致的未验证标记。
 - **发现代码**（09 第 4.4 节）：ERROR（阻止迁移）— `EMAIL_COLLISION_CI`（V2 排序规则 `utf8mb4_0900_ai_ci` 下只差大小写或重音）、`EMAIL_INVALID`、`PHONE_FORMAT_INVALID`、`NAME_INVALID` / `NAME_TOO_LONG`、`REASON_TOO_LONG`、`TIMESTAMP_UNPARSABLE`、`ID_FORMAT_INVALID`、`ORPHAN_ROW`、`VERIFY_MISMATCH`、`LOGIN_CHECK_FAILED`、`LOGIN_SAMPLE_INCOMPLETE`；WARN — `EMAIL_NOT_NORMALIZED`、`PASSWORD_FORMAT_INVALID`、`NO_LOGIN_IDENTIFIER`、`TARGET_EXTRA_ACCOUNT`；INFO — `STALE_UNVERIFIED_CONTACT`。
-- **幂等与回滚**（09 第 5.3 节）：`account_user`、`account_user_phone`、`account_unverified_contact`、`account_block`、`auth_session` 必须全部为空，否则拒绝（`TARGET_NOT_EMPTY`）；目标库须已由当前版本的 V2 建表（Flyway ≥ V9）。全部写入在一个事务内，提交前在同一事务里逐用户核对，任何失败整体回滚。需要重来时删除并重建目标库。
+- **幂等与回滚**（09 第 5.3 节）：`account_user`、`account_user_phone`、`account_unverified_contact`、`account_block`、`auth_session`、`ai_account`、`ai_ledger` 必须全部为空，否则拒绝（`TARGET_NOT_EMPTY`）；目标库须已由当前版本的 V2 建表（Flyway ≥ V16）。全部写入在一个事务内，提交前在同一事务里逐用户核对，任何失败整体回滚。需要重来时删除并重建目标库。
 - **报告脱敏：** ID 前 8 位、昵称首字、`a***@example.com`、`+86138****8000`，不含密码哈希。
 
 ## 原密码登录抽查
@@ -49,12 +49,13 @@ java -jar tools/migration/target/quizforge-migration.jar inspect --source tools/
 （例如 `http://localhost:8088`）时向 `POST /api/auth/login` 发起真实登录：200 为能登录，401 为被拒绝。
 真实登录受 V2 的认证限频（每 IP 每分钟 12 次）约束，样本较多时分批执行。
 
-## 默认 AI 额度（待 L5.1）
+## 默认 AI 额度
 
-需求 v1.12：老用户在迁移时获得 1 元（10000 单位）默认额度并写一条流水。L5.1 尚未创建 AI 表，本工具**不创建**。
-L5.1 完成后需要：`ai_account`（每用户余额）、`ai_ledger`（`kind = migration`、`ref = legacy:<userId>`、唯一约束
-`(kind, ref)`），以及 `DefaultCredit.Granter` 的实现（同一事务内：锁余额行 → 加额度 → 插入流水；已发放过的用户跳过），
-再在 `grant-default-credit` 中接入。
+需求 v1.12：老用户在迁移时获得 1 元（10000 单位）默认额度并写一条流水。`migrate` 在同一个迁移事务内为每个迁入用户
+开户（`ai_account`）并发放：锁余额行 → 余额加 10000、`ledger_seq` + 1 → 插入流水（`kind = default_credit`、
+`ref = 用户 ID`、`seq = 1`、`balance_after = 10000`），提交前核对每个用户恰好一条、金额正确（否则 `AI_CREDIT_MISMATCH`，
+整体回滚）。这与 V2 注册时发放、V16 为已有用户补发使用同一条规则，唯一约束 `(kind, ref)` 保证每个用户只发一次。
+`verify` 同样核对默认额度；`grant-default-credit` 只为缺少这条流水的用户补发，可重复执行。
 
 ## 私人数据
 

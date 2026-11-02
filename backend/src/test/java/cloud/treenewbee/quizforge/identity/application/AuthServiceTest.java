@@ -175,6 +175,7 @@ class AuthServiceTest extends MySqlTestBase {
         when(policies.current()).thenReturn(new AuthPolicyService.Policy(false, false, false, false, false, 0));
         AuthService isolatedAuth = new AuthService(emptyUsers, mock(AccountMapper.class), mock(SessionMapper.class),
                 matchingHasher, policies, mock(VerificationCodeService.class), mock(InvitationService.class),
+                mock(cloud.treenewbee.quizforge.ai.application.AiBalanceService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC), mock(TransactionTemplate.class));
 
         assertThatThrownBy(() -> isolatedAuth.login(EMAIL, PASSWORD, USER_AGENT))
