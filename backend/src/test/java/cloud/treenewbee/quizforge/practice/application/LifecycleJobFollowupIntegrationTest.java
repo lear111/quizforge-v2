@@ -13,10 +13,10 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -273,7 +273,7 @@ class LifecycleJobFollowupIntegrationTest extends MySqlTestBase {
         return id;
     }
 
-    private static Timestamp time(Instant value) {
-        return Timestamp.from(value);
+    private static LocalDateTime time(Instant value) {
+        return LocalDateTime.ofInstant(value, ZoneOffset.UTC);
     }
 }

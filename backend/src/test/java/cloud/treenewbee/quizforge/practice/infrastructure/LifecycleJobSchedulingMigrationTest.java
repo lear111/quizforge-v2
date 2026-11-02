@@ -2,8 +2,9 @@ package cloud.treenewbee.quizforge.practice.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 import org.apache.ibatis.annotations.Select;
 import org.flywaydb.core.Flyway;
@@ -46,7 +47,7 @@ class LifecycleJobSchedulingMigrationTest {
                     INSERT INTO practice_lifecycle_job
                         (id,user_id,collection_id,context_id,round_id,kind,status,total,completed,lease_until,created_at,updated_at)
                     VALUES('partial','user','collection','context','round','archive','running',3,2,?,?,?)
-                    """, Timestamp.from(NOW.minusSeconds(1)), time(), time());
+                    """, LocalDateTime.ofInstant(NOW.minusSeconds(1), ZoneOffset.UTC), time(), time());
             // 两种数据规模均只含合成任务；增加的是终态历史，不增加可领取工作。
             addHistory(jdbc, 0, 10000);
             for (int i = 0; i < 100; i++) {
@@ -117,7 +118,7 @@ class LifecycleJobSchedulingMigrationTest {
         System.out.println("领取查询 " + label + " EXPLAIN：" + JsonMapper.builder().build().writeValueAsString(explain));
     }
 
-    private static Timestamp time() {
-        return Timestamp.from(NOW);
+    private static LocalDateTime time() {
+        return LocalDateTime.ofInstant(NOW, ZoneOffset.UTC);
     }
 }
