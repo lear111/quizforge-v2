@@ -13,6 +13,7 @@ export const pages = Object.freeze([
   { id: 'invitations', label: '邀请码', group: '用户与账号', load: () => import('./invitations.js') },
   { id: 'notifications', label: '站内通知', group: '运营', load: () => import('./notifications.js') },
   { id: 'ai-codes', label: '兑换码', group: '运营', load: () => import('./ai-codes.js') },
+  { id: 'ai-service', label: 'AI 服务', group: '运营', load: () => import('./ai-service.js') },
   { id: 'audit', label: '操作日志', group: '系统', load: () => import('./audit.js') },
 ]);
 

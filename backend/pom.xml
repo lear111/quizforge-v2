@@ -50,6 +50,12 @@
     </dependency>
 
     <!-- Database: MySQL + Flyway (ADR-002) -->
+    <!-- 模型客户端（L5.2）：只用 LangChain4j 的底层 OpenAI 兼容客户端，不用 starter、AI Services 或 ChatMemory。 -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-open-ai</artifactId>
+      <version>1.22.0</version>
+    </dependency>
     <dependency>
       <groupId>org.mybatis.spring.boot</groupId>
       <artifactId>mybatis-spring-boot-starter</artifactId>

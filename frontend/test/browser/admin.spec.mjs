@@ -26,7 +26,7 @@ test('administrators manage users, invitations and see the audit log; others see
   await expect(memberPage.locator('.qa-table')).toHaveCount(0);
 
   await page.goto('/admin/');
-  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','站内通知','兑换码','操作日志']);
+  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','站内通知','兑换码','AI 服务','操作日志']);
   // 默认栏目是概况：用户总数、近 7 天新注册、当前在线、存储总用量。
   await expect(page.getByRole('heading',{name:'概况'})).toBeVisible();
   await expect(page.locator('.qa-card')).toHaveCount(4);

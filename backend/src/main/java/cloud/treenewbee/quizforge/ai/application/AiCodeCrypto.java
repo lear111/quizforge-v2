@@ -18,7 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 兑换码完整码的加密保存（AES-256-GCM，附加数据区分用途）。密钥来自环境变量 QF_AI_MASTER_KEY
+ * 兑换码完整码与上游 API Key 的加密保存（AES-256-GCM，附加数据区分用途，互相不能解密）。密钥来自环境变量 QF_AI_MASTER_KEY
  * （32 字节的 Base64）。provider 模式或站点来源不是本机 / .test 时缺少密钥，启动失败；
  * 只在本机开发与测试中使用由固定字符串派生的开发密钥。
  *
@@ -28,6 +28,8 @@ import org.springframework.stereotype.Component;
 public class AiCodeCrypto {
 
     static final String CODE_AAD = "quizforge-redeem-code-v1";
+    /** 上游 API Key（L5.2）。 */
+    public static final String UPSTREAM_KEY_AAD = "quizforge-upstream-key-v1";
     private static final Logger log = LoggerFactory.getLogger(AiCodeCrypto.class);
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -49,28 +51,36 @@ public class AiCodeCrypto {
     }
 
     public String encrypt(String plain) {
+        return encrypt(plain, CODE_AAD);
+    }
+
+    public String decrypt(String stored) {
+        return decrypt(stored, CODE_AAD);
+    }
+
+    public String encrypt(String plain, String purpose) {
         try {
             byte[] iv = new byte[12];
             RANDOM.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            cipher.updateAAD(CODE_AAD.getBytes(StandardCharsets.UTF_8));
+            cipher.updateAAD(purpose.getBytes(StandardCharsets.UTF_8));
             byte[] sealed = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(ByteBuffer.allocate(iv.length + sealed.length).put(iv).put(sealed).array());
         } catch (GeneralSecurityException error) {
-            throw new IllegalStateException("Redeem code encryption failed", error);
+            throw new IllegalStateException("AI secret encryption failed", error);
         }
     }
 
-    public String decrypt(String stored) {
+    public String decrypt(String stored, String purpose) {
         try {
             byte[] bytes = Base64.getDecoder().decode(stored);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, bytes, 0, 12));
-            cipher.updateAAD(CODE_AAD.getBytes(StandardCharsets.UTF_8));
+            cipher.updateAAD(purpose.getBytes(StandardCharsets.UTF_8));
             return new String(cipher.doFinal(bytes, 12, bytes.length - 12), StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException error) {
-            throw new IllegalStateException("Redeem code decryption failed", error);
+            throw new IllegalStateException("AI secret decryption failed", error);
         }
     }
 
