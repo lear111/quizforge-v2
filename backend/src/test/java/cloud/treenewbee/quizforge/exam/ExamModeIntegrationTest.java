@@ -310,6 +310,7 @@ class ExamModeIntegrationTest extends MySqlTestBase {
         assertThat(history.path("questions").get(0).path("payload").path("state").path("answer")).isEqualTo(answer(type, true));
         error(send("DELETE", exam(id) + "/exam", null), 409, "EXAM_COMPLETED");
         assertThat(ok(send("GET", bank(type) + "/exams", null)).path("records")).isEmpty();
+        error(send("POST", question(id, type) + "/ai/grade", Map.of()), 501, "FEATURE_NOT_AVAILABLE");
     }
 
     @Test void unansweredExamCompletesWithZeroAndNeverInvokesGrader() throws Exception {
@@ -400,10 +401,12 @@ class ExamModeIntegrationTest extends MySqlTestBase {
         String mine = cookie;
         cookie = "__Host-qf_session=" + other.token();
         try {
-            for (String path:List.of(exam(id), exam(id) + "/exam", question(id, "判断题"), question(id, "判断题") + "/page", exam(id) + "/summary"))
+            for (String path:List.of(exam(id), exam(id) + "/exam", question(id, "判断题"), question(id, "判断题") + "/page", exam(id) + "/summary", exam(id) + "/resources/" + "a".repeat(64), exam(id) + "/listening/material", bank("判断题") + "/exams"))
             error(send("GET", path, null), 404, "NOT_FOUND");
             error(send("POST", exam(id) + "/exam", Map.of("requestId", "idor")), 404, "NOT_FOUND");
             error(send("DELETE", exam(id) + "/exam", null), 404, "NOT_FOUND");
+            error(send("POST", bank("判断题") + "/exams", Map.of("requestId", "idor-start")), 404, "NOT_FOUND");
+            error(send("POST", question(id, "判断题") + "/ai/grade", Map.of()), 404, "NOT_FOUND");
             error(action(id, "判断题", "draft", 0, "idor-draft", Map.of("answer", answer("判断题", true))), 404, "NOT_FOUND");
         }
         finally {

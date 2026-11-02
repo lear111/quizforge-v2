@@ -9,9 +9,9 @@ export function canStartExam(pane){return !!pane?.collection&&!pane.exam&&['bank
 
 export function bindExamMode({document,request,active,flush,open,refresh,onError,collectionPath,makeRequestId,onDeadline,now=Date.now}){
   const create=(tag,text,className)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(className)node.className=className;return node;};
-  const actions=document.querySelector('.document-actions'),start=create('button','开始考试','header-action'),status=create('span','','exam-status'),submit=create('button','交卷','header-action'),back=create('button','返回练习','header-action'),review=create('button','核对考试评分','header-action');
+  const actions=document.querySelector('.document-actions'),start=create('button','开始考试','header-action'),status=create('span','','exam-status'),submit=create('button','交卷','header-action'),back=create('button','返回练习','header-action'),review=create('button','核对考试评分');
   start.id='exam-start';submit.id='exam-submit';status.id='exam-status';back.id='exam-return';review.id='exam-review';status.setAttribute('role','status');
-  for(const button of [start,submit,back,review])button.type='button';actions.prepend(start,status,submit,back,review);
+  for(const button of [start,submit,back,review])button.type='button';actions.prepend(start,status,submit,back);document.querySelector('#mode-bar > div').append(review);
   const dialog=create('dialog',null,'exam-dialog'),form=create('form'),header=create('div',null,'exam-dialog-heading'),heading=create('h2','开始考试'),close=create('button','×','exam-dialog-close'),intro=create('p','设置本次考试时长，或继续未完成的考试。','exam-intro');
   heading.id='exam-dialog-title';dialog.setAttribute('aria-labelledby',heading.id);close.type='button';close.setAttribute('aria-label','关闭考试设置');header.append(heading,close);
   const settings=create('section',null,'exam-settings'),label=create('label','考试时长','exam-duration-label'),durationControl=create('div',null,'exam-duration-control'),duration=create('input'),unit=create('span','分钟'),unlimitedLabel=create('label',null,'exam-unlimited'),unlimited=create('input'),hint=create('p','到时自动交卷；交卷后锁定答案，统一评分。','exam-hint');

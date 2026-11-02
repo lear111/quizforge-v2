@@ -88,4 +88,4 @@ runner 采样结束时启动总数 8、LRU 回收 0、超时停止 0、异常退
 
 到期扫描本机 EXPLAIN：`type=range`、`key=idx_exam_deadline`、`key_len=9`、`rows=1`、`Extra=Using index condition`，没有 filesort。
 
-最终浏览器和 CI 结果在提交 PR 前补齐。本机考试测试 27 例，0 失败、0 错误、1 个默认跳过的性能探针；Maven package 成功。未实现 AI 评分属于明确的后续范围；没有迁移真实用户数据。
+桌面与 375px 手机考试端到端测试均已通过（2/2），并检查了本机截图。全量 CI 的运行链接、测试总数与最终结果见 PR 描述。本机考试测试 27 例，0 失败、0 错误、1 个默认跳过的性能探针；Maven package 成功。未实现 AI 评分属于明确的后续范围；没有迁移真实用户数据。
