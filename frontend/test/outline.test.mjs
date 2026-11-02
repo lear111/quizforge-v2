@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {consecutiveQuestionGroups} from '../practice/outline/outline-groups.js';
+import {draftChildStatus} from '../practice/outline/outline-view.js';
 
 const row=(id,index,name,type='type')=>({id,outlineGroupIndex:index,outlineGroupName:name,type:{id:type,name:type}});
 test('adjacent identically named author groups remain separate by outline index',()=>{
@@ -24,3 +25,11 @@ test('pre-migration rows get no invented extension-type heading',()=>{
   assert.equal(groups.length,1);assert.equal(groups[0].name,null);
 });
 test('empty question list has no groups',()=>assert.deepEqual(consecutiveQuestionGroups([]),[]));
+
+test('draft children distinguish reported empty, answered and unavailable progress after reload',()=>{
+  assert.equal(draftChildStatus('draft',{status:'draft'}),'draft');
+  assert.equal(draftChildStatus('unanswered',{status:'draft'}),'unanswered');
+  assert.equal(draftChildStatus(undefined,{status:'unanswered'}),'unanswered');
+  assert.equal(draftChildStatus(undefined,{status:'draft',answerState:null}),'unknown');
+  assert.equal(draftChildStatus(undefined,{status:'draft',answerState:{status:'unanswered'}}),'unanswered');
+});

@@ -33,7 +33,19 @@ test('central outline shows two adjacent author groups with the same name and hi
   await expect(groups.nth(0).locator('button')).toHaveClass(/active/);
   await groups.nth(1).locator('button').click();
   await expect(groups.nth(1).locator('button')).toHaveClass(/active/);
+  const frame=page.frameLocator('.question-pane:not([hidden]):not([inert]) iframe.question-frame');
+  await frame.locator('.answer-field').click();
+  const saved=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/actions')
+    &&response.request().method()==='POST'&&response.request().postDataJSON().action==='draft');
+  await frame.locator('[contenteditable="true"]').fill('小题作答，刷新后状态仍在。');
+  const reply=await saved;
+  expect(reply.status()).toBe(200);
+  expect((await reply.json()).state.outlineStates).toEqual([expect.objectContaining({status:'draft'})]);
+  await expect(groups.nth(1).locator('button')).toHaveClass(/draft/);
+  await page.reload();
+  await expect(page.locator('#collection-loading')).toBeHidden();
   if(await page.locator('#outline-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#outline-toggle').click();
+  await expect(groups.nth(1).locator('button')).toHaveClass(/draft/);
   await expect(page.locator('#outline-list')).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   const directory=resolve('../.artifacts/screenshots');await mkdir(directory,{recursive:true});
