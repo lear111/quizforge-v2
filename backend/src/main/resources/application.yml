@@ -39,6 +39,11 @@ logging:
     root: INFO
 
 qf:
+  practice:
+    jobs:
+      retention: ${QF_PRACTICE_JOBS_RETENTION:P7D}
+      cleanup-interval: ${QF_PRACTICE_JOBS_CLEANUP_INTERVAL:PT1H}
+      cleanup-batch-size: ${QF_PRACTICE_JOBS_CLEANUP_BATCH_SIZE:200}
   import:
     max-concurrency: ${QF_IMPORT_CONCURRENCY:2}
     requests-per-minute: ${QF_IMPORT_REQUESTS_PER_MINUTE:5}

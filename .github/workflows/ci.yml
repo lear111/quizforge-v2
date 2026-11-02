@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  # 分支手动验证通过后再创建非草稿 PR。
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
