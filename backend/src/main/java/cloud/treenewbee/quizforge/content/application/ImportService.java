@@ -1,7 +1,6 @@
 package cloud.treenewbee.quizforge.content.application;
 
 import cloud.treenewbee.quizforge.admin.application.ExtensionReviewService;
-import cloud.treenewbee.quizforge.content.domain.BankJson;
 import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
 import cloud.treenewbee.quizforge.content.archive.QbankArchiveReader;
@@ -135,30 +134,24 @@ public class ImportService {
      * 未知的拓展摘要登记为待审核。解析与规则调用在事务外完成；存储与 {@code sameTransaction} 在同一个事务中执行。
      */
     public <T> T ingest(Path archive, Function<Ingested, T> sameTransaction) {
-        try {
-            QbankPackageParser parser = new QbankPackageParser(blobs::put);
-            Map<String, Long> fileSizes = new LinkedHashMap<>();
-            QbankArchiveReader.read(archive, ArchiveLimits.DEFAULT, (path, bytes) -> {
-                parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
-            });
-            var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
-            Map<String, Extension> extensions = new LinkedHashMap<>();
-            for (ParsedExtension extension : parsed.extensions()) {
-                for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
-                    throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
-                }
-                RulePackage spec = rules.spec(extension);
-                JsonNode capabilities = rules.call(spec, "capabilities", Map.of());
-                if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
-                extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
+        QbankPackageParser parser = new QbankPackageParser(blobs::put);
+        Map<String, Long> fileSizes = new LinkedHashMap<>();
+        QbankArchiveReader.read(archive, ArchiveLimits.DEFAULT, (path, bytes) -> {
+            parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
+        });
+        var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
+        Map<String, Extension> extensions = new LinkedHashMap<>();
+        for (ParsedExtension extension : parsed.extensions()) {
+            for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
+                throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
             }
-            List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
-            // 规范化的 bank.json 存一份，从“我的题库”分享时据此重新打包（设计 04 第 6.1 节）。
-            Map<String, String> bankJson = new HashMap<>();
-            for (Bank bank : prepared) bankJson.put(bank.hash(), blobs.put(BankJson.bytes(bank.parsed().bank())));
-            return transactions.execute(status -> sameTransaction.apply(
-                    persist(parsed.manifest().group(), extensions, prepared, bankJson)));
-        } catch (IOException error) { throw new UncheckedIOException("无法读取上传的题库包", error); }
+            RulePackage spec = rules.spec(extension);
+            JsonNode capabilities = rules.call(spec, "capabilities", Map.of());
+            if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
+            extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
+        }
+        List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
+        return transactions.execute(status -> sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared)));
     }
 
     @SuppressWarnings("unchecked")
@@ -250,7 +243,7 @@ public class ImportService {
         }
     }
 
-    private Ingested persist(String group, Map<String, Extension> extensions, List<Bank> prepared, Map<String, String> bankJson) {
+    private Ingested persist(String group, Map<String, Extension> extensions, List<Bank> prepared) {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         // All shared keys are acquired in a consistent order, including partially overlapping packages.
         for (Extension extension : extensions.values().stream().sorted(Comparator.comparing(e -> e.parsed().digest())).toList()) {
@@ -271,13 +264,13 @@ public class ImportService {
             Map<String, Object> author = bank.parsed().bank();
             String uuid = bankUuid(author);
             try {
-                banks.insert(new BankRow(id, hex(bank.hash()), uuid, hex(bankJson.get(bank.hash())), bank.parsed().folderName(),
+                banks.insert(new BankRow(id, hex(bank.hash()), uuid, bank.parsed().folderName(),
                         (String) author.get("description"), 2, encode(bank.parsed().features()), nullableJson(author.get("listening")),
                         bank.questions().size(), now));
             } catch (DuplicateKeyException conflict) {
                 id = banks.findIdByContentSha256ForShare(hex(bank.hash())).orElseThrow(() -> conflict);
                 created = false;
-                banks.fillIdentity(id, uuid, hex(bankJson.get(bank.hash())));
+                banks.fillIdentity(id, uuid);
             }
             ids.put(bank.hash(), id);
             if (!created) continue;

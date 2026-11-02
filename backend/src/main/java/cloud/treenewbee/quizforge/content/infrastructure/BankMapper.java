@@ -38,27 +38,26 @@ public interface BankMapper {
             """)
     Optional<String> findIdByContentSha256ForShare(@Param("contentSha256") byte[] contentSha256);
 
-    /** 本功能之前导入的内容没有 UUID 与 bank.json：再次导入相同内容时补上（内容相同，两者也相同）。 */
+    /** V21 之前导入的内容没有 UUID：再次导入相同内容时补上（UUID 参与内容哈希，内容相同则 UUID 相同）。 */
     @org.apache.ibatis.annotations.Update("""
-            UPDATE content_bank SET bank_uuid = #{bankUuid}, bank_json_sha256 = #{bankJsonSha256}
-             WHERE id = #{id} AND bank_json_sha256 IS NULL
+            UPDATE content_bank SET bank_uuid = #{bankUuid} WHERE id = #{id} AND bank_uuid IS NULL
             """)
-    int fillIdentity(@Param("id") String id, @Param("bankUuid") String bankUuid, @Param("bankJsonSha256") byte[] bankJsonSha256);
+    int fillIdentity(@Param("id") String id, @Param("bankUuid") String bankUuid);
 
     @Insert("""
-            INSERT INTO content_bank (id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at)
-            VALUES (#{id}, #{contentSha256}, #{bankUuid}, #{bankJsonSha256}, #{sourceTitle}, #{description}, #{formatVersion}, #{features}, #{listening}, #{questionCount}, #{createdAt})
+            INSERT INTO content_bank (id, content_sha256, bank_uuid, source_title, description, format_version, features, listening, question_count, created_at)
+            VALUES (#{id}, #{contentSha256}, #{bankUuid}, #{sourceTitle}, #{description}, #{formatVersion}, #{features}, #{listening}, #{questionCount}, #{createdAt})
             """)
     int insert(BankRow row);
 
     @Select("""
-            SELECT id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at
+            SELECT id, content_sha256, bank_uuid, source_title, description, format_version, features, listening, question_count, created_at
               FROM content_bank WHERE id = #{id}
             """)
     Optional<BankRow> findById(@Param("id") String id);
 
     @Select("""
-            SELECT id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at
+            SELECT id, content_sha256, bank_uuid, source_title, description, format_version, features, listening, question_count, created_at
               FROM content_bank WHERE content_sha256 = #{contentSha256}
             """)
     Optional<BankRow> findByContentSha256(@Param("contentSha256") byte[] contentSha256);

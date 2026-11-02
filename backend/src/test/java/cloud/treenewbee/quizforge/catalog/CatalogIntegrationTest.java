@@ -41,7 +41,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 题库广场 1/4：发布（两个入口）、原文件逐字节保存、整包新版本、删除、审核、拓展白名单与通知。
+ * 题库广场 1/4：从本地上传发布、原文件逐字节保存、整包新版本、删除、审核、拓展白名单与通知。
  * 题库内容由真实的 rule-runner 校验（与私人导入相同的导入代码）。
  */
 @Timeout(300)
@@ -157,48 +157,25 @@ class CatalogIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog_pack", Long.class)).isZero();
     }
 
-    // ------------------------------------------------------------------ 发布：从我的题库
+    // ------------------------------------------------------------------ 私人导入记录题库 UUID
 
     @Test
-    void sharingFromTheLibraryReusesStoredContentAndOnlyOwnUploadsQualify() throws Exception {
+    void privateImportsRecordTheBankUuidAndFillItOnSharedContent() throws Exception {
         User owner = user();
         HttpResponse<String> imported = privateImport(owner, archive(List.of("单选题", "判断题"), null));
         assertThat(imported.statusCode()).as(imported.body()).isEqualTo(200);
-        List<String> ids = new ArrayList<>();
-        Map<String, String> banks = new LinkedHashMap<>();
-        for (JsonNode collection : json(imported).path("collections")) {
-            ids.add(collection.path("id").asString());
-            banks.put(collection.path("id").asString(), collection.path("bankId").asString());
-        }
-        long contents = jdbc.queryForObject("SELECT COUNT(*) FROM content_bank", Long.class);
-        // 私人题库带 bank.json 的 UUID。
         assertThat(jdbc.queryForList("SELECT source_bank_uuid FROM practice_collection WHERE user_id = ?", String.class, owner.id()))
                 .containsExactlyInAnyOrder(ImportArchives.BANK_IDS.get("单选题"), ImportArchives.BANK_IDS.get("判断题"));
-
-        HttpResponse<String> shared = fromLibrary(owner, ids, info("我的合集"));
-        assertThat(shared.statusCode()).as(shared.body()).isEqualTo(201);
-        String pack = json(shared).path("packId").asString();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_bank", Long.class)).isEqualTo(contents);
-        assertThat(jdbc.queryForList("SELECT bank_id FROM catalog_pack_bank WHERE pack_id = ?", String.class, pack))
-                .containsExactlyInAnyOrderElementsOf(banks.values());
-        assertThat(jdbc.queryForObject("SELECT source FROM catalog_pack_revision WHERE pack_id = ?", String.class, pack))
-                .isEqualTo("library");
-        // 发布时打包的文件保存下来，且是可以再次导入的 .qbank（内容相同 → 同一份共享内容）。
-        String sha = jdbc.queryForObject("SELECT LOWER(HEX(blob_sha256)) FROM catalog_pack_revision WHERE pack_id = ?", String.class, pack);
-        byte[] packed = Files.readAllBytes(BLOBS.resolve("sha256").resolve(sha.substring(0, 2)).resolve(sha.substring(2, 4)).resolve(sha));
-        HttpResponse<String> again = privateImport(owner, packed);
-        assertThat(again.statusCode()).as(again.body()).isEqualTo(200);
-        for (JsonNode collection : json(again).path("collections")) {
-            assertThat(banks.values()).contains(collection.path("bankId").asString());
-        }
-
-        // 他人的题库、从广场加入的题库都不能分享。
-        User stranger = user();
-        assertThat(fromLibrary(stranger, ids, info("偷来的")).statusCode()).isEqualTo(404);
-        approveEverything(pack, 1);
-        String joined = json(post(stranger, "/api/catalog/packs/" + pack + "/practice",
-                "{\"banks\":[\"" + ImportArchives.BANK_IDS.get("单选题") + "\"]}")).path("collections").get(0).asString();
-        assertThat(fromLibrary(stranger, List.of(joined), info("再分享")).statusCode()).isEqualTo(404);
+        assertThat(jdbc.queryForList("SELECT bank_uuid FROM content_bank", String.class))
+                .containsExactlyInAnyOrder(ImportArchives.BANK_IDS.get("单选题"), ImportArchives.BANK_IDS.get("判断题"));
+        // V21 之前导入的内容没有 UUID：再次导入相同内容（发布时复用共享内容）时补上。
+        jdbc.update("UPDATE content_bank SET bank_uuid = NULL");
+        HttpResponse<String> published = publish(owner, archive(List.of("单选题", "判断题"), null), info("合集"), List.of());
+        assertThat(published.statusCode()).as(published.body()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_bank", Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_bank WHERE bank_uuid IS NULL", Long.class)).isZero();
+        // 从“我的题库”（练习实例）选择发布的入口已去掉（设计 04 第 6.0 节：从私人题库包发布在下一个 PR 中加入）。
+        assertThat(post(owner, "/api/catalog/packs/from-library", null).statusCode()).isIn(404, 405);
     }
 
     // ------------------------------------------------------------------ 审核
@@ -456,16 +433,12 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     private HttpResponse<String> publish(User user, byte[] archive, Map<String, String> fields, List<byte[]> shots) throws Exception {
-        return multipart(user, "/api/catalog/packs", fields, archive, shots, List.of(), List.of());
+        return multipart(user, "/api/catalog/packs", fields, archive, shots, List.of());
     }
 
     private HttpResponse<String> revise(User user, String pack, byte[] archive, Map<String, String> fields, List<byte[]> shots,
                                         List<String> keep) throws Exception {
-        return multipart(user, "/api/catalog/packs/" + pack + "/revisions", fields, archive, shots, keep, List.of());
-    }
-
-    private HttpResponse<String> fromLibrary(User user, List<String> collections, Map<String, String> fields) throws Exception {
-        return multipart(user, "/api/catalog/packs/from-library", fields, null, List.of(), List.of(), collections);
+        return multipart(user, "/api/catalog/packs/" + pack + "/revisions", fields, archive, shots, keep);
     }
 
     private HttpResponse<String> privateImport(User user, byte[] archive) throws Exception {
@@ -480,12 +453,11 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     private HttpResponse<String> multipart(User user, String path, Map<String, String> fields, byte[] archive, List<byte[]> shots,
-                                           List<String> keep, List<String> collections) throws Exception {
+                                           List<String> keep) throws Exception {
         String boundary = "qf-" + Ids.uuidV7();
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         for (var field : fields.entrySet()) field(body, boundary, field.getKey(), field.getValue());
         for (String id : keep) field(body, boundary, "keepScreenshots", id);
-        for (String id : collections) field(body, boundary, "collectionIds", id);
         if (archive != null) file(body, boundary, "archive", "测试题库.qbank", archive);
         int index = 0;
         for (byte[] shot : shots) file(body, boundary, "screenshots", "shot-" + index++ + ".png", shot);

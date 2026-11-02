@@ -33,7 +33,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * 发布者的题库广场接口：发布（两个入口）、上传整包新版本、删除整个包、我的发布、截图读取。
+ * 发布者的题库广场接口：从本地上传发布、上传整包新版本、删除整个包、我的发布、截图读取。
  * 用户身份只取自登录会话；归属检查在 SQL 条件里。
  */
 @RestController
@@ -58,7 +58,7 @@ public class CatalogController {
                 "maxScreenshotBytes", PackInfo.MAX_SCREENSHOT_BYTES, "maxArchiveBytes", ImportService.MAX_UPLOAD_BYTES);
     }
 
-    /** 入口一：从本地上传 .qbank。 */
+    /** 从本地上传 .qbank 发布。 */
     @PostMapping(value = "/api/catalog/packs", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<CatalogPublishService.Submitted> publish(Principal user,
             @RequestPart("archive") MultipartFile archive,
@@ -70,16 +70,6 @@ public class CatalogController {
             return created(publishing.publishUpload(user.getName(), info, rights(fields), temporary,
                     archive.getOriginalFilename(), shots(screenshots)));
         } finally { imports.delete(temporary); }
-    }
-
-    /** 入口二：从“我的题库”选择自己上传的私人题库。 */
-    @PostMapping(value = "/api/catalog/packs/from-library", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<CatalogPublishService.Submitted> publishFromLibrary(Principal user,
-            @RequestParam("collectionIds") List<String> collectionIds,
-            @RequestPart(value = "screenshots", required = false) List<MultipartFile> screenshots,
-            @RequestParam Map<String, String> fields) throws IOException {
-        return created(publishing.publishFromLibrary(user.getName(), info(fields), rights(fields), collectionIds,
-                shots(screenshots)));
     }
 
     /** 上传整包新版本。keepScreenshots 为沿用的上一版本截图 ID（可重复）。 */
@@ -106,12 +96,6 @@ public class CatalogController {
     @GetMapping("/api/catalog/my-packs")
     public ResponseEntity<Map<String, Object>> mine(Principal user) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Map.of("items", publishing.mine(user.getName())));
-    }
-
-    /** 可以从“我的题库”分享的题库：自己上传的私人题库。 */
-    @GetMapping("/api/catalog/shareable")
-    public ResponseEntity<Map<String, Object>> shareable(Principal user) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Map.of("items", publishing.shareable(user.getName())));
     }
 
     @GetMapping("/api/catalog/files/{id}")

@@ -442,7 +442,7 @@ CREATE TABLE exam_exam (
 | --- | --- | --- |
 | catalog | `catalog_pack` | id, owner_id, latest_revision, **approved_revision**（最新已审核版本）, status(active/deleted), created/updated/deleted_at；广场信息按版本保存在 `catalog_pack_revision`（V21，设计 04 第 6.6 节）。下载计数在题库广场 2/4 增加 |
 | catalog | `catalog_pack_bank` | 某版本中的一本题库：pack_id, revision, bank_uuid, bank_id（共享内容）, title, position；DDL 见 V21 |
-| catalog | `catalog_pack_revision` | 每个已提交版本：pack_id, revision, 广场信息（title, summary, description, category, tags, release_notes）, source(upload/library), filename, blob_sha256, size, extension_digests, review_status/reviewer_id/review_note/reviewed_at, submitted_by/at |
+| catalog | `catalog_pack_revision` | 每个已提交版本：pack_id, revision, 广场信息（title, summary, description, category, tags, release_notes）, source（upload：作者上传的原文件）, filename, blob_sha256, size, extension_digests, review_status/reviewer_id/review_note/reviewed_at, submitted_by/at |
 | catalog | `catalog_pack_file` | 截图等附件，按版本保存：id, pack_id, revision, kind, position, name, mime, size, blob_sha256 |
 | catalog | `catalog_pack_event` | 发布者操作与审核结果的记录（只插入）：pack_id, revision, actor_id, action, detail, created_at |
 | catalog | `catalog_pack_revision` 的审核列 | 每个版本只审核一次（需求 FR-10 v1.5），审核状态、审核人、意见、时间作为版本表的列，不另设审核记录表；云端许可（含该版本所用拓展摘要列表）同样记在版本上 |

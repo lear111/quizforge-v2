@@ -172,32 +172,7 @@ public interface CatalogMapper {
             """)
     List<EventRow> events(@Param("packId") String packId);
 
-    // ---------------------------------------------------------------- 从“我的题库”分享
-
-    record OwnedCollection(String id, String bankId, String title) {
-    }
-
-    /** 自己上传的私人题库（source_pack_id 为 NULL），归属写在条件里。 */
-    @Select("""
-            <script>
-            SELECT id, bank_id, title FROM practice_collection
-             WHERE user_id = #{userId} AND deleted_at IS NULL AND source_pack_id IS NULL AND id IN
-             <foreach collection="ids" item="i" open="(" separator="," close=")">#{i}</foreach>
-            </script>
-            """)
-    List<OwnedCollection> ownCollections(@Param("userId") String userId, @Param("ids") List<String> ids);
-
-    record ShareableCollection(String id, String title, String groupName, int questionCount, java.time.Instant createdAt) {
-    }
-
-    /** 可以分享的私人题库：自己上传、未删除。 */
-    @Select("""
-            SELECT c.id, c.title, c.group_name, b.question_count, c.created_at
-              FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
-             WHERE c.user_id = #{userId} AND c.deleted_at IS NULL AND c.source_pack_id IS NULL
-             ORDER BY c.group_name, c.title, c.id LIMIT 500
-            """)
-    List<ShareableCollection> shareable(@Param("userId") String userId);
+    // ---------------------------------------------------------------- 加入我的题库
 
     /** 已加入的同一本题库（重复加入时打开已有的实例）。 */
     @Select("""

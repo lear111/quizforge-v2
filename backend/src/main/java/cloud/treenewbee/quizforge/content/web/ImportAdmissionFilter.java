@@ -37,7 +37,7 @@ public class ImportAdmissionFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 私人导入与发布到题库广场走同一条导入代码，共用并发与频率限制。
         return !request.getMethod().equals("POST") || !(request.getServletPath().equals("/api/library/import")
-                || request.getServletPath().matches("/api/catalog/packs(/from-library|/[^/]+/revisions)?"));
+                || request.getServletPath().matches("/api/catalog/packs(/[^/]+/revisions)?"));
     }
 
     @Override

@@ -6,7 +6,6 @@ public record BankRow(
         String id,
         byte[] contentSha256,
         String bankUuid,
-        byte[] bankJsonSha256,
         String sourceTitle,
         String description,
         int formatVersion,

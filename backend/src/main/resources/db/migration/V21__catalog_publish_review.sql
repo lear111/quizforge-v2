@@ -3,14 +3,10 @@
 -- 广场信息（标题、简介、截图等）按版本保存：新版本审核期间广场继续显示上一个已审核版本的信息与内容，
 -- 管理员审核的是这一版本的全部内容（题库、拓展、广场信息），通过后才对外可见。
 
--- 内容模块：题库身份与可重新打包的 bank.json。
---   bank_uuid       bank.json 中的 UUID（题库身份，设计 06 第 4 节）；它属于题库内容的一部分（参与内容哈希），
---                   所以按内容只存一份即可。
---   bank_json_sha256 规范化后的 bank.json（存入 content_blob）。从“我的题库”分享时据此与资源、拓展文件重新打包。
--- 本脚本之前导入的内容没有这两列：再次导入相同内容时补上；之前的私人题库需要重新导入后才能从“我的题库”分享。
+-- 内容模块：题库身份。bank_uuid 为 bank.json 中的 UUID（设计 06 第 4 节）；它属于题库内容的一部分（参与内容哈希），
+-- 所以按内容只存一份即可。本脚本之前导入的内容没有这一列，再次导入相同内容时补上。
 ALTER TABLE content_bank
-  ADD COLUMN bank_uuid CHAR(36) NULL AFTER content_sha256,
-  ADD COLUMN bank_json_sha256 BINARY(32) NULL AFTER bank_uuid;
+  ADD COLUMN bank_uuid CHAR(36) NULL AFTER content_sha256;
 
 -- 练习模块：来源题库的身份由包内路径改为 bank.json 的 UUID（设计 04 第 4 节）。
 -- 已有的值是路径（question-banks/<组>/<题库>/），不能换算成 UUID，只保留形如 UUID 的值。
@@ -59,7 +55,7 @@ CREATE TABLE catalog_pack_revision (
   category           VARCHAR(20)    NOT NULL,
   tags               JSON           NOT NULL,       -- 最多 5 个，合计不超过 100 字符
   release_notes      VARCHAR(2000)  NOT NULL,       -- 更新说明：第 1 版可为空串，以后随题库更新通知发送（PR ③）
-  source             VARCHAR(16)    NOT NULL,       -- upload：作者上传的原文件；library：从“我的题库”打包一次
+  source             VARCHAR(16)    NOT NULL,       -- upload：作者上传的原文件（从私人题库包发布在下一个 PR 中加入）
   filename           VARCHAR(255)   NOT NULL,
   blob_sha256        BINARY(32)     NOT NULL,       -- .qbank 文件（content_blob）
   size               BIGINT         NOT NULL,

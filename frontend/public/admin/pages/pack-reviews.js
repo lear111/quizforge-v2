@@ -64,7 +64,7 @@ function infoPanel(detail) {
     ['分类', r.category],
     ['标签', r.tags.length ? r.tags.join('、') : '—'],
     ['更新说明', r.releaseNotes || '—'],
-    ['来源', r.source === 'library' ? '从“我的题库”分享（发布时打包）' : '本地上传的原文件'],
+    ['来源', '作者上传的原文件'],
     ['文件', `${r.filename}（${bytes(r.size)}）`],
     ['SHA-256', detail.sha256],
     ['提交时间', time(r.submittedAt)],

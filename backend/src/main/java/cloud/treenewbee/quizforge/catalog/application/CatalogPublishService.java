@@ -22,8 +22,6 @@ import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackBankR
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.RevisionRow;
 import cloud.treenewbee.quizforge.content.application.ImportService;
-import cloud.treenewbee.quizforge.content.application.ImportService.Ingested;
-import cloud.treenewbee.quizforge.content.application.LibraryExport;
 import cloud.treenewbee.quizforge.content.infrastructure.BlobStore;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionRow;
@@ -35,8 +33,8 @@ import tools.jackson.databind.json.JsonMapper;
  * 发布到题库广场（设计 04 第 2、6.1 节，需求 FR-10 v1.13、FR-11）。
  *
  * <ul>
- *   <li>两个入口：从本地上传 .qbank（保存作者上传的原文件，以后下载逐字节一致，C-05）；从“我的题库”选择自己上传的私人题库
- *       （由已存储的内容打包一次并保存这份文件，重新导入时内容相同，直接复用）。都走同一条导入代码，未知拓展登记为待审核。</li>
+ *   <li>从本地上传 .qbank：保存作者上传的原文件（以后下载逐字节一致，C-05），走与私人导入相同的导入代码，
+ *       未知拓展登记为待审核。从私人题库包（“我的题库”资源）发布在下一个 PR 中加入，同样直接使用原文件（设计 04 第 6.0 节）。</li>
  *   <li>发布者只能对整个题库包操作：上传整包新版本、删除整个包。归属写在 SQL 条件里。</li>
  *   <li>每个版本只审核一次。新版本提交时，尚未审核的旧版本不再审核（superseded）；审核期间继续公开上一个已审核版本。</li>
  *   <li>公开题库不计入个人存储配额。</li>
@@ -73,16 +71,14 @@ public class CatalogPublishService {
 
     private final CatalogMapper mapper;
     private final ImportService imports;
-    private final LibraryExport export;
     private final BlobStore blobs;
     private final PracticeCollectionMapper collections;
     private final JsonMapper json;
 
-    public CatalogPublishService(CatalogMapper mapper, ImportService imports, LibraryExport export, BlobStore blobs,
+    public CatalogPublishService(CatalogMapper mapper, ImportService imports, BlobStore blobs,
                                  PracticeCollectionMapper collections, JsonMapper json) {
         this.mapper = mapper;
         this.imports = imports;
-        this.export = export;
         this.blobs = blobs;
         this.collections = collections;
         this.json = json;
@@ -90,35 +86,12 @@ public class CatalogPublishService {
 
     // ---------------------------------------------------------------- 发布
 
-    /** 入口一：从本地上传 .qbank。archive 为已写入临时文件的上传内容，调用方负责删除。 */
+    /** 从本地上传 .qbank。archive 为已写入临时文件的上传内容，调用方负责删除。 */
     public Submitted publishUpload(String userId, PackInfo info, boolean rights, Path archive, String filename,
                                    List<Screenshot> screenshots) {
         requireRights(rights);
         List<FileRow> shots = storeScreenshots(screenshots, 0);
         return submit(userId, null, info, archive, qbankName(filename), "upload", shots, List.of());
-    }
-
-    /** 入口二：从“我的题库”选择自己上传的私人题库（source_pack_id 为 NULL），复用已存储的内容。 */
-    public Submitted publishFromLibrary(String userId, PackInfo info, boolean rights, List<String> collectionIds,
-                                        List<Screenshot> screenshots) {
-        requireRights(rights);
-        Set<String> wanted = new java.util.LinkedHashSet<>(collectionIds == null ? List.of() : collectionIds);
-        if (wanted.isEmpty() || wanted.size() > 200) throw PackInfo.invalid("请选择要分享的题库");
-        var owned = mapper.ownCollections(userId, List.copyOf(wanted));
-        if (owned.size() != wanted.size()) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "COLLECTION_NOT_FOUND", "只能分享自己上传的题库；从题库广场加入的题库不能再次分享");
-        }
-        List<FileRow> shots = storeScreenshots(screenshots, 0);
-        List<String> bankIds = new ArrayList<>();
-        for (String id : wanted) {
-            owned.stream().filter(row -> row.id().equals(id)).findFirst().ifPresent(row -> bankIds.add(row.bankId()));
-        }
-        Path archive = export.pack(bankIds);
-        try {
-            return submit(userId, null, info, archive, qbankName(info.title() + ".qbank"), "library", shots, List.of());
-        } finally {
-            imports.delete(archive);
-        }
     }
 
     /** 上传整包新版本；keepScreenshots 为沿用的上一版本截图 ID。 */
@@ -217,10 +190,6 @@ public class CatalogPublishService {
                         .map(bank -> new BankView(bank.bankUuid(), bank.title(), bank.questionCount())).toList(),
                 mapper.files(row.packId(), row.revision()).stream()
                         .map(file -> new FileView(file.id(), file.name(), file.mime(), file.size())).toList());
-    }
-
-    public List<CatalogMapper.ShareableCollection> shareable(String userId) {
-        return mapper.shareable(userId);
     }
 
     /** 截图读取权限：所有者、管理员，或当前公开（已审核且未删除）的版本。 */

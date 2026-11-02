@@ -1,4 +1,4 @@
-// 发布题库与“我的发布”（题库广场 1/4）。两个入口：从本地上传 .qbank、从“我的题库”选择自己上传的题库。
+// 发布题库与“我的发布”（题库广场 1/4）：从本地上传 .qbank 发布。从私人题库包（“我的题库”资源）发布在下一个 PR 中加入。
 // 发布者只能对整个题库包操作：上传整包新版本、删除整个包。所有用户数据都以 textContent 写入。
 
 const view = document.getElementById('publish-view');
@@ -119,45 +119,23 @@ function checkScreenshots(form, kept = 0) {
 // ------------------------------------------------------------------ 发布题库
 
 async function renderNew() {
-  const shareable = (await request('/api/catalog/shareable')).items;
   const archive = el('input', { id: 'pack-archive', name: 'archive', type: 'file', accept: '.qbank' });
   const uploadPane = el('div', { class: 'field' }, el('label', { for: 'pack-archive', text: '题库包（.qbank）' }),
     el('div', { class: 'dropzone' }, archive, el('small', { text: '作者上传的原文件会原样保存，以后下载时逐字节一致；不超过 128 MiB。' })));
-  const libraryPane = el('div', { class: 'field', hidden: true }, el('span', { class: 'label', text: '从我的题库选择（只能分享自己上传的题库）' }),
-    shareable.length ? el('div', { class: 'library-list' }, ...shareable.map((item) => el('label', {},
-      el('input', { type: 'checkbox', name: 'collectionIds', value: item.id }),
-      `${item.groupName ? `${item.groupName} / ` : ''}${item.title}（${item.questionCount} 题）`)))
-      : el('p', { class: 'publish-muted', text: '你还没有自己上传的题库。' }));
-  const source = el('div', { class: 'source-switch', role: 'radiogroup', 'aria-label': '题库来源' },
-    el('label', {}, el('input', { type: 'radio', name: 'source', value: 'upload', checked: true }), '从本地上传 .qbank'),
-    el('label', {}, el('input', { type: 'radio', name: 'source', value: 'library' }), '从我的题库选择'));
   const progress = el('progress', { class: 'upload-progress', max: '1', value: '0', hidden: true });
   const submit = el('button', { class: 'primary', type: 'submit', text: '提交审核' });
-  const form = el('form', { id: 'publish-form', novalidate: true }, source, uploadPane, libraryPane, ...infoFields(),
+  const form = el('form', { id: 'publish-form', novalidate: true }, uploadPane, ...infoFields(),
     screenshotsField(), rightsField(), progress, submit);
-  source.addEventListener('change', () => {
-    const library = form.elements.namedItem('source').value === 'library';
-    uploadPane.hidden = library; libraryPane.hidden = !library;
-  });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearMessages();
-    const library = form.elements.namedItem('source').value === 'library';
     try {
-      const data = new FormData(form);
-      data.delete('source');
       checkScreenshots(form);
       if (!form.elements.namedItem('rights').checked) throw new RequestError('PACK_INFO_INVALID', '请确认你有权分享这些题库');
-      if (library) {
-        data.delete('archive');
-        if (!data.getAll('collectionIds').length) throw new RequestError('PACK_INFO_INVALID', '请选择要分享的题库');
-      } else {
-        data.delete('collectionIds');
-        if (!archive.files.length) throw new RequestError('PACK_INFO_INVALID', '请选择 .qbank 题库包');
-        if (archive.files[0].size > config.maxArchiveBytes) throw new RequestError('LIBRARY_ARCHIVE_LIMIT', '题库包超过 128 MiB 上传上限');
-      }
+      if (!archive.files.length) throw new RequestError('PACK_INFO_INVALID', '请选择 .qbank 题库包');
+      if (archive.files[0].size > config.maxArchiveBytes) throw new RequestError('LIBRARY_ARCHIVE_LIMIT', '题库包超过 128 MiB 上传上限');
       submit.disabled = true; progress.hidden = false; progress.value = 0;
-      const result = await upload(library ? '/api/catalog/packs/from-library' : '/api/catalog/packs', data, progress);
+      const result = await upload('/api/catalog/packs', new FormData(form), progress);
       history.replaceState(null, '', '#mine');
       await route();
       showNotice(`已提交审核（第 ${result.revision} 版）。审核结果会通过站内通知告诉你。`);
