@@ -59,7 +59,7 @@ test('answer text, image and ink are captured before submit; ink phases switch a
   await expect.poll(async()=>JSON.stringify((await read()).state.answer)).toContain('"strokes":[{');
   await expect.poll(async()=>(await read()).whiteboard.draft.strokes.length).toBeGreaterThan(0);
   await expect(pane.getByLabel('白板层',{exact:true})).toHaveCount(0);
-  await expect(pane.locator('.qf-board-stage')).toHaveText('作答草稿');
+  await expect(pane.locator('.qf-board-stage')).toHaveCount(0);
   await pane.getByRole('button',{name:'操作题目或移动白板',exact:true}).click();
   await page.locator('#draft-toggle').click();
   const beforeSubmit=await read();
@@ -84,11 +84,12 @@ test('answer text, image and ink are captured before submit; ink phases switch a
   const directory=resolve(process.env.QF_SCREENSHOT_DIR||'../.artifacts/screenshots');await mkdir(directory,{recursive:true});
   await page.screenshot({path:resolve(directory,`whiteboard-resources-${info.project.name}.png`),fullPage:true});
   await page.locator('#draft-toggle').click();
-  await expect(pane.locator('.qf-board-stage')).toHaveText('追加笔迹');
+  await expect(pane.locator('.qf-board-stage')).toHaveCount(0);
   await expect(pane.getByLabel('白板层',{exact:true})).toHaveCount(0);
   const tools=pane.locator('.qf-whiteboard-toolbar');
   if(await tools.getAttribute('data-collapsed')==='true')await tools.getByRole('button',{name:/展开白板工具/}).click();
-  await tools.getByRole('button',{name:'画笔，选中后再次点击选择颜色',exact:true}).click();
+  const pen=tools.getByRole('button',{name:'画笔，选中后再次点击选择颜色',exact:true});
+  if(await pen.getAttribute('aria-pressed')!=='true')await pen.click();
   const rect=await pane.locator('.question-viewport').boundingBox();
   const from={x:rect.x+rect.width*.35,y:rect.y+rect.height*.45},to={x:rect.x+rect.width*.6,y:rect.y+rect.height*.5};
   const line=async()=>{await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:10});await page.mouse.up();};

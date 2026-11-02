@@ -46,7 +46,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。提交前的草稿笔迹会在提交后冻结，追加笔迹可修改、擦除；完成练习后核对评分，再练一次时保存历史。':'';
+const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。完成练习后核对评分，再练一次时保存历史。':'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -515,13 +515,10 @@ function configureBoardLayer(pane){
   pane.whiteboard.setAppendOnly(false);
   pane.whiteboard.setAnswerInkEnabled(pane.view!=='history'&&layer==='draft'&&!board?.draftLocked);
   pane.whiteboard.setReadOnly(!!pane.submitting||!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
-  if(pane.boardStageLabel)pane.boardStageLabel.textContent=layer==='notes'?'追加笔迹':'作答草稿';
 }
 function attachRuntime(pane){
   if(pane.whiteboard)return;
   pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});
-  const stage=el('span','qf-board-stage','作答草稿');stage.setAttribute('role','status');
-  pane.tools.append(stage);pane.boardStageLabel=stage;
   pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);
 }
 async function suspendPane(pane){

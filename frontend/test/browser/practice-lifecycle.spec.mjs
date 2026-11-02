@@ -77,7 +77,7 @@ test('real practice finish, frozen history, editable notes and deletion survive 
   await page.screenshot({path:resolve(directory,`lifecycle-${info.project.name}-history.png`),fullPage:true});
   await page.locator('#draft-toggle').click();
   const pane=page.locator('.question-pane:not([hidden]):not([inert])');
-  await expect(pane.locator('.qf-board-stage')).toHaveText('追加笔迹');
+  await expect(pane.locator('.qf-board-stage')).toHaveCount(0);
   await expect(pane.getByLabel('白板层',{exact:true})).toHaveCount(0);
   const tools=pane.locator('.qf-whiteboard-toolbar');
   if(await tools.getAttribute('data-collapsed')==='true')await tools.getByRole('button',{name:/展开白板工具/}).click();

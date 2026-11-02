@@ -217,9 +217,10 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     if (mode !== 'draft') return [];
     const space=canvasSpace(canvas,{width:viewWidth,height:viewHeight}),rects=[];
     for (const element of container.querySelectorAll('iframe')) {
-      const locked=(element.qfSharedAnswerAreas||[]).filter(area=>!area.writable).map(area=>area.rect);
-      const controls=(element.qfSharedAnswerAreas||[]).flatMap(area=>area.imageControls||[]);
-      const regions = [...(tool==='hand'?element.qfInteractiveRegions||[]:['pen','eraser'].includes(tool)?element.qfAnswerAreaRegions||[]:[]),...controls,...locked];
+      const locked=answerInkEnabled?(element.qfSharedAnswerAreas||[]).filter(area=>!area.writable).map(area=>area.rect):[];
+      const controls=answerInkEnabled?(element.qfSharedAnswerAreas||[]).flatMap(area=>area.imageControls||[]):[];
+      // 提交后的笔迹覆盖在只读题目上，不再把答题区作为可编辑控件让出。
+      const regions = [...(tool==='hand'?element.qfInteractiveRegions||[]:answerInkEnabled&&['pen','eraser'].includes(tool)?element.qfAnswerAreaRegions||[]:[]),...controls,...locked];
       if (!regions?.length) continue;
       const bounds = element.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
@@ -951,7 +952,7 @@ export function mountWhiteboard(container, { onChange = () => {}, onViewChange =
     get loadGeneration() { return loadGeneration; },
     getDraft() { return model.getDraft(); },
     protectStrokes(strokes) { model.protectStrokes(strokes);updateControls();requestPaint(); },
-    setAnswerInkEnabled(value) { answerInkEnabled=value===true; },
+    setAnswerInkEnabled(value) { answerInkEnabled=value===true; requestPaint(); },
     getLayout() { return model.layout; },
     initializeLayout(width) {
       if (destroyed || readOnly || !model.initializeLayout(width)) return false;
