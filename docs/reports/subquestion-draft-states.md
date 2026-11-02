@@ -1,48 +1,92 @@
-# L1.6 小题草稿状态
+# L1.6 小题草稿状态：按 PR #100 审查修订
 
-## 行为与实现
+## 当前行为
 
-草稿与回执仍由原有 IdempotentDraftService / DraftService 原子提交，未修改它们、SubmitService 或 QuestionStateMapper。随后 DraftOutlineService 在事务外对本题调用 validateAnswer；独立 DraftOutlineMapper 用 user_id、题目 ID、revision 与 status=draft 条件回写派生状态，不增加作答 revision、不更新作答时间。
+保存草稿不调用 rule-runner，也不为了构造保存响应加载投影。声明 answer-state 的拓展直接使用页面随答案上报的进度，只保留本题已知大纲 ID 与 unanswered/draft；其他拓展或未上报时按答案非空生成整题状态，小题未知。进度不参与计分、权限或完成条件判断。
 
-默认规则 deadline 为 250ms，可配置 qf.practice.draft-validation-deadline；HTTP 沿用客户端的额外一秒宽限。规则超时、拒绝、不可用、响应无效均保留已保存的答案，进度为 null；前端显示“小题状态暂未知”，不误显示为已确认未作答。
+白名单过滤为纯本地计算；额外字段不会存储或返回，非法状态/ID/重复 ID 按进度未知处理，答案仍保存。仅上报整题状态时不推测各小题。outlineStates=null 表示未知，未保存的空题仍显示未作答。
 
-API 1.3 answer-state 由拓展页面发送本次答案的状态，宿主仅接收本题大纲中的 ID 与 unanswered/draft；旧拓展使用 outlineScore.outlineStates，没有小题进度则按答案是否非空推断。所有结果重新组装成 ID 与状态，不回传规则的投影、分数或其他字段。部分作答是“小题中有 draft 也有 unanswered”的组合，规则 API 没有 partial 枚举。
+## 写入与并发
 
-同一 requestId 的派生状态只扩展回执一次，与条件更新派生状态在同一短事务中提交。重放使用首次记录的进度，不重新调用规则；旧请求的进度不能覆盖新草稿或已提交状态。进度计算前答案已提交，因此另一个请求无需等慢规则即可保存。
+- IdempotentDraftService 增加一个同事务的完成回调重载，原七参数 save 的行为与返回保持不变。乐观锁、先 INSERT 后 UPDATE 的选择、原请求哈希和冲突后新事务重查回执均未改动。
+- 新回调在原草稿条件写入后，通过 DraftOutlineMapper 对同一用户、同一题、同一 revision、status=draft 写入进度，再把进度随 revision 一起插入原回执。没有第二次事务、没有事后修改回执。
+- 回调、进度 SQL 或回执失败时，草稿一起回滚。同 requestId 重放不执行回调，也不把旧进度应用到新版本。乱序到达的旧 revision 返回 409。
+- 未修改 DraftService、QuestionStateMapper、SubmitService；增加的 IdempotentDraftService 重载仅提供本地 SQL 扩展点，原事务与冲突处理由同一段代码执行。
 
-## 对应测试
+## 保存响应与前端
 
-- realValidationStoresPartProgressAndReplayDoesNotCallRulesAgain：真实 rule-runner 返回小题混合状态，HTTP 保存、读题恢复、幂等重放与安全字段。
-- extensionWithoutValidateAnswerFallsBackToNonemptyAnswer：真实无校验钩子的拓展，空答案与非空答案回退。
-- realRuleDeadlineFailureKeepsDraftAndNextRequestStillWorks：真实死循环钩子被终止，答案保留、状态未知，后续正常请求恢复。
-- validationFailureSavesAnswerAndReplaysUnknownProgressWithoutRetryingRules：不可用时答案保存与未知状态回放。
-- slowValidationOutsideTransactionCannotOverwriteNewerDraftProgress：CountDownLatch 门控，第二份草稿先完成，第一份校验后返回；验证事务外调用、不阻塞新保存、最终进度不倒退。
-- declaredAnswerStateUsesOnlyWhitelistedDraftStatusesAndIds：声明能力的页面状态持久化，拒绝把判分状态当成草稿状态。
-- DraftOutlineServiceTest：协议参数与短 deadline、空答案、false 是合法答案、能力声明、状态/ID 白名单、规则异常、响应不泄露答案。
-- 原 DraftActionIntegrationTest：原有回执/草稿原子性、并发重复请求、409、IDOR、快照零查询等全部继续运行。
-- 前端 outline.test.mjs 与 central-outline.spec.mjs：进度未知与未作答分开、页面实时更新、刷新后小题状态保持。
+PracticeReadService.prepareDraftSave 只读取归属、审核、本题指纹/大纲/manifest，不查询题目原文、题库列表、白板、轮次或投影缓存。新增的 SQL 同样带 user_id 和精确题目 ID 条件。
 
-语义集成测试使用 5 秒规则 deadline，避免把 CI 的新进程冷启动当成规则语义失败；单元测试检查 250ms 参数，真实死循环仍由 runner 的 650ms 钩子上限终止。
+HTTP 返回 {revision, state, stamp} 增量。前端通过集中 mergeDraftResponse 合并状态与版本，沿用已经加载的安全题目投影、白板和能力；缓存已淘汰时不凭空制造题目缓存条目。读题接口仍按原规则生成安全投影，正式提交仍校验并判分。
 
-## 设计冲突与范围
+## 测试对应
 
-协议原 §5.2 要求校验失败返回 400/503，本次任务明确要求失败仍保存；按后发产品任务实现，并在该节补充更正。现有 answer-state 能力仍由页面声明、规则 validateAnswer 仅返回 valid，小题进度遵循其既有两条通路；没有让宿主解析题型内部答案。
+| 要求 | 测试 |
+| --- | --- |
+| 页面进度持久化、回执重放 | reportedProgressPersistsWithDraftAndReplayNeverRewritesIt |
+| 草稿零规则调用、零投影、零原文查询 | noRunnerOrProjectionIsUsedEvenForColdQuestionAndUnavailableRunner |
+| 非空回退、小题未知 | unreportedProgressFallsBackToAnswerOnlyAndLeavesChildrenUnknown；DraftOutlineServiceTest |
+| 旧请求乱序不覆盖新状态、过期派生 UPDATE 0 行 | delayedOldRequestCannotOverwriteNewerAnswerAndProgress |
+| 同事务回滚 | progressFailureRollsBackDraftAndReceiptInTheSameTransaction；原 failingReceiptInsertRollsBackTheDraftInTheSameTransaction |
+| 同事务可见性 | answerProgressAndReceiptAreInvisibleUntilTheSingleTransactionCommits |
+| 白名单、安全 | declaredAnswerStateUsesOnlyWhitelistedDraftStatusesAndIds；reportedProgressOnlyContainsKnownIdsAndDraftStatuses |
+| 幂等并发、409、IDOR | 原 DraftActionIntegrationTest 与 DraftServiceTest 保留 |
+| 原安全投影不被草稿增量替换、不能生成伪缓存 | draft-response.test.mjs |
+| 实时大纲与刷新保持 | outline.test.mjs；central-outline.spec.mjs 桌面/手机 |
 
-prepareDraft 原有投影缓存未命中时仍须取得安全投影；该步骤的投影故障错误语义未修改。本次只对进度校验失败执行保留答案策略，不绕过归属、审核或内容版本检查。
+并发与事务测试使用 CountDownLatch / 现有 DraftSqlGate，不用固定 sleep。旧的 runner 超时、校验乱序测试已由上述零 RPC、事务原子性与请求乱序测试替代，不再保留无效的 deadline 配置。
 
-旧基础简答题页面仅 reportAnswerState({status})，其 getScore 在未提交时也不提供小题进度；即使作者集中大纲把它列为 parts，宿主也不能据此解析私有答案或猜测各小题是否已答。此时保存整题进度，小题显示未知；需要拓展自身按公开 API 上报 targetId。浏览器回归先验证真实输入保存，再通过公开 SDK 上报小题状态并验证刷新持久化；没有修改已分叉的拓展代码。
+## P95 对比方法
 
-## 性能验证
+审查前实现曾测得三组 P95 中位数 103.5ms → 204.3ms（+97.4%）；该结果仅说明被替换方案的开销，不代表本次修订。
 
-使用 loadtest/probes/draft-outline.py，只允许本机 qf-draft-outline* 独立项目和回环 URL，计时客户端在本机 rule-runner 容器中直接请求 app:8080（runner 的专用网络不能访问 nginx），不计 nginx 或 Windows 发布端口。300 题合成题库，4 个并发调用各保存不同题，预热每题 10 次后测 3 组、每组 200 次 HTTP 草稿保存。固定服务资源与 finish-compose.yml 相同，合计 4 核 / 8 GiB，工作进程上限 8；不访问作者服务器，不使用真实题库或账号。
+本次使用同一个 loadtest/probes/draft-outline.py，基线改为最新 main@74b399f 的 git archive 构建。独立项目 qf-draft-outline-review、回环端口 8106；app 1.5 核/3GiB、MySQL 1 核/2GiB、runner 1.25 核/2GiB、nginx 0.25 核/1GiB，合计 4 核/8GiB，runner limit=8。仅公开 300 题合成样例，4 并发各保存不同题，每题预热 10 次，再测三组，每组 200 次，计时客户端在 runner 容器中直连 app:8080，不含 nginx 与 Windows 发布端口。
 
-运行命令：`python loadtest/probes/draft-outline.py --project qf-draft-outline --base-url http://127.0.0.1:8106 --output .artifacts/local/draft-outline/<main-or-candidate>.json`。环境与实际结果在 PR 中列出；探针不输出账号、Cookie 或题目内容。
+命令：python loadtest/probes/draft-outline.py --project qf-draft-outline-review --base-url http://127.0.0.1:8106 --output .artifacts/local/draft-review/<main-or-candidate>.json。实际结果见下表与 PR；不输出账号、Cookie 或题目内容，不访问远程业务环境。
 
-实际本机结果（Windows Docker Desktop；每组 200 次，两个版本各 600 次，错误均为 0）：
+## 实测结果
 
-| 版本 | 第 1 组 P95 | 第 2 组 P95 | 第 3 组 P95 | 三组 P95 中位数 |
-| --- | --- | --- | --- | --- |
-| main@97ff866 | 157.1ms | 101.6ms | 103.5ms | 103.5ms |
-| 本次实现 | 243.7ms | 204.3ms | 178.3ms | 204.3ms |
+| 版本与遍次 | 三组 P95（ms） | 三组 P95 中位数（ms） | 请求数 / 错误数 |
+| --- | --- | --- | --- |
+| 基线，首遍 | 429.9 / 154.6 / 100.9 | 154.6 | 600 / 0 |
+| 修订版，首遍 | 247.9 / 235.7 / 181.3 | 235.7 | 600 / 0 |
+| 基线，第二遍 | 212.7 / 156.3 / 101.0 | 156.3 | 600 / 0 |
+| 修订版，第二遍 | 131.7 / 108.0 / 102.1 | 108.0 | 600 / 0 |
 
-三组 P95 中位数增加约 100.8ms（97.4%），新增本题规则调用与派生状态 / 回执写入存在明确开销，不能据此宣称性能不变。未读取整本题库；数据是一次固定本机环境下的短探针，包含 JIT、CPU 配额与本机其他常驻容器的影响，不是正式容量结论。任务要求的事务外、短 deadline、失败保留答案与并发旧状态不覆盖均另有测试验证。
+两版均完整执行两遍：首遍用于观察预热过程，第二遍用于对比；每遍仍含每题 10 次预热与 600 次计时请求。第二遍三组 P95 中位数由 156.3ms 降至 108.0ms（-30.9%）；末组分别为 101.0ms 与 102.1ms（+1.1%），本次结果满足增幅约 10% 以内的目标。首遍修订版中位数 235.7ms 高于基线 154.6ms，不能忽略启动/预热差异；故四遍结果全部列出，不只保留有利样本。共 2400 次计时请求，0 错误。此为 Windows Docker Desktop 下的本机小探针，有明显预热与组间波动，不作容量或生产延迟结论。
+
+本地后端 `mvn verify -Dtest=DraftActionIntegrationTest,DraftOutlineServiceTest,DraftServiceTest`：68 项，0 失败、0 错误、0 跳过（其中 HTTP 集成 34、进度单元 16、原草稿并发测试 18）。前端 build 与单元测试：78 项通过。全量后端与四个 CI job 的最终结果见 PR 检查。
+
+本地真实浏览器 `central-outline.spec.mjs` 桌面与 375px 手机宽度：2 项通过。步骤为注册合成账号 → 导入集中大纲样例并仅在本机批准其拓展 → 打开简答题并输入 → 确认草稿 200 与整题状态 → 使用公开 SDK 上报指定小题 → 确认大纲更新 → 刷新后进度仍在，页面无 JS 异常且无横向滚动。截图仅保留在 git 忽略的 `.artifacts/screenshots/`。
+
+## 范围与说明
+
+旧基础简答题拓展只上报整题进度，因此其集中大纲小题仍显示未知；支持 targetId 上报的拓展可显示精确状态。浏览器测试先验证真实输入，再通过公开 SDK 上报小题并验证刷新持久化，不修改拓展。
+
+文档已统一更新协议 03 §5.2、ADR-003 对应旧说明、接口映射与草稿增量响应说明。没有新增依赖或迁移；下载、历史、正式提交规则与投影缓存实现不变。
+
+## 文件清单
+
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/DraftActionService.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/DraftOutlineService.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/IdempotentDraftService.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/PracticeReadService.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/PracticeViews.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/infrastructure/DraftOutlineMapper.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/infrastructure/PracticeReadMapper.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/infrastructure/PracticeReadRows.java`
+- `backend/src/main/java/cloud/treenewbee/quizforge/practice/web/PracticeActionController.java`
+- `backend/src/test/java/cloud/treenewbee/quizforge/practice/application/DraftActionIntegrationTest.java`
+- `backend/src/test/java/cloud/treenewbee/quizforge/practice/application/DraftOutlineServiceTest.java`
+- `docs/adr/ADR-003-extension-rule-execution.md`
+- `docs/design/02-api.md`
+- `docs/design/03-rule-runner-protocol.md`
+- `docs/design/07-frontend-api-map.md`
+- `docs/reports/subquestion-draft-states.md`
+- `frontend/practice/app.js`
+- `frontend/practice/outline/outline-view.js`
+- `frontend/practice/practice/draft-response.js`
+- `frontend/test/browser/central-outline.spec.mjs`
+- `frontend/test/draft-response.test.mjs`
+- `frontend/test/outline.test.mjs`
+- `loadtest/probes/draft-outline.py`
