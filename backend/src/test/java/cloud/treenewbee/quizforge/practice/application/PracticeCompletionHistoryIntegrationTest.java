@@ -129,6 +129,11 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
     final Map<String, Sample> samples = new HashMap<>();
 
     @BeforeAll void importImmutableSamples() throws Exception {
+        // 种子注册先于基类 BeforeEach；单独运行本类时也要显式初始化测试策略。
+        jdbc.update("""
+                UPDATE auth_policy SET login_code=FALSE, login_captcha=FALSE, registration_code=FALSE,
+                    registration_captcha=FALSE, invitation_required=FALSE WHERE id=1
+                """);
         user = auth.register(Ids.uuidV7() + "@example.test", "提交判分测试", "password-123", "grader-test").userId();
         var imported = imports.importArchive(user, "basic-types.qbank", new ByteArrayInputStream(Files.readAllBytes(
                 Path.of(System.getProperty("basedir", ".")).resolve("../samples/basic-types.qbank"))));

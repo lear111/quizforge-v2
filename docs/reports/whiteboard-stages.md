@@ -21,3 +21,9 @@
 - Playwright：桌面与手机均验证无选择框、提交自动切换、刷新仍处于追加阶段、橡皮擦掉追加笔迹而原草稿不变；历史页面显示追加阶段。
 
 执行结果、CI 与截图见 PR 描述。只使用本机独立 Compose 与合成测试题库；测试结束 down，工作目录 detach。实际用户当前正在运行的服务由作者审查合并后更新，本任务不重启它。
+
+## 验证中发现的问题
+
+单独运行 PracticeCompletionHistoryIntegrationTest 时，BeforeAll 注册种子账号先于 MySqlTestBase.BeforeEach 关闭验证码策略，导致夹具依赖其他测试先执行。现由该 BeforeAll 显式初始化测试认证策略；未修改认证生产代码。
+
+300 题夹具的一次本机 HTTP 保存为 141469 微秒（约 141.5ms，包含认证、事务与 HTTP 开销；当时本机存在其他测试/容器负载，不作容量结论）。SQL 捕获中唯一写入为 WhiteboardMapper.insert、ReceiptMapper.insert；新增阶段检查为本题主键上的 EXISTS，不读取 answer/projection，不调用规则或读取题库列表。
