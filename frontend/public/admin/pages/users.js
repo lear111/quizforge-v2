@@ -73,6 +73,7 @@ async function renderDetail(container, context, id) {
     holder.replaceChildren(
       el('h1', {}, user.name, user.admin ? badge('管理员', 'accent') : null, user.block ? badge('已封禁', 'danger') : null),
       info(user, storage),
+      el('p', {}, el('a', { href: `#notifications/${user.id}`, text: '给该用户发通知' })),
       // 不能封禁自己（服务器同样拒绝），自己的详情页不显示封禁表单。
       user.id === context.me?.id ? null : blockForm(user, context, refresh),
       quotaForm(user, storage, context, refresh));

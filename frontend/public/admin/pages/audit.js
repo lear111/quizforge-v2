@@ -12,6 +12,10 @@ const ACTIONS = {
   'invitation-created': '生成邀请码',
   'invitation-revoked': '停用邀请码',
   'quota-adjusted': '调整存储额度',
+  'notification-created': '发布通知',
+  'notification-deleted': '删除通知',
+  'notification-pinned': '置顶通知',
+  'notification-unpinned': '取消置顶通知',
 };
 
 export async function render(container, context) {

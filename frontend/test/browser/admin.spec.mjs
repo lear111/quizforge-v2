@@ -26,7 +26,7 @@ test('administrators manage users, invitations and see the audit log; others see
   await expect(memberPage.locator('.qa-table')).toHaveCount(0);
 
   await page.goto('/admin/');
-  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['用户管理','登录与注册设置','邀请码','操作日志']);
+  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['用户管理','登录与注册设置','邀请码','站内通知','操作日志']);
   await expect(page.getByRole('heading',{name:'用户管理'})).toBeVisible();
 
   // 搜索并打开成员详情。

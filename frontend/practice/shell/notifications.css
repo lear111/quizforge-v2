@@ -1,0 +1,34 @@
+/* 站内通知铃铛与通知面板。颜色随所在页面的文字颜色（currentColor），练习空间与管理后台共用。 */
+.qf-bell-slot { position: relative; display: inline-flex; align-items: center; }
+.qf-bell { position: relative; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 0; border-radius: 9px; background: transparent; color: inherit; cursor: pointer; }
+.qf-bell:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.qf-bell svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.qf-bell-dot, .qf-notice-unread { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #d64545; }
+.qf-bell-dot { position: absolute; top: 6px; right: 7px; box-shadow: 0 0 0 2px #fff; }
+.qf-bell-dot[hidden], .qf-notice-unread[hidden], .qf-notice-panel[hidden], .qf-notice-body[hidden] { display: none; }
+
+.qf-notice-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: min(380px, calc(100vw - 24px));
+  max-height: min(70vh, 560px); overflow: auto; padding: 14px 0 6px; border: 1px solid #e3e0ea; border-radius: 14px;
+  background: #fff; color: #292137; box-shadow: 0 16px 40px -12px #1f1a2b40; text-align: left; font-size: 14px; }
+.qf-notice-panel header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px 8px; }
+.qf-notice-panel h2 { margin: 0; font-size: 15px; }
+.qf-notice-close { border: 0; background: none; font-size: 20px; line-height: 1; color: #796f89; cursor: pointer; }
+.qf-notice-status { margin: 4px 16px 10px; color: #796f89; font-size: 13px; }
+.qf-notice-status:empty { display: none; }
+.qf-notice-list { list-style: none; margin: 0; padding: 0; }
+.qf-notice { border-top: 1px solid #f0edf5; }
+.qf-notice-head { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; grid-template-areas: "dot title pin" ". time time";
+  align-items: center; gap: 2px 8px; width: 100%; padding: 10px 16px; border: 0; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; }
+.qf-notice-head:hover { background: #faf8fd; }
+.qf-notice-unread { grid-area: dot; }
+.qf-notice-title { grid-area: title; font-weight: 600; overflow-wrap: anywhere; }
+.qf-notice-pin { grid-area: pin; padding: 0 6px; border-radius: 999px; background: #fff1e0; color: #a06d2f; font-size: 11px; }
+.qf-notice-time { grid-area: time; color: #796f89; font-size: 12px; }
+.qf-notice-body { margin: 0 16px 12px 34px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; color: #3d3450; }
+.qf-notice-body a { color: #6239cd; }
+
+@media (max-width: 600px) {
+  .qf-notice-panel { position: fixed; top: 56px; right: 12px; left: 12px; width: auto; }
+}
