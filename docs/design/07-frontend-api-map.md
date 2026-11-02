@@ -1,6 +1,6 @@
 # 练习空间接口映射
 
-> 版本：v0.4；日期：2026-11-01；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
+> 版本：v0.5；日期：2026-11-01；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
 > 后端盘点基线：main@2a443e0，加 L1.1 / L1.2 练习闭环。以当前 Controller 为准。
 
 本次是 ADR-006 方案 C 的源码分叉。切片顺序：**1 导入与题库列表；2 打开题库；3 读题与渲染；4 保存草稿；5 提交；其余功能后续接入。** 一个页面可能跨多个切片；接口出现并不代表对应业务已经可用。
@@ -24,7 +24,7 @@
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
 | 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
 | 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；保留失败输入与 409 恢复 |
-| 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为所选层；由 features.whiteboard 控制 |
+| 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为当前阶段；提交前 draft、提交后 notes 自动切换，notes 可编辑擦除，draft 冻结；由 features.whiteboard 控制 |
 | 上传答题资源 / 截图 | POST /api/resources | 已实现 | L1.5 | PNG/JPEG/WebP，4 MiB；同用户同内容幂等；兼容 transient 标记但持久化；GET 按归属鉴权后由 Nginx 传输 |
 | 提交 | POST Q/actions，action=submit | 已接入 | 5 | app.js / Bridge；requestId/revision/data.answer；返回提交后投影与状态，重放不重新判分 |
 | 人工评分 / 重做本题 | POST Q/actions，action=review / retry | 已接入 | L1.1 | review 使用 data.review（score / targetId / feedback）；retry 使用 data:{}；均带 requestId / revision / contentVersion |
@@ -32,6 +32,7 @@
 | 再练一轮 | POST C/restart | 已实现 | L1.2 | app.js:restartPractice；roundId（无轮次时 null）、summaryVersion、requestId；仅 completed；202 + jobs 进度，归档成功后重置 |
 | 完成本轮 | POST C/finish | 已实现 | L1.3 | 202 后轮询 C/jobs/{jobId}；刷新可继续查看进度，pending 不阻止完成 |
 | 历史列表 / 冻结快照 | GET C/history、C/history/{historyId} | 已实现 | L1.4 | app.js、history/history-view.js |
+| 历史追加笔迹 | POST C/history/{historyId}/questions/{qid}/annotations | 已实现 | L1.4 / L1.5 | notes + 独立 revision / requestId；追加笔迹可修改擦除，冻结草稿不可改 |
 | 删除历史 | DELETE C/history/{historyId} | 已实现 | L1.4 | app.js:renderHistoryList；删除后从列表移除 |
 | 题库实例管理 / 分组 | POST /api/library/manage | 未实现 | 其余 | library-management.js；仅保留管理入口，不新增服务端逻辑 |
 | 导出题库 / 分组 | POST /api/library/export | 未实现 | 其余 | library-transfer.js；返回 Blob，失败仍显示友好提示 |

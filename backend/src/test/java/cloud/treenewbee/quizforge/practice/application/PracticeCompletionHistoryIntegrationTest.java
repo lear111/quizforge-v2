@@ -264,17 +264,23 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_lifecycle_job WHERE user_id=?",Integer.class,user)).isEqualTo(1);
         verify(grader,times(1)).grade(eq(user),anyString(),anyString(),any());
     }
-    @Test void annotationsAreAppendOnlyVersionedIdempotentAndDoNotChangeFrozenAnswer() throws Exception {
-        String type="简答题";ok(post(type,"submit","submit",0,answer(type,true)));complete(begin(type,"finish","finish",ok(summary(type))));
+    @Test void annotationsAreEditableVersionedIdempotentAndDoNotChangeFrozenDraftOrAnswer() throws Exception {
+        String type="简答题";ok(lifecycle(type,"whiteboard","frozen",0,JSON.valueToTree(Map.of("layer","draft","draft",board("frozen")))));
+        ok(post(type,"submit","submit",0,answer(type,true)));complete(begin(type,"finish","finish",ok(summary(type))));
         String id=complete(begin(type,"restart","archive",ok(summary(type)))).path("historyId").asString();
         var before=ok(request(base(type)+"/history/"+id,null));String url=base(type)+"/history/"+id+"/questions/"+samples.get(type).question().questionId()+"/annotations";
         var body=JSON.valueToTree(Map.of("requestId","note","revision",0,"notes",board("one")));
         var first=request(url,body);ok(first);assertThat(request(url,body).body()).isEqualTo(first.body());
         error(request(url,JSON.valueToTree(Map.of("requestId","note","revision",0,"notes",board("two")))),400,"REQUEST_ID_REUSED");
         error(request(url,JSON.valueToTree(Map.of("requestId","conflict","revision",0,"notes",board("two")))),409,"REVISION_CONFLICT");
-        error(request(url,JSON.valueToTree(Map.of("requestId","erase","revision",1,"notes",board(null)))),409,"WHITEBOARD_NOTES_APPEND_ONLY");
+        ok(request(url,JSON.valueToTree(Map.of("requestId","edit","revision",1,"notes",board("two")))));
+        var erase=JSON.valueToTree(Map.of("requestId","erase","revision",2,"notes",board(null)));
+        var erased=request(url,erase);ok(erased);assertThat(request(url,erase).body()).isEqualTo(erased.body());
+        error(request(url,JSON.valueToTree(Map.of("requestId","frozen-id","revision",3,"notes",board("frozen")))),400,"VALIDATION_FAILED");
         var after=ok(request(base(type)+"/history/"+id,null));assertThat(after.path("questions").get(0).path("payload").path("state")).isEqualTo(before.path("questions").get(0).path("payload").path("state"));
-        assertThat(after.path("questions").get(0).path("payload").path("whiteboard").path("notes").path("strokes")).hasSize(1);
+        assertThat(after.path("questions").get(0).path("payload").path("whiteboard").path("notes").path("strokes")).isEmpty();
+        assertThat(after.path("questions").get(0).path("payload").path("whiteboard").path("draft"))
+                .isEqualTo(before.path("questions").get(0).path("payload").path("whiteboard").path("draft"));
     }
     @Test void archivedHistoryDoesNotUseCurrentBankOrRunnerAndEnforcesOwnership() throws Exception {
         String type="单选题";complete(begin(type,"finish","finish",ok(summary(type))));

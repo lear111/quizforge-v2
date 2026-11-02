@@ -97,9 +97,7 @@ public class PracticeHistoryService {
             if(!payload.path("features").path("whiteboard").asBoolean(false))throw new ApiException(HttpStatus.FORBIDDEN,"FEATURE_DISABLED","题库未开放白板");
             var old=mapper.annotation(id,qid,user).orElse(null);
             if((old==null?0:old.revision())!=revision)throw new ApiException(HttpStatus.CONFLICT,"REVISION_CONFLICT","历史笔记已更新，请刷新重试");
-            JsonNode before=old!=null?json.readTree(old.notes()):payload.path("whiteboard").path("notes");
-            if(before.isMissingNode()||before.isNull())before=boards.empty();
-            boards.requireAppendOnly(before,next);
+            boards.requireSeparateLayers(payload.path("whiteboard").path("draft"),next);
             if(boards.bytes(next)+boards.bytes(payload.path("whiteboard").path("draft"))>WhiteboardDocuments.MAX_BYTES)throw WhiteboardDocuments.tooLarge();
             if(mapper.annotate(id,qid,user,json.writeValueAsString(next),revision+1,clock.instant())<1)throw new IllegalStateException("历史笔记未写入");
             var response=json.createObjectNode();var board=response.putObject("whiteboard");

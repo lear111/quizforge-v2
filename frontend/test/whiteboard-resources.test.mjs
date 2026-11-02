@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {WhiteboardModel,emptyDraft} from '../practice/draft/whiteboard-model.js';
-import {layerDocument,layerPayload,mergeWhiteboard,protectedInk} from '../practice/draft/whiteboard-layers.js';
+import {activeLayer,layerDocument,layerPayload,mergeWhiteboard,protectedInk} from '../practice/draft/whiteboard-layers.js';
 import {createAnswerInk} from '../practice/draft/answer-ink.js';
 import {createWriteQueue} from '../practice/shared/write-queue.js';
 import {captureAnswerSnapshots} from '../practice/bridge/answer-snapshots.js';
@@ -15,12 +15,31 @@ test('whiteboard responses preserve answer, revision, stamp and pending question
   assert.equal(merged.state,before.state);assert.equal(merged.question,before.question);assert.equal(merged.stamp,before.stamp);
   assert.equal(merged.whiteboard.revision,8);
 });
-test('notes and draft render together but only the selected layer is saved',()=>{
+test('both phases render together but only the active phase is saved',()=>{
   const value=board(),shown=layerDocument(value,'notes');
   assert.deepEqual(shown.strokes.map(s=>s.id),['draft','note']);
   shown.strokes.push(stroke('new'));
   assert.deepEqual(layerPayload(value,'notes',shown).draft.strokes.map(s=>s.id),['note','new']);
   assert.deepEqual(layerPayload(value,'draft',layerDocument(value,'draft')).draft.strokes.map(s=>s.id),['draft']);
+});
+test('the active phase follows submission or history without a layer selector',()=>{
+  const value=board();
+  assert.equal(activeLayer(value,{status:'draft'}),'draft');
+  assert.equal(activeLayer(value,{status:'submitted'}),'notes');
+  assert.equal(activeLayer({...value,draftLocked:true},{status:'unanswered'}),'notes');
+  assert.equal(activeLayer(value,{status:'draft'},'history'),'notes');
+});
+test('saved notes remain editable while frozen draft ink survives erase, move and undo',()=>{
+  const value=board(),model=new WhiteboardModel(layerDocument(value,'notes'));
+  model.protectStrokes(protectedInk(value,'notes'));
+  model.editStrokes(model.strokes.map(s=>({...s,width:8})));
+  assert.equal(model.strokes.find(s=>s.id==='draft').width,3);
+  assert.equal(model.strokes.find(s=>s.id==='note').width,8);
+  model.eraseAlong([{x:1,y:2}],20);
+  assert.deepEqual(model.strokes.map(s=>s.id),['draft']);
+  assert.deepEqual(layerPayload(value,'notes',model.getDraft()).draft.strokes,[]);
+  model.undo();assert.equal(model.strokes.find(s=>s.id==='note').width,8);
+  model.clear();assert.deepEqual(model.strokes.map(s=>s.id),['draft']);
 });
 test('protected ink survives clear, eraser, selection edits and undo',()=>{
   const model=new WhiteboardModel({...emptyDraft(),strokes:[stroke('saved')]});
