@@ -73,6 +73,19 @@ public class DraftOutlineService {
             // API 1.3 的 answer-state 由页面上报；旧拓展由 outlineScore 提供进度。
             JsonNode provided = question.rulePackage().answerStateDeclared() && reported != null
                     ? reported.path("outlineStates") : result.data().path("outlineScore").path("outlineStates");
+            // 旧页面可能只上报整题状态；不能把它猜成作者集中大纲里每个小题的状态。
+            if (question.rulePackage().answerStateDeclared() && reported != null
+                    && (!provided.isArray() || provided.isEmpty())) {
+                String whole = reported.path("status").asString();
+                if (!Set.of("unanswered", "draft").contains(whole)) return unknown();
+                var state = json.createObjectNode().put("status", whole);
+                state.set("outlineStates", json.createArrayNode());
+                if ("draft".equals(whole)) return new Progress(state, null);
+                var empty = json.createArrayNode();
+                for (String id : ids) empty.addObject().put("id", id).put("status", "unanswered");
+                state.set("outlineStates", empty);
+                return new Progress(state, ids.isEmpty() ? null : empty);
+            }
             Map<String, String> states = new LinkedHashMap<>();
             if (provided.isArray()) for (JsonNode item : provided) {
                 String id = item.path("id").asString(), value = item.path("status").asString();

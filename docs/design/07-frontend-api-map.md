@@ -1,7 +1,7 @@
 # 练习空间接口映射
 
-> 版本：v0.4；日期：2026-11-01；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
-> 后端盘点基线：main@2a443e0，加 L1.1 / L1.2 练习闭环。以当前 Controller 为准。
+> 版本：v0.5；日期：2026-11-01；来源：quizforge_web@4522bb81c2126a699fcf72ce61d074dbc1264161 的 core/web。
+> 后端盘点基线：main@97ff866，加 L1.6 小题草稿状态。以当前 Controller 为准。
 
 本次是 ADR-006 方案 C 的源码分叉。切片顺序：**1 导入与题库列表；2 打开题库；3 读题与渲染；4 保存草稿；5 提交；其余功能后续接入。** 一个页面可能跨多个切片；接口出现并不代表对应业务已经可用。
 
@@ -23,7 +23,7 @@
 | 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 已实现（仅组件读取） | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
 | 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | listening-player.js；HEAD 经 request 显示认证/缺失提示，audio.src 同源直连 GET，保留 Range 流式读取 |
-| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；保留失败输入与 409 恢复 |
+| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 / L1.6 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；可带 data.answerState；事务外校验进度，版本条件回写 answerState / outlineStates；校验失败仍保存答案，小题状态未知；保留失败输入与 409 恢复 |
 | 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为所选层；由 features.whiteboard 控制 |
 | 上传答题资源 / 截图 | POST /api/resources | 已实现 | L1.5 | PNG/JPEG/WebP，4 MiB；同用户同内容幂等；兼容 transient 标记但持久化；GET 按归属鉴权后由 Nginx 传输 |
 | 提交 | POST Q/actions，action=submit | 已接入 | 5 | app.js / Bridge；requestId/revision/data.answer；返回提交后投影与状态，重放不重新判分 |

@@ -30,8 +30,19 @@ API 1.3 answer-state 由拓展页面发送本次答案的状态，宿主仅接�
 
 prepareDraft 原有投影缓存未命中时仍须取得安全投影；该步骤的投影故障错误语义未修改。本次只对进度校验失败执行保留答案策略，不绕过归属、审核或内容版本检查。
 
+旧基础简答题页面仅 reportAnswerState({status})，其 getScore 在未提交时也不提供小题进度；即使作者集中大纲把它列为 parts，宿主也不能据此解析私有答案或猜测各小题是否已答。此时保存整题进度，小题显示未知；需要拓展自身按公开 API 上报 targetId。浏览器回归先验证真实输入保存，再通过公开 SDK 上报小题状态并验证刷新持久化；没有修改已分叉的拓展代码。
+
 ## 性能验证
 
 使用 loadtest/probes/draft-outline.py，只允许本机 qf-draft-outline* 独立项目和回环 URL，计时客户端在本机 rule-runner 容器中直接请求 app:8080（runner 的专用网络不能访问 nginx），不计 nginx 或 Windows 发布端口。300 题合成题库，4 个并发调用各保存不同题，预热每题 10 次后测 3 组、每组 200 次 HTTP 草稿保存。固定服务资源与 finish-compose.yml 相同，合计 4 核 / 8 GiB，工作进程上限 8；不访问作者服务器，不使用真实题库或账号。
 
 运行命令：`python loadtest/probes/draft-outline.py --project qf-draft-outline --base-url http://127.0.0.1:8106 --output .artifacts/local/draft-outline/<main-or-candidate>.json`。环境与实际结果在 PR 中列出；探针不输出账号、Cookie 或题目内容。
+
+实际本机结果（Windows Docker Desktop；每组 200 次，两个版本各 600 次，错误均为 0）：
+
+| 版本 | 第 1 组 P95 | 第 2 组 P95 | 第 3 组 P95 | 三组 P95 中位数 |
+| --- | --- | --- | --- | --- |
+| main@97ff866 | 157.1ms | 101.6ms | 103.5ms | 103.5ms |
+| 本次实现 | 243.7ms | 204.3ms | 178.3ms | 204.3ms |
+
+三组 P95 中位数增加约 100.8ms（97.4%），新增本题规则调用与派生状态 / 回执写入存在明确开销，不能据此宣称性能不变。未读取整本题库；数据是一次固定本机环境下的短探针，包含 JIT、CPU 配额与本机其他常驻容器的影响，不是正式容量结论。任务要求的事务外、短 deadline、失败保留答案与并发旧状态不覆盖均另有测试验证。

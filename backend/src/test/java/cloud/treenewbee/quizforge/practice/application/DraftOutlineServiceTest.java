@@ -89,4 +89,12 @@ class DraftOutlineServiceTest {
                 .thenThrow(new RuleRunnerException("不可用"));
         assertThat(calculate("{}", null).outlineStates()).isNull();
     }
+
+    @Test void wholeQuestionReportDoesNotInventChildProgress() {
+        source(true);
+        result("{\"valid\":true}");
+        var progress = calculate("{\"text\":\"有作答\"}", "{\"status\":\"draft\",\"outlineStates\":[]}");
+        assertThat(progress.answerState().path("status").asString()).isEqualTo("draft");
+        assertThat(progress.outlineStates()).isNull();
+    }
 }

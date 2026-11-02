@@ -5,7 +5,7 @@ const renderedOutlines=new WeakMap();
 
 // 未提供进度与已确认未作答不同；校验失败不能显示成确定的空答案。
 export function draftChildStatus(reported,state){
-  return reported==='draft'?'draft':reported==='unanswered'?'unanswered':state.status==='draft'&&!state.answerState?'unknown':'unanswered';
+  return reported==='draft'?'draft':reported==='unanswered'?'unanswered':state.status==='draft'&&state.answerState?.status!=='unanswered'?'unknown':'unanswered';
 }
 
 export function renderOutlineView({document,pane,onNavigate,onSummary}){
