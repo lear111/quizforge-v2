@@ -75,7 +75,7 @@ test('existing dialogs manage empty groups, names, moves, conflicts, downloads a
   await showLibrary(page);
   const directory = resolve(process.env.QF_SCREENSHOT_DIR || '../.artifacts/local/library-manage');
   await mkdir(directory, {recursive: true});
-  await page.screenshot({path: resolve(directory, `library-${info.project.name}.png`), fullPage: true});
+  await page.screenshot({path: resolve(directory, `library-${info.project.name}.png`), fullPage: true, animations: 'disabled'});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
   await page.getByRole('button', {name: '编辑分组 重命名文件夹', exact: true}).click();
