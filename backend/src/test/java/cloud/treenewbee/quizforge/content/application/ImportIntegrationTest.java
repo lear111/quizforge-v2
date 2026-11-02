@@ -390,13 +390,13 @@ class ImportIntegrationTest extends MySqlTestBase {
     @Test
     void importSlotsRejectImmediatelyAndRecoverAfterRepeatedFullRejections() throws Exception {
         byte[] archive = archive(List.of("单选题"), "bank");
-        String cookie = cookie();
+        String cookie = cookie(), secondCookie = cookie(), thirdCookie = cookie(), fourthCookie = cookie();
         CountDownLatch entered = new CountDownLatch(2), release = new CountDownLatch(1);
         doAnswer(call -> { entered.countDown(); assertThat(release.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
                 .when(runner).execute(anyString(), any(), anyMap());
         try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = threads.submit(() -> upload(cookie, archive));
-            var second = threads.submit(() -> upload(cookie, archive));
+            var second = threads.submit(() -> upload(secondCookie, archive));
             try {
                 assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
                 for (int i=0; i<6; i++) {
@@ -409,8 +409,8 @@ class ImportIntegrationTest extends MySqlTestBase {
             CountDownLatch recovered = new CountDownLatch(2), finish = new CountDownLatch(1);
             doAnswer(call -> { recovered.countDown(); assertThat(finish.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
                     .when(runner).execute(anyString(), any(), anyMap());
-            var third = threads.submit(() -> upload(cookie, archive));
-            var fourth = threads.submit(() -> upload(cookie, archive));
+            var third = threads.submit(() -> upload(thirdCookie, archive));
+            var fourth = threads.submit(() -> upload(fourthCookie, archive));
             try {
                 assertThat(recovered.await(10, TimeUnit.SECONDS)).isTrue();
                 assertError(threads.submit(() -> upload(cookie, archive)).get(2, TimeUnit.SECONDS), 503, "IMPORT_BUSY");
@@ -593,7 +593,7 @@ class ImportIntegrationTest extends MySqlTestBase {
     private int count(String table) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class); }
     private void assertNoBusinessData() { for(String table : tables()) assertThat(count(table)).as(table).isZero(); }
     private void clearBusiness() { for (String table : tables()) jdbc.update("DELETE FROM " + table); }
-    private List<String> tables() { return List.of("practice_collection", "content_question", "content_bank_asset", "content_bank", "content_extension_file", "content_extension_package", "admin_extension_review"); }
+    private List<String> tables() { return List.of("practice_collection", "content_question", "content_bank_asset", "content_bank_document", "content_bank", "content_extension_file", "content_extension_package", "admin_extension_review"); }
     private static Path temporary() { try { return Files.createTempDirectory("qf-import-test-").toRealPath(); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }
     private static Path directory(String name) { try { return Files.createDirectories(ROOT.resolve(name)); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }
 

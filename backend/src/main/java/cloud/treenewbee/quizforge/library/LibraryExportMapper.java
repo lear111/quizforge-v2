@@ -17,9 +17,10 @@ public interface LibraryExportMapper {
             String data, Integer outlineGroupIndex, String outlineGroupName) {}
 
     @Select("""
-            SELECT c.bank_id, c.title, c.group_name, b.source_title, b.author_json, b.author_bindings,
+            SELECT c.bank_id, c.title, c.group_name, b.source_title, d.author_json, d.author_bindings,
                    b.description, b.features, b.listening
             FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
+              LEFT JOIN content_bank_document d ON d.bank_id = b.id
             WHERE c.id = #{id} AND c.user_id = #{userId} AND c.deleted_at IS NULL
             """)
     Optional<Document> document(@Param("userId") String userId, @Param("id") String id);

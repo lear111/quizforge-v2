@@ -16,4 +16,8 @@ SELECT DISTINCT user_id, group_name FROM practice_collection
 WHERE deleted_at IS NULL AND group_name IS NOT NULL AND CHAR_LENGTH(group_name) BETWEEN 1 AND 120;
 
 -- 保留作者文档中的 UUID、未引用题目以及作者原值，供无损导出使用。
-ALTER TABLE content_bank ADD COLUMN author_json JSON NULL, ADD COLUMN author_bindings JSON NULL;
+CREATE TABLE content_bank_document (
+    bank_id CHAR(36) NOT NULL PRIMARY KEY,
+    author_json JSON NOT NULL,
+    author_bindings JSON NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

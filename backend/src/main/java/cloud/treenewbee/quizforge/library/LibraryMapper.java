@@ -52,8 +52,9 @@ public interface LibraryMapper {
 
     @Select("""
             SELECT HEX(b.content_sha256) FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
+              LEFT JOIN content_bank_document d ON d.bank_id = b.id
             WHERE c.user_id = #{userId} AND c.deleted_at IS NULL AND BINARY c.group_name <=> BINARY #{group}
-              AND (b.author_json->>'$.id' = #{uuid} OR b.content_sha256 = #{hash}) LIMIT 1
+              AND (d.author_json->>'$.id' = #{uuid} OR b.content_sha256 = #{hash}) LIMIT 1
             """)
     Optional<String> conflictingImport(@Param("userId") String userId, @Param("group") String group,
             @Param("uuid") String uuid, @Param("hash") byte[] hash);
@@ -61,9 +62,11 @@ public interface LibraryMapper {
     @Select("""
             SELECT COUNT(*) FROM practice_collection c JOIN content_bank b ON b.id = c.bank_id
               JOIN content_bank target ON target.id = #{bankId}
+              LEFT JOIN content_bank_document d ON d.bank_id = b.id
+              LEFT JOIN content_bank_document td ON td.bank_id = target.id
             WHERE c.user_id = #{userId} AND c.deleted_at IS NULL AND c.id != #{exceptId}
               AND BINARY c.group_name <=> BINARY #{group}
-              AND (b.id = target.id OR b.author_json->>'$.id' = target.author_json->>'$.id')
+              AND (b.id = target.id OR d.author_json->>'$.id' = td.author_json->>'$.id')
             """)
     int duplicateUuid(@Param("userId") String userId, @Param("exceptId") String exceptId,
             @Param("group") String group, @Param("bankId") String bankId);
@@ -75,9 +78,9 @@ public interface LibraryMapper {
     int update(@Param("userId") String userId, @Param("id") String id,
             @Param("title") String title, @Param("group") String group);
 
-    @Update("UPDATE content_bank SET author_json = #{document}, author_bindings = #{bindings} WHERE id = #{id} AND author_json IS NULL")
+    @Insert("INSERT INTO content_bank_document (bank_id, author_json, author_bindings) VALUES (#{id}, #{document}, #{bindings})")
     int preserve(@Param("id") String id, @Param("document") String document, @Param("bindings") String bindings);
 
-    @Select("SELECT CAST(author_json AS CHAR CHARACTER SET utf8mb4) FROM content_bank WHERE id = #{id}")
+    @Select("SELECT CAST(author_json AS CHAR CHARACTER SET utf8mb4) FROM content_bank_document WHERE bank_id = #{id}")
     String author(@Param("id") String id);
 }

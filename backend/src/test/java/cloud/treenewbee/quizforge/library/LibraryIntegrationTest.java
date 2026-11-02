@@ -326,7 +326,7 @@ class LibraryIntegrationTest extends MySqlTestBase {
     @Test void legacyExportWarnsAndHasStableDerivedUuid() throws Exception {
         var bank = imported(user, "单选题");
         var original = exportMapper.document(user, bank.id()).orElseThrow();
-        jdbc.update("UPDATE content_bank SET author_json=NULL,author_bindings=NULL WHERE id=?", bank.bankId());
+        jdbc.update("DELETE FROM content_bank_document WHERE bank_id=?", bank.bankId());
         try {
             var first = exports.export(user, new LibraryExportService.Request(bank.id(), null));
             var second = exports.export(user, new LibraryExportService.Request(bank.id(), null));
@@ -364,7 +364,12 @@ class LibraryIntegrationTest extends MySqlTestBase {
     }
     private String user() { return auth.register(UUID.randomUUID() + "@example.test", "管理测试", "password123", "test").userId(); }
     private static Path temporary() {
-        try { return Files.createTempDirectory("qf-library-test-"); }
+        try {
+            Path path = Files.createTempDirectory("qf-library-test-");
+            try { Files.setPosixFilePermissions(path, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x")); }
+            catch (UnsupportedOperationException ignored) { /* Windows 使用 ACL。 */ }
+            return path;
+        }
         catch (Exception failure) { throw new ExceptionInInitializerError(failure); }
     }
 }
