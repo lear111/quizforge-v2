@@ -29,6 +29,14 @@ public class IdempotentDraftService {
 
     public String save(String userId, String requestId, String contextId, String questionId,
             long clientRevision, String answerJson, byte[] contentSha256) {
+        return save(userId, requestId, contextId, questionId, clientRevision, answerJson, contentSha256,
+                revision -> "{\"revision\":" + revision + "}");
+    }
+
+    /** 仅在首次写入的同一事务内执行本地 SQL，返回要保存的回执；重放不执行回调。 */
+    public String save(String userId, String requestId, String contextId, String questionId,
+            long clientRevision, String answerJson, byte[] contentSha256,
+            java.util.function.LongFunction<String> completion) {
 
         byte[] hash = requestHash(contextId, questionId, clientRevision, answerJson);
 
@@ -40,7 +48,7 @@ public class IdempotentDraftService {
                 }
                 long revision = draftService.saveDraft(userId, contextId, questionId, clientRevision, answerJson,
                         contentSha256); 
-                String response = "{\"revision\":" + revision + "}";
+                String response = completion.apply(revision);
                 receiptMapper.insert(userId, requestId, hash, response); // 写回执
                 return response;
             });

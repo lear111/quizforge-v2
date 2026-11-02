@@ -65,7 +65,7 @@ public class PracticeActionController {
                         body.data().get("answer"), body.contentVersion()));
         return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(drafts.save(principal.getName(), id, qid, body.requestId(), body.revision().asLong(),
-                        body.data().get("answer"), body.contentVersion()));
+                        body.data().get("answer"), body.contentVersion(), body.data().get("answerState")));
     }
 
     private static ApiException invalid(String message) { return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message); }

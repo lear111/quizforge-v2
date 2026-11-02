@@ -98,7 +98,7 @@
 | `scoreBatch` | `{questions:[{data, state}…]}` | `{scores:[{score,maxScore,gradingStatus,outlineStates?}…]}` | **导入时**以“未作答”状态计算每题满分，存入 `content_question.max_score`（见第 6 节） |
 | `project` | `{data, state:{submitted:false,result:null}}` | `{projected}` | 读取未提交的题目，**缓存未命中时**才调用 |
 | `projectBatch` | `{questions:[{data, state}…]}` | `{projected:[…]}` | 批量预热投影缓存（可选） |
-| `validateAnswer` | `{data, answer, outlineAfterValidation?, outlineRevision?}` | `{valid:true, outlineScore?}` | **保存草稿**：校验作答，并计算小题进度（见第 5.2 节） |
+| `validateAnswer` | `{data, answer, outlineAfterValidation?, outlineRevision?}` | `{valid:true, outlineScore?}` | 独立作答校验；在线草稿不调用，见第 5.2 节 |
 | `submit` | `{data, answer, withScore?:true}` | `{result, projected, score?}` | **正式提交**：校验作答 → 评分 → 生成提交后的投影；`withScore` 为 V2 新增，见第 6 节 |
 | `review` | `{data, answer, review:{score,feedback?}, state}` | `{result, projected}` | 人工评分（以及 AI 评分结果的采用） |
 | `prepareAiGrading` | `{data, answer, state, targetId?, automatic?}` | `{gradingInput}` | AI 评分前生成送给模型的输入（AI 模块） |
@@ -123,13 +123,21 @@
 
 ### 5.2 保存草稿
 
+**L1.6 审查更正（2026-11-01）：保存草稿不调用 rule-runner，包括不为保存响应计算题目投影。** 小题进度仅用于用户自己的显示，不参与评分、权限或完成条件判断。
+
 ```text
-1. validateAnswer(data, answer, outlineAfterValidation = !answerStateDeclared)
-2. 校验通过 → 事务内条件更新作答状态，同时写入 outlineScore 中的小题进度
-3. ok:false → 400 VALIDATION_FAILED（作答不合法），前端保留输入
+1. 查本题归属、审核状态、内容指纹、大纲与拓展能力声明；不读取题目原文
+2. 声明 answer-state：直接过滤本次 data.answerState
+   未声明或未上报：按答案非空生成整题状态，小题进度为未知
+3. 在原有一个短事务中：条件保存草稿 → 按同一 revision 写进度 → 插入回执
+4. 返回 {revision, state, stamp} 增量；前端合并到已加载的安全投影
 ```
 
-> **更正 ADR-003：** ADR-003 原写“rule-runner 不可用时保存草稿不受影响”。核对旧运行器后发现，旧系统保存草稿时**同样要执行作答校验**（`validateAnswer`），以保证存入的草稿能被拓展正确恢复。V2 保持这一语义：rule-runner 不可用时，保存草稿返回 503 `RULE_UNAVAILABLE`，**前端保留输入并自动重试**（旧前端已有“当前输入已保留”的处理）。因此 rule-runner 的可用性直接影响保存体验，需要健康检查、自动重启和监控告警（第 8 节）。ADR-003 已同步修改。
+- 页面报告只接受本题大纲 ID，状态仅 `unanswered / draft`；额外字段不输出，非法报告按进度未知处理，答案照常保存。声明能力由服务端持有的 manifest 判断。
+- 仅上报整题状态时，不猜测小题。`outlineStates=null` 表示未知；API 没有 partial 枚举，部分作答由小题状态的组合显示。
+- 进度 UPDATE 限定归属、题目、同一 revision 且仍为 draft；与草稿、回执一起提交或回滚。原乐观锁和冲突后新事务重查回执语义不变；重放返回首次的进度，不重新写入。
+- 没有草稿规则 deadline 配置、没有 RPC、没有投影缓存加载。runner 不可用不影响保存草稿；正式提交仍执行拓展校验与判分。
+- 此决定取代早期“保存前 validateAnswer / 失败返回 400 或 503”及随后“先保存再限时校验”的两版流程。`validateAnswer` 操作仍保留，用于显式校验和运行器兼容；ADR-003 中对应的旧描述也已更正。
 
 ### 5.3 正式提交
 
@@ -169,12 +177,12 @@ rule-runner 调用在事务之外（数据库设计 5.2 节）。
 | 何时 | 计算什么 | 存到哪里 |
 | --- | --- | --- |
 | 导入题库 | 每题满分（`scoreBatch`，未作答状态） | `content_question.max_score` |
-| 保存草稿 | 小题进度（`validateAnswer` 的 `outlineScore`） | `practice_question_state.outline_states` |
+| 保存草稿 | 页面 answer-state 白名单；其他拓展按非空回退，小题未知 | `practice_question_state.outline_states` |
 | 提交 / 人工评分 | 得分、小题状态、提交后的投影 | `practice_question_state.score`、`outline_states`、`projection` |
 
 **为什么正确：** `getScore` 与 `project` 都是纯函数，结果只取决于题目数据和作答状态。题目数据不可变，作答状态只在这几个写操作中改变，所以在写入时算出的结果，在下一次写入之前一直有效。
 
-**效果：** 读题（已提交）、概览、汇总、历史都不再需要 rule-runner。rule-runner 只在导入、读未提交题目（且缓存未命中）、保存和提交时被调用。
+**效果：** 读题（已提交）、概览、汇总、历史都不再需要 rule-runner。rule-runner 只在导入、读未提交题目（且缓存未命中）、正式提交与人工评分等规则操作时被调用，保存草稿不调用。
 
 数据库设计据此新增以下列（`01-database.md` v0.3）：
 

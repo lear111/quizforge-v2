@@ -119,6 +119,8 @@
 | `GET .../history`、`GET .../history/{historyId}` | 历史列表与快照 | `practice_round`、`practice_round_question` | 冻结页面通过拓展摘要取回，不再读取复制的页面文件 |
 | `DELETE .../history/{historyId}` | 删除历史记录 | `practice_round` | 软删除 |
 
+草稿 `action=draft` 成功返回 `{revision, state, stamp}` 增量；前端合并到已加载的题目，不依赖保存接口重取题目投影。声明 `answer-state` 的拓展通过 `data.answerState` 上报显示进度，宿主只按已知小题 ID 与 `unanswered/draft` 白名单处理，随答案和回执同事务保存；其他拓展按答案是否为空回退，小题状态未知。保存草稿不调用 rule-runner，正式提交仍由拓展校验与判分。
+
 ### 2.3 考试（exam）
 
 路径前缀：`B=/api/collections/bank/{id}`，`E=/api/collections/exam/{examId}`（遗留契约 V-3，参照 `EXAM_MODE.md`）。

@@ -9,6 +9,7 @@ import {mountExtension} from './bridge/frame.js';
 import {prepareExtensionAssets} from './bridge/page-assets.js';
 import {mountWhiteboard} from './draft/whiteboard.js';
 import {activeLayer,layerDocument,layerPayload,protectedInk,mergeWhiteboard} from './draft/whiteboard-layers.js';
+import {mergeDraftResponse} from './practice/draft-response.js';
 import {createWriteQueue,createDraftBuffer} from './shared/write-queue.js';
 import {createQuestionCache} from './practice/question-cache.js';
 import {navigateOutlineTarget} from './outline/outline-navigation.js';
@@ -82,12 +83,13 @@ function makeWriteQueue(pane){return createWriteQueue({
         if(active()===pane){saveStatus(pane.writes.hasFailures?'仍有内容未保存':'白板已保存',pane.writes.hasFailures?'error':'');renderRecovery();}
         return;
       }
-      questionsCache.set(questionCacheKey(pane,qid),value);
+      const key=questionCacheKey(pane,qid),updated=action==='draft'?mergeDraftResponse(questionsCache.get(key),value):value;
+      if(updated)questionsCache.set(key,updated);
       pane.collection.states[qid]=value.state;
       if(pane.questionId===qid){
         const before=pane.whiteboard.getDraft?.()?.strokes||[],previousLayer=pane.whiteboardLayer;
-        pane.payload=value;
-        const nextLayer=activeLayer(value.whiteboard,value.state),resetAnswerInk=action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length;
+        pane.payload=action==='draft'?mergeDraftResponse(pane.payload,value):value;
+        const nextLayer=activeLayer(pane.payload.whiteboard,pane.payload.state),resetAnswerInk=action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length;
         if(previousLayer!==nextLayer||resetAnswerInk){
           const kept=new Set((value.draft?.strokes||[]).map(stroke=>stroke.id));
           pane.ink.clear();clearTimeout(pane.inkTimer);pane.inkTimer=null;pane.whiteboardLayer=nextLayer;
@@ -117,7 +119,7 @@ async function mutate(pane,action,data,options={}){
   try{value=await pane.writes.enqueue(qid,action,answerState?{...data,answerState}:data,{contentVersion});}
   finally{if(submitting){pane.submitting=false;configureBoardLayer(pane);}}
   if(action==='whiteboard')return {ok:true,data:{revision:value.whiteboard.revision}};
-  if(preview)confirmAnswerPreview(pane,qid,preview);
+  if(preview){confirmAnswerPreview(pane,qid,preview);if(active()===pane)renderOutline();}
   if(action==='submit'||action==='retry')pane.answerPreviews?.delete(qid);
   for(const [stateId,snapshot]of pane.answerStateSnapshots||[])if(snapshot.qid===qid&&(['submit','retry'].includes(action)||stateId===options.answerStateId))pane.answerStateSnapshots.delete(stateId);
   if(active()===pane){renderOutline();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');}

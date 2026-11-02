@@ -19,6 +19,18 @@ public interface PracticeReadMapper {
     @Select(COLLECTION_COLUMNS + " WHERE c.id = #{id} AND c.user_id = #{userId} AND c.deleted_at IS NULL")
     Optional<Collection> collection(@Param("userId") String userId, @Param("id") String id);
 
+    // 保存草稿只需要指纹、大纲和能力声明，不读取题目原文或投影。
+    @Select("""
+            SELECT q.content_sha256, q.extension_digest, q.outline, e.manifest
+            FROM practice_collection c
+            JOIN content_question q ON q.bank_id = c.bank_id
+            JOIN content_extension_package e ON e.digest = q.extension_digest
+            WHERE c.id = #{collectionId} AND c.user_id = #{userId} AND c.deleted_at IS NULL
+              AND q.question_id = #{qid} AND BINARY q.question_id = BINARY #{qid}
+            """)
+    Optional<DraftQuestion> draftQuestion(@Param("userId") String userId,
+            @Param("collectionId") String collectionId, @Param("qid") String qid);
+
     @Select(COLLECTION_COLUMNS + " WHERE c.user_id = #{userId} AND c.deleted_at IS NULL ORDER BY c.created_at, c.id")
     List<Collection> collections(@Param("userId") String userId);
 

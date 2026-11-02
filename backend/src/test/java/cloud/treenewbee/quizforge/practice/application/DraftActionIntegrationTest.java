@@ -1,10 +1,8 @@
 package cloud.treenewbee.quizforge.practice.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.content.application.ImportService;
@@ -63,9 +61,16 @@ class DraftActionIntegrationTest extends MySqlTestBase {
     @Autowired AuthService auth;
     @Autowired ImportService imports;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @Autowired DraftSqlGate gate;
     @MockitoSpyBean PracticeReadMapper readMapper;
     @MockitoSpyBean PracticeReadService reads;
+    @MockitoSpyBean cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
+    @MockitoSpyBean DraftOutlineService outlines;
+    @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.DraftOutlineMapper outlineMapper;
+    @MockitoSpyBean cloud.treenewbee.quizforge.practice.projection.ProjectionCache projections;
+    @MockitoSpyBean cloud.treenewbee.quizforge.content.infrastructure.QuestionMapper questionMapper;
+    final List<String> extraQuestions = new ArrayList<>();
     @Value("${local.server.port}") int port;
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     final List<Viewer> viewers = new ArrayList<>();
@@ -80,6 +85,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         for (Viewer v : viewers) {
             jdbc.update("DELETE FROM practice_request_receipt WHERE user_id=?", v.user());
             jdbc.update("DELETE FROM practice_question_state WHERE context_id=?", v.context());
+            for (String qid : extraQuestions) jdbc.update("DELETE FROM content_question WHERE bank_id=? AND question_id=?", v.bank(), qid);
             jdbc.update("DELETE FROM practice_context WHERE id=?", v.context());
             jdbc.update("DELETE FROM practice_collection WHERE id=?", v.collection());
             jdbc.update("DELETE FROM auth_session WHERE user_id=?", v.user());
@@ -97,6 +103,143 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertSaved(first, 1, "first"); assertThat(replay.statusCode()).isEqualTo(200);
         assertThat(replay.body()).isEqualTo(first.body()); assertState(owner, 1, "first");
         assertThat(receipts(owner)).isEqualTo(1);
+    }
+
+    @Test void reportedProgressPersistsWithDraftAndReplayNeverRewritesIt() throws Exception {
+        Viewer v = partsViewer();
+        var body = reportedDraft("parts", 0, "p1");
+        var first = post(v, body);
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        assertThat(json(first).path("state").path("outlineStates"))
+                .isEqualTo(JSON.readTree("[{\"id\":\"p1\",\"status\":\"draft\"},{\"id\":\"p2\",\"status\":\"unanswered\"}]"));
+        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(json(first).path("state"));
+        clearInvocations(outlineMapper);
+        // answerState 只是显示元数据；同一作答回执仍返回首次保存的进度。
+        assertThat(post(v, reportedDraft("parts", 0, "p2")).body()).isEqualTo(first.body());
+        verifyNoInteractions(outlineMapper);
+        assertThat(first.body()).doesNotContain("correctOptionId", "standardAnswer", "question", "projected", "feedback");
+    }
+
+    @Test void noRunnerOrProjectionIsUsedEvenForColdQuestionAndUnavailableRunner() throws Exception {
+        Viewer v = partsViewer();
+        clearInvocations(runner, projections, questionMapper, reads);
+        doThrow(new cloud.treenewbee.quizforge.rules.RuleRunnerException("仅测试：不可用"))
+                .when(runner).execute(anyString(), any(), anyMap());
+        doThrow(new AssertionError("保存草稿不能访问投影缓存"))
+                .when(projections).get(any(), any());
+        var response = post(v, reportedDraft("cold", 0, "p1"));
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        verifyNoInteractions(runner, projections, questionMapper);
+        verify(reads, never()).prepareDraft(anyString(), anyString(), anyString());
+        verify(reads, never()).ruleQuestion(anyString(), anyString(), anyString());
+        assertThat(json(response).has("question")).isFalse();
+    }
+
+    @Test void unreportedProgressFallsBackToAnswerOnlyAndLeavesChildrenUnknown() throws Exception {
+        Viewer v = partsViewer();
+        var empty = post(v, partDraft("empty", 0, Map.of()));
+        assertThat(json(empty).path("state").path("answerState").path("status").asString()).isEqualTo("unanswered");
+        var filled = post(v, partDraft("filled", 1, Map.of("text", "作答")));
+        assertThat(json(filled).path("state").path("answerState").path("status").asString()).isEqualTo("draft");
+        assertThat(json(filled).path("state").path("outlineStates").isNull()).isTrue();
+    }
+
+    @Test void delayedOldRequestCannotOverwriteNewerAnswerAndProgress() throws Exception {
+        Viewer v = partsViewer();
+        assertThat(post(v, reportedDraft("seed", 0, "p1")).statusCode()).isEqualTo(200);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            if (calls.incrementAndGet() == 1) {
+                assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                entered.countDown();
+                assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            }
+            return call.callRealMethod();
+        }).when(outlines).calculate(any(), anyBoolean(), any(), any());
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var old = pool.submit(() -> post(v, reportedDraft("older", 1, "p1")));
+            assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+            try {
+                var newer = pool.submit(() -> post(v, reportedDraft("newer", 1, "p2"))).get(15, TimeUnit.SECONDS);
+                assertThat(newer.statusCode()).as(newer.body()).isEqualTo(200);
+            } finally { release.countDown(); }
+            error(old.get(30, TimeUnit.SECONDS), 409, "REVISION_CONFLICT");
+        } finally { release.countDown(); }
+        var state = json(get(v.path(), v.cookie())).path("state");
+        assertThat(state.path("revision").asLong()).isEqualTo(2);
+        assertThat(state.path("outlineStates").get(1).path("status").asString()).isEqualTo("draft");
+        assertThat(outlineMapper.update(v.context(), v.user(), v.qid(), 1, "[]", null)).isZero();
+        assertThat(json(get(v.path(), v.cookie())).path("state")).isEqualTo(state);
+    }
+
+    @Test void progressFailureRollsBackDraftAndReceiptInTheSameTransaction() throws Exception {
+        Viewer v = partsViewer();
+        jdbc.execute("ALTER TABLE practice_question_state ADD CONSTRAINT test_progress_failure CHECK (answer_state IS NULL)");
+        try { error(post(v, reportedDraft("progress-failure", 0, "p1")), 500, "INTERNAL_ERROR"); }
+        finally { jdbc.execute("ALTER TABLE practice_question_state DROP CHECK test_progress_failure"); }
+        assertThat(stateCount(v)).isZero();
+        assertThat(receipts(v)).isZero();
+    }
+
+    @Test void answerProgressAndReceiptAreInvisibleUntilTheSingleTransactionCommits() throws Exception {
+        Viewer v = partsViewer();
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            entered.countDown();
+            assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            return sqlSession.getMapper(cloud.treenewbee.quizforge.practice.infrastructure.DraftOutlineMapper.class)
+                    .update(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3),
+                            call.getArgument(4), call.getArgument(5));
+        }).when(outlineMapper).update(eq(v.context()), eq(v.user()), eq(v.qid()), anyLong(), any(), any());
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var saved = pool.submit(() -> post(v, reportedDraft("atomic", 0, "p1")));
+            try {
+                assertThat(entered.await(30, TimeUnit.SECONDS)).isTrue();
+                assertThat(stateCount(v)).isZero();
+                assertThat(receipts(v)).isZero();
+            } finally { release.countDown(); }
+            assertThat(saved.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        } finally { release.countDown(); }
+        assertThat(stateCount(v)).isEqualTo(1);
+        assertThat(receipts(v)).isEqualTo(1);
+    }
+
+    @Test void declaredAnswerStateUsesOnlyWhitelistedDraftStatusesAndIds() throws Exception {
+        Viewer v = partsViewer();
+        var response = post(v, reportedDraft("reported", 0, "p1"));
+        assertThat(json(response).path("state").path("outlineStates").get(0).path("status").asString()).isEqualTo("draft");
+        var body = partDraft("bad-reported", 1, Map.of("selectedOptionId", "a"));
+        body.put("data", Map.of("answer", Map.of("selectedOptionId", "a"), "answerState",
+                Map.of("status", "draft", "outlineStates", List.of(Map.of("id", "p1", "status", "correct")))));
+        var invalidState = post(v, body);
+        assertThat(invalidState.statusCode()).isEqualTo(200);
+        assertThat(json(invalidState).path("state").path("outlineStates").isNull()).isTrue();
+    }
+
+    private Viewer partsViewer() {
+        String qid = "progress-" + Ids.uuidV7();
+        jdbc.update("""
+                INSERT INTO content_question (bank_id,question_id,position,title,extension_digest,data,content_sha256,max_score,outline)
+                SELECT bank_id,?,2,title,extension_digest,data,content_sha256,max_score,?
+                FROM content_question WHERE bank_id=? AND question_id=?
+                """, qid, "{\"level\":\"parts\",\"items\":[{\"id\":\"p1\",\"label\":\"1\"},{\"id\":\"p2\",\"label\":\"2\"}]}", owner.bank(), owner.qid());
+        extraQuestions.add(qid);
+        return new Viewer(owner.user(), owner.cookie(), owner.collection(), owner.bank(), owner.context(), qid);
+    }
+
+    private Map<String,Object> reportedDraft(String id, long revision, String child) {
+        var body = partDraft(id, revision, Map.of("selectedOptionId", "a"));
+        body.put("data", Map.of("answer", Map.of("selectedOptionId", "a"), "answerState",
+                Map.of("status", "draft", "outlineStates", List.of(Map.of("id", child, "status", "draft")))));
+        return body;
+    }
+
+    private Map<String,Object> partDraft(String id, long revision, Object answer) {
+        return new LinkedHashMap<>(Map.of("requestId", id, "revision", revision, "action", "draft", "data", Map.of("answer", answer)));
     }
 
     @Test void savingDraftNeverLoadsCollectionQuestionsOrBuildsRoundSnapshot() throws Exception {
@@ -289,7 +432,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
         assertThat(json(response).path("state").path("revision").asLong()).isEqualTo(revision);
         assertThat(json(response).path("state").path("status").asString()).isEqualTo("draft");
         assertThat(json(response).path("state").path("answer").path("selectedOptionId").asString()).isEqualTo(answer);
-        assertThat(json(response).path("question").path("data").isObject()).isTrue();
+        assertThat(json(response).has("question")).isFalse();
     }
     private void assertState(Viewer viewer, long revision, String answer) {
         var state = jdbc.queryForMap("SELECT revision,answer FROM practice_question_state WHERE context_id=? AND question_id=?", viewer.context(), viewer.qid());
