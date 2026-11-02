@@ -1,0 +1,65 @@
+{
+  "design": {
+    "repository": "lear111/quizforge-v2",
+    "branch": "docs/design-ui-inventory",
+    "commit": "ecc571b6c2124f5503a338c3e31b150f28fdae7b"
+  },
+  "sources": [
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/shell/app.css",
+      "file": "practice.css",
+      "sha256": "a0cbfcf167290b4c551e242c9bb5455dea4e1425a6b330dd9abd182194bfafc9"
+    },
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/practice/practice-summary.css",
+      "file": "summary.css",
+      "sha256": "dba40c529c84069e04e82dd303da290fc3bd08801219f3e0441692ec9432fa19"
+    },
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/assets/quizforge-icon.svg",
+      "file": "quizforge-icon.svg",
+      "sha256": "2f30f7908ae275dd583646a6bde273592cbfc5f987bd3d7cc8f232303c93d73c"
+    },
+    {
+      "repo": "quizforge_hub",
+      "commit": "94de69e9115d5e2c6ffa848ef5850682dddc43c3",
+      "path": "java-hub/src/main/resources/static/hub.css",
+      "file": "hub.css",
+      "sha256": "72b23687a382d143ceda1f57e758531edf1a385e3a07ffe4af8324e2c953fa50"
+    },
+    {
+      "repo": "quizforge_hub",
+      "commit": "94de69e9115d5e2c6ffa848ef5850682dddc43c3",
+      "path": "java-hub/src/main/resources/static/publishing.css",
+      "file": "publishing.css",
+      "sha256": "55f18ef0e0cbf9a77122dc08584aa8514264a5740a0674935298c72bd557a34e"
+    },
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/shell/refinements.css",
+      "file": "refinements.css",
+      "sha256": "ae56ad7bebf0e253ea841ee8ea74827ef42d1124db76fffda6624e94b243faae"
+    },
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/library/library-management.css",
+      "file": "library-management.css",
+      "sha256": "3b3d304f24bb1cda235d7b9973ca09e26641bc90baba635eeaf96598e628da9e"
+    },
+    {
+      "repo": "quizforge_web",
+      "commit": "4522bb81c2126a699fcf72ce61d074dbc1264161",
+      "path": "core/web/development/development.css",
+      "file": "development-visuals.css",
+      "sha256": "a5f9e48b8a803c1d95c8dbd4fe93a5fd09897dec11c1c5e09f76331ac0c9f431"
+    }
+  ]
+}

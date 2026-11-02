@@ -1,0 +1,2 @@
+# Keep the upstream snapshots byte-identical on all checkout platforms.
+assets/upstream/* -text
