@@ -48,10 +48,14 @@ test('publish → admin approves → publisher is notified → new version → r
   await expect(adminPage.getByRole('heading',{name:title})).toBeVisible();
   await expect(adminPage.locator('.qa-shots img')).toHaveCount(1);
   const approveButton=adminPage.locator('section[data-section="decision"]').getByRole('button',{name:'审核通过'});
-  while(await adminPage.getByRole('button',{name:'批准拓展'}).count()) {
-    await expect(approveButton).toBeDisabled();
-    await adminPage.getByRole('button',{name:'批准拓展'}).first().click();
-    await expect(adminPage.locator('#admin-toast')).toHaveText('拓展已批准');
+  const extensionButtons=adminPage.getByRole('button',{name:'批准拓展'});
+  let remaining=await extensionButtons.count();
+  if(remaining)await expect(approveButton).toBeDisabled();
+  // 每次批准后页面重新渲染：以剩余按钮数减少为准（提示文字与上一次相同，不能作为完成信号）。
+  while(remaining) {
+    await extensionButtons.first().click();
+    await expect(extensionButtons).toHaveCount(remaining-1);
+    remaining--;
   }
   await expect(approveButton).toBeEnabled();
   await approveButton.click();
