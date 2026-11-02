@@ -25,7 +25,8 @@ class LifecycleJobSchedulingMigrationTest {
                 .withUsername("test").withPassword("test")) {
             mysql.start();
             var source = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
-            Flyway.configure().dataSource(source).target("11").load().migrate();
+            // V13 为已合并的通知中心；从真实 main 迁移基线验证 V14 的升级。
+            Flyway.configure().dataSource(source).target("13").load().migrate();
             var jdbc = new JdbcTemplate(source);
             jdbc.update("""
                     INSERT INTO practice_collection(id,user_id,bank_id,title,source,created_at)
@@ -62,9 +63,13 @@ class LifecycleJobSchedulingMigrationTest {
                     + " FROM practice_lifecycle_job WHERE status='queued' OR (status='running' AND lease_until < ?)"
                     + " ORDER BY updated_at,id LIMIT 1 FOR UPDATE SKIP LOCKED";
             var before = jdbc.queryForMap("EXPLAIN " + oldSql, time());
-            output("V11，10000 条终态历史", before);
+            output("V13，10000 条终态历史", before);
 
             Flyway.configure().dataSource(source).load().migrate();
+            assertThat(jdbc.queryForObject("SELECT script FROM flyway_schema_history WHERE version = '13'", String.class))
+                    .isEqualTo("V13__notifications.sql");
+            assertThat(jdbc.queryForObject("SELECT script FROM flyway_schema_history WHERE version = '14'", String.class))
+                    .isEqualTo("V14__lifecycle_job_scheduling.sql");
             assertThat(jdbc.queryForObject("SELECT archive_position FROM practice_lifecycle_job WHERE id='partial'", Integer.class))
                     .isEqualTo(19);
             assertThat(jdbc.queryForObject("SELECT completed FROM practice_lifecycle_job WHERE id='partial'", Integer.class))
@@ -77,16 +82,16 @@ class LifecycleJobSchedulingMigrationTest {
                     .getAnnotation(Select.class).value()).replace("#{now}", "?");
             jdbc.execute("ANALYZE TABLE practice_lifecycle_job");
             var after = jdbc.queryForMap("EXPLAIN " + sql, time(), time());
-            output("V13，10000 条终态历史", after);
+            output("V14，10000 条终态历史", after);
             orderedRange(after);
             addHistory(jdbc, 10000, 20000);
             jdbc.execute("ANALYZE TABLE practice_lifecycle_job");
             var larger = jdbc.queryForMap("EXPLAIN " + sql, time(), time());
-            output("V13，20000 条终态历史", larger);
+            output("V14，20000 条终态历史", larger);
             orderedRange(larger);
             assertThat(((Number) larger.get("rows")).longValue()).isLessThan(500);
             var tree = jdbc.queryForObject("EXPLAIN ANALYZE " + sql, String.class, time(), time());
-            System.out.println("领取查询 V13 EXPLAIN ANALYZE：\n" + tree);
+            System.out.println("领取查询 V14 EXPLAIN ANALYZE：\n" + tree);
         }
     }
 

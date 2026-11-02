@@ -2,12 +2,12 @@
 
 ## 范围与行为
 
-基于 main c43eaed，分支 `fix/lifecycle-jobs-followup`。只处理 #89 后台任务审查意见；小题草稿状态是后续 PR 2，须等作者合并本 PR 后再从最新 main 开始。
+基于 main c0d0030（按补充要求 merge 同步），分支 `fix/lifecycle-jobs-followup`。只处理 #89 后台任务审查意见；小题草稿状态是后续 PR 2，须等作者合并本 PR 后再从最新 main 开始。
 
 - 单工作线程改为可唤醒的单次调度。连续空轮询等待 500 / 1000 / 2000 / 4000 / 5000ms，之后封顶 5 秒；领取到工作后恢复默认 250ms。有新 finish/restart 任务时，只在事务提交后立即唤醒本实例；回滚和幂等重放不会多唤醒。执行期间收到唤醒则在本次 tick 结束后立即继续，仍然串行。
 - 取消排程使用代次校验，避免“取消成功前回调已进入执行”的竞态造成两个调度链。异常后仍会安排下一次轮询，关闭后不再安排。
 - completed/failed 任务默认保留 7 天，每小时每种终态各删除最多 200 行；每条 DELETE 自身提交，不循环追删、不把清理包进领取事务。SQL 同时限定终态，不能误删 queued/running。
-- 新增 V13（main V12 已用于管理审计），不修改任何已应用迁移：生成列 `available_at` 与 `(available_at,id)` 索引用于领取；`(status,updated_at,id)` 用于清理；`archive_position` 保存归档游标。
+- 新增 V14（main V12 为管理审计、V13 为通知中心），不修改任何已应用迁移：生成列 `available_at` 与 `(available_at,id)` 索引用于领取；`(status,updated_at,id)` 用于清理；`archive_position` 保存归档游标。
 - 归档改为 `position > lastPosition ORDER BY position LIMIT 1`。首次游标 NULL 无下界；快照、完成数量和 position 同事务提交，心跳不推进游标。升级时从执行中任务已提交的单题快照恢复最大 position，进程重启和租约接管后继续。
 - 保留原租约 owner 围栏、SKIP LOCKED、逐题事务外判分、背景名额限制与 250ms 工作节奏。只格式化本 PR 修改到的 Java 文件。
 
@@ -26,7 +26,7 @@
 
 ## 领取查询与 EXPLAIN
 
-复现方法：`LifecycleJobSchedulingMigrationTest.upgradeBackfillsSparseArchiveCursorAndClaimUsesOrderedRangeInsteadOfFilesort`。独立 Testcontainers MySQL 8.4，先运行 Flyway 至 V11，写入 10000 条 completed/failed 合成任务、100 条 queued 和 1 条过期 running。ANALYZE TABLE 后对旧 SQL 做 EXPLAIN；迁移至最新版本，对 Mapper 注解中的真实新 SQL 做 EXPLAIN，再把终态历史增至 20000 条复验。固定查询时间为 UTC `2026-11-01 12:00:00`。
+复现方法：`LifecycleJobSchedulingMigrationTest.upgradeBackfillsSparseArchiveCursorAndClaimUsesOrderedRangeInsteadOfFilesort`。独立 Testcontainers MySQL 8.4，先运行 Flyway 至 V13（通知中心），写入 10000 条 completed/failed 合成任务、100 条 queued 和 1 条过期 running。ANALYZE TABLE 后对旧 SQL 做 EXPLAIN；迁移至最新版本，对 Mapper 注解中的真实新 SQL 做 EXPLAIN，再把终态历史增至 20000 条复验。固定查询时间为 UTC `2026-11-01 12:00:00`。
 
 旧 SQL（SELECT 为原有练习任务字段）：
 
@@ -99,7 +99,7 @@ over (NULL < available_at <= '2026-11-01 12:00:00.000')
 - `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/LifecycleJobPoller.java`：可控、可唤醒的单次调度。
 - `backend/src/main/java/cloud/treenewbee/quizforge/practice/application/PracticeLifecycleJobs.java`：提交后唤醒、定期有界清理、持久化键集游标；局部文件格式整理。
 - `backend/src/main/java/cloud/treenewbee/quizforge/practice/infrastructure/LifecycleJobMapper.java`：领取、清理与游标 SQL；局部文件格式整理。
-- `backend/src/main/resources/db/migration/V13__lifecycle_job_scheduling.sql`：新索引、游标与升级补记。
+- `backend/src/main/resources/db/migration/V14__lifecycle_job_scheduling.sql`：新索引、游标与升级补记。
 - `backend/src/main/resources/application.yml`：清理配置入口。
 - 上述四个新增测试类。
 - `.github/workflows/ci.yml`：增加 workflow_dispatch，允许分支先跑同一套 CI，四项通过后再开非草稿 PR。
@@ -109,7 +109,7 @@ over (NULL < available_at <= '2026-11-01 12:00:00.000')
 
 - 本机曾因 target/classes 留有旧分支迁移误报重复 V10；clean 后消失，未修改既有迁移规避。
 - 新夹具最初混用 JDBC Timestamp 与显式 UTC 的 Instant Mapper，在非 UTC 本机时区导致租约边界夹具偏移。现夹具以 UTC LocalDateTime 写入；生产 Instant 处理器保持不变。
-- V12 已随管理后台合并，已 rebase main c43eaed 并顺延为 V13。没有改管理后台代码。
+- 已 merge 最新 main c0d0030；#95 通知中心占用 V13，本任务迁移改为 V14。升级测试从 V13 起步，并核对 V13/V14 对应脚本。未修改已合并迁移，未强制推送。
 - 本 PR 不改后台名额与节流频率，不对 #89 的前台 P95 限制做新的性能结论；PR 2 将另做草稿保存 P95 对照。
 - PR 2 依赖本 PR 合并，未提前开分支或绕过依赖。
 - PR 自动 CI 暴露既有手机浏览器夹具竞态：`open()` 在启动请求发出前看到初始隐藏的 loading，即展开侧栏；随后启动流程自动打开首本题库并关闭侧栏，点击被移出视口的题库按钮超时。trace 显示反复 `element is outside of the viewport`，失败位置是第二次重新打开页面（尚未发起 finish）。现先等待非候选、非 inert 的首题页面提交，再操作侧栏；不增加固定等待、超时或重试，不改前端生产行为。

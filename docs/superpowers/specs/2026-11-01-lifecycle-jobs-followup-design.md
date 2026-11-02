@@ -2,7 +2,7 @@
 
 ## 范围
 
-只实现任务中的 PR 1，分支 `fix/lifecycle-jobs-followup`，起于 main `bf9f6c7`，实施期间同步 main `c43eaed`。PR 2 的小题草稿状态必须等 PR 1 由作者审查合并后再开始。不修改判分、草稿、白板、幂等回执和租约围栏的语义。
+只实现任务中的 PR 1，分支 `fix/lifecycle-jobs-followup`，起于 main `bf9f6c7`，实施期间同步 main `c43eaed`，随后按补充要求 merge main `c0d0030`。PR 2 的小题草稿状态必须等 PR 1 由作者审查合并后再开始。不修改判分、草稿、白板、幂等回执和租约围栏的语义。
 
 ## 实施方案与取舍
 
@@ -27,7 +27,7 @@
 
 ## 归档游标与迁移
 
-- 新增 V13 迁移，不修改已应用迁移（main V12 为管理审计）。归档任务保存可空的最后已处理 position。
+- 新增 V14 迁移，不修改已应用迁移（main V12 为管理审计、V13 为通知中心）。归档任务保存可空的最后已处理 position。
 - 查询 `bank_id = ? AND position > ? ORDER BY position LIMIT 1`；首次不加 position 下界，支持不连续以及非零起始值。
 - 快照写入、completed 增加和游标更新在同一事务内。失败、进程重启和租约接管后从已提交游标继续，不能因心跳而提前推进。
 - 升级时对已有执行中的归档任务，从该轮已冻结题目恢复最大 position；完成题数仍保留原值。
