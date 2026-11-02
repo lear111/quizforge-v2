@@ -207,7 +207,7 @@ public class PracticeReadService {
         boolean editable="active".equals(completion);
         boolean reviewable=editable||"completed".equals(completion);
         boolean boardEnabled=features(collection).path("whiteboard").asBoolean(false);
-        var whiteboard=boardEnabled?whiteboards.read(context,qid,userId,roundStatus):null;
+        var whiteboard=boardEnabled?whiteboards.read(context,qid,userId,roundStatus,submitted):null;
         boolean manualReview = false;
         for (var capability : json.readTree(extension.manifest()).path("requiresApi").path("capabilities")) {
             if ("manual-review".equals(capability.asString())) manualReview = true;

@@ -14,11 +14,14 @@ public class WhiteboardViews {
         this.mapper=mapper; this.documents=documents; this.json=json;
     }
     public View read(String contextId,String qid,String userId,String roundStatus) {
-        return view(mapper.find(contextId,qid,userId).orElse(null),roundStatus);
+        return read(contextId,qid,userId,roundStatus,false);
     }
-    public View view(WhiteboardMapper.Row row,String roundStatus) {
+    public View read(String contextId,String qid,String userId,String roundStatus,boolean submitted) {
+        return view(mapper.find(contextId,qid,userId).orElse(null),roundStatus,submitted);
+    }
+    public View view(WhiteboardMapper.Row row,String roundStatus,boolean submitted) {
         return new View(row==null?documents.empty():json.readTree(row.draft()),
                 row==null||row.notes()==null?documents.empty():json.readTree(row.notes()),
-                row==null?0:row.revision(),"completed".equals(roundStatus));
+                row==null?0:row.revision(),WhiteboardDocuments.draftLocked(roundStatus,submitted));
     }
 }

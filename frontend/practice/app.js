@@ -8,7 +8,7 @@ import {request,readResource,collectionPath,questionPath,makeRequestId} from './
 import {mountExtension} from './bridge/frame.js';
 import {prepareExtensionAssets} from './bridge/page-assets.js';
 import {mountWhiteboard} from './draft/whiteboard.js';
-import {layerDocument,layerPayload,protectedInk,mergeWhiteboard} from './draft/whiteboard-layers.js';
+import {activeLayer,layerDocument,layerPayload,protectedInk,mergeWhiteboard} from './draft/whiteboard-layers.js';
 import {createWriteQueue,createDraftBuffer} from './shared/write-queue.js';
 import {createQuestionCache} from './practice/question-cache.js';
 import {navigateOutlineTarget} from './outline/outline-navigation.js';
@@ -46,7 +46,7 @@ const el=(tag,className,text)=>{const node=document.createElement(tag);if(classN
 // Apply the saved appearance before the first question renders.
 bindAppearanceSettings({document});
 function notice(message){$('#notice').textContent=message||'';$('#notice').hidden=!message;}
-const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。白板可切换草稿与追加笔记；完成练习后核对评分，再练一次时保存历史。':'';
+const practiceNotice=collection=>collection?.kind==='bank'?'作答与白板自动保存；提交后可重做，简答题可人工评分。完成练习后核对评分，再练一次时保存历史。':'';
 function failure(error){notice(error.message||String(error));}
 function transitionTo(fn){const run=transition.then(async()=>{notice('');$('#previous').disabled=true;$('#next').disabled=true;try{return await fn();}finally{for(const pane of collections.values())pane.node.inert=false;updateChrome();renderRecovery();}});transition=run.catch(()=>{});run.catch(failure);return run;}
 const active=()=>collections.get(activeKey);
@@ -74,7 +74,7 @@ function makeWriteQueue(pane){return createWriteQueue({
     onBusy:busy=>{pendingWrites+=busy?1:-1;if(busy&&active()===pane)saveStatus(collectionFeature(pane,'history')?'保存中…':'当前会话','saving');},
     onSaved:(qid,action,value)=>{
       if(action==='whiteboard'){
-        if(pane.view==='history'){pane.boardVersions.set(qid,value.whiteboard.revision);const payload=pane.historyView.entry(qid).payload;payload.whiteboard=value.whiteboard;payload.draft=value.whiteboard.draft;pane.whiteboard.protectStrokes(protectedInk(value.whiteboard,'notes'));saveStatus('历史笔记已追加');return;}
+        if(pane.view==='history'){pane.boardVersions.set(qid,value.whiteboard.revision);const payload=pane.historyView.entry(qid).payload;payload.whiteboard=value.whiteboard;payload.draft=value.whiteboard.draft;pane.whiteboard.protectStrokes(protectedInk(value.whiteboard,'notes'));saveStatus('历史笔迹已保存');return;}
         (pane.boardVersions??=new Map()).set(qid,value.whiteboard.revision);
         const key=questionCacheKey(pane,qid),cached=questionsCache.get(key);
         if(cached)questionsCache.set(key,mergeWhiteboard(cached,value));
@@ -84,7 +84,19 @@ function makeWriteQueue(pane){return createWriteQueue({
       }
       questionsCache.set(questionCacheKey(pane,qid),value);
       pane.collection.states[qid]=value.state;
-      if(pane.questionId===qid){pane.payload=value;if(action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){const before=pane.whiteboard.getDraft?.()?.strokes||[],kept=new Set((value.draft?.strokes||[]).map(stroke=>stroke.id));pane.ink.clear();clearTimeout(pane.inkTimer);pane.inkTimer=null;pane.whiteboard.load(layerDocument(value.whiteboard,pane.whiteboardLayer||'draft'));configureBoardLayer(pane);pane.whiteboard.forgetAnswerInk?.(before.map(stroke=>stroke.id).filter(id=>!kept.has(id)));}if(action!=='whiteboard'&&action!=='draft')pane.plugin?.update(contextFor(pane));}
+      if(pane.questionId===qid){
+        const before=pane.whiteboard.getDraft?.()?.strokes||[],previousLayer=pane.whiteboardLayer;
+        pane.payload=value;
+        const nextLayer=activeLayer(value.whiteboard,value.state),resetAnswerInk=action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length;
+        if(previousLayer!==nextLayer||resetAnswerInk){
+          const kept=new Set((value.draft?.strokes||[]).map(stroke=>stroke.id));
+          pane.ink.clear();clearTimeout(pane.inkTimer);pane.inkTimer=null;pane.whiteboardLayer=nextLayer;
+          pane.whiteboard.load(layerDocument(value.whiteboard,nextLayer));
+          if(resetAnswerInk)pane.whiteboard.forgetAnswerInk?.(before.map(stroke=>stroke.id).filter(id=>!kept.has(id)));
+        }
+        configureBoardLayer(pane);
+        if(action!=='draft')pane.plugin?.update(contextFor(pane));
+      }
       if(active()===pane){renderOutline();updateChrome();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');renderRecovery();}
     },
     onFailed:async(qid,_action,error)=>{
@@ -98,7 +110,12 @@ async function mutate(pane,action,data,options={}){
   const qid=pane.questionId,contentVersion=pane.renderedContentVersion,answerState=action==='draft'?answerStateForSave(pane,qid,options.answerStateId):null,preview=action==='draft'?previewDraftAnswer(pane,qid,options.answerStateId):null;
   if(preview&&active()===pane){renderOutline();saveStatus('保存中…','saving');}
   if(action==='submit'||action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){pane.whiteboard.flush();await saveInk(pane);}
-  const value=await pane.writes.enqueue(qid,action,answerState?{...data,answerState}:data,{contentVersion});
+  // 提交等待期间暂停画笔，避免把提交前尚未保存的笔迹混入下一阶段。
+  const submitting=action==='submit';
+  if(submitting){pane.submitting=true;pane.whiteboard.setReadOnly(true);}
+  let value;
+  try{value=await pane.writes.enqueue(qid,action,answerState?{...data,answerState}:data,{contentVersion});}
+  finally{if(submitting){pane.submitting=false;configureBoardLayer(pane);}}
   if(action==='whiteboard')return {ok:true,data:{revision:value.whiteboard.revision}};
   if(preview)confirmAnswerPreview(pane,qid,preview);
   if(action==='submit'||action==='retry')pane.answerPreviews?.delete(qid);
@@ -187,7 +204,8 @@ async function showQuestion(pane,qid,{payload:prepared,collection:descriptor=pan
     pane.viewport.scrollTop=0;pane.viewport.scrollLeft=0;
     pane.draftLayoutPending=!payload.draft||payload.whiteboard?.revision===0;
     const zoom=Math.max(.25,Math.min(1,(pane.viewport.clientWidth-24)/760));
-    const draft=payload.whiteboard?layerDocument(payload.whiteboard,pane.whiteboardLayer||'draft'):collectionFeature(pane,'whiteboard')&&structuredClone(payload.draft)||{schemaVersion:1,viewport:{x:(pane.viewport.clientWidth/zoom-760)/2,y:0,zoom},strokes:[],paper:{color:'#ffffff',pattern:'plain'}};
+    pane.whiteboardLayer=activeLayer(payload.whiteboard,payload.state);
+    const draft=payload.whiteboard?layerDocument(payload.whiteboard,pane.whiteboardLayer):collectionFeature(pane,'whiteboard')&&structuredClone(payload.draft)||{schemaVersion:1,viewport:{x:(pane.viewport.clientWidth/zoom-760)/2,y:0,zoom},strokes:[],paper:{color:'#ffffff',pattern:'plain'}};
     pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane));pane.whiteboard.load(draft);pane.tools.hidden=!pane.draftMode;pane.whiteboard.setMode(pane.draftMode?'draft':'practice');
     configureBoardLayer(pane);
     syncPracticeCamera(pane);
@@ -494,22 +512,13 @@ function boardFor(pane){return pane.view==='history'?pane.historyQuestion?.paylo
 function configureBoardLayer(pane){
   const layer=pane.whiteboardLayer||'draft',board=boardFor(pane);
   pane.whiteboard.protectStrokes(protectedInk(board,layer));
-  pane.whiteboard.setAppendOnly(layer==='notes');
+  pane.whiteboard.setAppendOnly(false);
   pane.whiteboard.setAnswerInkEnabled(pane.view!=='history'&&layer==='draft'&&!board?.draftLocked);
-  pane.whiteboard.setReadOnly(!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
-  if(pane.layerControl){pane.layerControl.value=layer;pane.layerControl.title=board?.draftLocked?'本轮草稿已锁定，只能追加笔记':'笔记保存后只能追加，不能擦除';}
+  pane.whiteboard.setReadOnly(!!pane.submitting||!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
 }
 function attachRuntime(pane){
   if(pane.whiteboard)return;
   pane.whiteboard=mountWhiteboard(pane.viewport,{toolbarContainer:pane.tools,toolbarObstacles:()=>document.querySelectorAll('.question-arrow'),onChange:value=>enqueueInk(pane,value),onViewChange:camera=>{rememberDraftView(pane,camera);resizeStage(pane,camera);},onScroll:()=>rememberDraftScroll(pane),onFullscreen:()=>draftFullscreen.toggle()});
-  const label=el('label','qf-board-layers','白板层：'),control=el('select');control.setAttribute('aria-label','白板层');
-  for(const [value,text]of [['draft','作答草稿'],['notes','追加笔记']]){const option=el('option','',text);option.value=value;control.append(option);}
-  label.append(control);pane.tools.append(label);pane.layerControl=control;
-  control.addEventListener('change',async()=>{
-    const next=control.value;control.disabled=true;
-    try{pane.whiteboard.flush();await saveInk(pane);await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('请先保存当前白板');pane.whiteboardLayer=next;pane.whiteboard.load(layerDocument(boardFor(pane),next));configureBoardLayer(pane);}
-    catch(error){control.value=pane.whiteboardLayer||'draft';failure(error);}finally{control.disabled=false;}
-  });
   pane.whiteboard.setFullscreenState(draftFullscreen.getState());pane.sizeObserver?.observe(pane.viewport);pane.worldObserver?.observe(pane.world);
 }
 async function suspendPane(pane){

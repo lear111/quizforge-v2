@@ -19,6 +19,13 @@ public interface WhiteboardMapper {
     @Select(FIND + " FOR UPDATE")
     Optional<Row> lock(@Param("contextId") String contextId, @Param("qid") String qid, @Param("userId") String userId);
 
+    @Select("""
+            SELECT EXISTS(SELECT 1 FROM practice_question_state
+              WHERE context_id = #{contextId} AND question_id = #{qid}
+                AND BINARY question_id = BINARY #{qid} AND user_id = #{userId} AND status = 'submitted')
+            """)
+    boolean submitted(@Param("contextId") String contextId, @Param("qid") String qid, @Param("userId") String userId);
+
     @Insert("""
             INSERT INTO practice_whiteboard (context_id, question_id, user_id, draft, notes, size_bytes, revision, updated_at)
             VALUES (#{contextId}, #{questionId}, #{userId}, #{draft}, #{notes}, #{sizeBytes}, #{revision}, #{updatedAt})
