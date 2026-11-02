@@ -37,8 +37,9 @@ export function bindLibraryTransfer({request,getContext,beforeChange,onImported,
     busy=true;
     try{
       await beforeChange();onMessage(single?'正在打包题库…':'正在打包题库分组…');
-      const blob=await request('/api/library/export',{method:'POST',body:JSON.stringify(single?{bank:row.path}:{group:row.path}),responseType:'blob',timeoutMs:135000});
-      await download(blob,`${row.title||row.name||row.path.split('/').at(-1)}.qbank`);onMessage(single?'题库已导出。':'题库分组已导出。');return true;
+      const response=await request('/api/library/export',{method:'POST',body:JSON.stringify(single?{bank:row.path}:{group:row.path}),responseType:'response',timeoutMs:135000});
+      const blob=await response.blob(),warning=decodeURIComponent((response.headers.get('X-QF-Export-Warning')||'').replace(/\+/g,' '));
+      await download(blob,`${row.title||row.name||row.path.split('/').at(-1)}.qbank`);onMessage(warning|| (single?'题库已导出。':'题库分组已导出。'));return true;
     }catch(failure){if(throwOnError)throw failure;onMessage(failure.message);return false;}
     finally{busy=false;}
   }

@@ -43,7 +43,8 @@ class PracticeCollectionSnapshotTest {
     final ProjectionCache cache = mock(ProjectionCache.class);
     final QuestionStamps stamps = mock(QuestionStamps.class);
     final PracticeReadService reads = new PracticeReadService(mapper, questions, availability, pages, runner, cache,
-            stamps, Clock.fixed(NOW, ZoneOffset.UTC), json, mock(cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews.class));
+            stamps, Clock.fixed(NOW, ZoneOffset.UTC), json, mock(cloud.treenewbee.quizforge.practice.whiteboard.WhiteboardViews.class),
+            mock(cloud.treenewbee.quizforge.library.LibraryMapper.class));
 
     @BeforeEach void fixture() {
         when(mapper.collection(USER, COLLECTION)).thenReturn(Optional.of(new PracticeReadRows.Collection(

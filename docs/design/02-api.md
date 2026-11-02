@@ -107,8 +107,8 @@
 | `GET /api/catalog` | 我的题库列表 | `practice_collection`、`content_bank` | 只返回当前用户的实例；`extensions` 返回空列表，不列出拓展示例 |
 | `GET /api/library/index` | 题库分组视图 | 同上 | |
 | `POST /api/library/import` | `multipart/form-data` 上传 `.qbank`，文件字段为 `file` | `content_*`、`practice_collection` | 未审核拓展不阻止导入；可用性按设计 04 第 6.2 节实时推算。M2 暂不创建私人 catalog_pack，source_pack_id 为 NULL |
-| `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 删除为软删除，不进入回收站流程 |
-| `POST /api/library/export` | 导出为 `.qbank` | `content_*`、`quota_traffic` | 计流量（沿用旧云端规则） |
+| `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 实例软删除并清除作答、历史、笔记和后台任务，释放私人导入配额；不进入回收站流程 |
+| `POST /api/library/export` | 导出为 `.qbank` | `content_*` | 不计下载流量；流式生成格式 4 临时包，由 Nginx 传输 |
 | `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；没有进行中的作答时先切换到新版本（FR-10 v1.6） |
 | `GET /api/collections/{kind}/{id}/questions/{qid}` | 读题（投影 + 状态 + 白板 + 版本戳） | `content_question`、`practice_question_state`、`practice_whiteboard` | 投影走缓存（数据库设计 4.2 节） |
 | `GET .../questions/{qid}/stamp` | 只读版本戳 | `practice_question_state` | |
@@ -182,6 +182,20 @@
 `/api/settings/network*`、`/api/settings/development`、`/api/development/*`、`/api/settings/ai*`（本机 AI 配置）、`/api/editor-drafts/*` 与题目编辑接口（`.../editor`、`.../edit`）、`/quizforge-lan-ca.crt`。前端中对应的入口一并删除（ADR-006）。
 
 ---
+
+
+### 我的题库管理（L1.7）
+
+- `GET /api/catalog` 返回 `managementRevision`（当前用户的目录版本）；每个 bank 的 `path` 为稳定的实例 ID，不随显示名称或分组变化。
+- `POST /api/library/manage` 请求：`{kind:"bank",target:"item"|"group",action:"create"|"update"|"delete",path,name,group,revision}`。`revision` 必须为打开管理对话框时的 `managementRevision`。分组支持新建空文件夹；实例不提供 create，单本删除仍走 `DELETE /api/collections/bank/{id}`。
+- 修改实例时 `path` 是实例 ID，`name` 是显示名称（trim 后 1～200 个字符），`group` 为目标分组名，空字符串或 null 为根目录。分组不存在时创建。只修改显示元数据，不改变作者 UUID、题目、作答或历史。
+- 修改分组时 `path` 为原分组名、`name` 为新分组名；新建分组只传 `name`。分组名沿用旧宿主 `library-management.js:folderName`：最长 120 个 UTF-16 单元，非空，不能以点开头、空格或点结尾；禁用 `\ / : * ? " < > |`、U+0000～001F、U+007F～009F；禁用 Windows 设备名（含后缀）和 `bank.json`、`manifest.json`、`development.json`（忽略大小写）。根目录不是可改名/删除的分组。
+- 同一用户同一分组内（根目录也算一组）作者 UUID 必须唯一，导入或移动冲突返回 409 `DUPLICATE_BANK_UUID`；同一 UUID 可以存在于不同分组，其他用户不受影响。相同 UUID 的其他版本不会被悄悄覆盖，提示走版本更新流程；本切片不实现更新。历史重复实例保留，整组导出遇到重复 UUID 时提示逐本导出。
+- 同一分组内实例名称忽略大小写比较（保留重音差别），重名返回 409 `NAME_TAKEN`；分组已存在返回 409 `GROUP_EXISTS`；目录版本过期返回 409 `LIBRARY_CONFLICT`，前端提示并刷新目录。
+- 删除分组返回 `{deleted:true,deletedCount,remaining,partial,message}`。每本题库独立事务，部分失败返回 HTTP 200 且 `partial:true`、`remaining>0`；客户端刷新目录版本后可继续删除。已完成的删除不回滚。进行中的完成/归档任务沿用单本删除规则：锁住对应上下文后删除任务及其关联数据，过期工作线程无法重新写入。
+- `POST /api/library/export` 请求 `{bank:实例ID}` 或 `{group:分组名}`，二选一；空分组返回 422 `EMPTY_GROUP`。只读取当前用户仍存在的实例，广场来源实例也可导出。
+- 成功返回格式 4 的 `.qbank` 下载；包内无作答、白板、历史。先在临时文件中流式生成，再以 `X-Accel-Redirect` 交给 Nginx 传输，文件一小时后清理。压缩后上限 128 MiB，同时遵循导入的展开大小/条目上限；超限返回 413 `LIBRARY_ARCHIVE_LIMIT` 并建议逐本导出。不计下载流量。
+- `X-QF-Export-Warning` 为 URL 编码的中文提示，前端下载后显示：旧题库未保留原始作者 JSON 时只能重建可恢复内容（丢失的未引用题无法恢复，UUID 从内部 bank ID 稳定派生）；合并路径需改写拓展示例时摘要变化，重新导入后需重新审核。新导入保留完整作者 JSON（包括未引用题目）与路径绑定；网络音频 URL 原样保留。
 
 ## 3. 设备接口（C-05，保持不变）
 

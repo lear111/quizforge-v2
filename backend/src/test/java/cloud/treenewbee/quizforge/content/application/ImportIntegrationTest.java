@@ -203,7 +203,8 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForList("SELECT source->>'$.filename' FROM practice_collection", String.class)).containsOnly("test.qbank");
         assertThat(first.body()).doesNotContain("correctOptionId", "answerAndExplanation");
         for (var collection : collections) assertThat(collection.path("available").asBoolean()).isFalse();
-        var second = upload(cookie, archive);
+        // 同一分组的 UUID 唯一；跨用户仍复用共享内容并产生独立实例。
+        var second = upload(cookie(), archive);
         assertThat(second.statusCode()).isEqualTo(200);
         assertThat(count("content_bank")).isEqualTo(5);
         assertThat(count("content_question")).isEqualTo(5);

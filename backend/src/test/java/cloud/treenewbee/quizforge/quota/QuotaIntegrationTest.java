@@ -122,7 +122,9 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @Test void importChargesExactExpandedBytesAndDeletingReleasesOnlyThatInstance() throws Exception {
         var user = user(false); var archive = archive();
-        var first = importOne(user, archive); var second = importOne(user, archive);
+        var first = importOne(user, archive);
+        jdbc.update("UPDATE practice_collection SET group_name=NULL WHERE id=? AND user_id=?", first.id(), user.id());
+        var second = importOne(user, archive);
         assertThat(first.bankId()).isEqualTo(second.bankId());
         assertThat(first.id()).isNotEqualTo(second.id());
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(archive.size() * 2);
@@ -172,10 +174,12 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @Test void concurrentImportsCannotExceedSingleInstanceLimit() throws Exception {
         var user = user(false); var admin = user(true); var archive = archive();
+        var otherArchive = archive();
+        assertThat(otherArchive.size()).isEqualTo(archive.size());
         quotas.adjust(admin.id(), user.id(), archive.size(), null);
         var scenario = gate.arm(); var ready = scenario.ready; var release = scenario.release;
         try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
-            var a = workers.submit(() -> attemptImport(user, archive)); var b = workers.submit(() -> attemptImport(user, archive));
+            var a = workers.submit(() -> attemptImport(user, archive)); var b = workers.submit(() -> attemptImport(user, otherArchive));
             try { assertThat(ready.await(15, TimeUnit.SECONDS)).isTrue(); } finally { release.countDown(); }
             var results = List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
             assertThat(results.stream().filter(v -> v.equals("ok")).count()).isEqualTo(1);
@@ -359,7 +363,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         void clear() { var old = scenario; scenario = null; if(old != null)old.release.countDown(); }
         @Override public Object intercept(org.apache.ibatis.plugin.Invocation call) throws Throwable {
             var current = scenario;
-            if (current != null && ((org.apache.ibatis.mapping.MappedStatement)call.getArgs()[0]).getId().endsWith(".BankMapper.insert")) {
+            if (current != null && ((org.apache.ibatis.mapping.MappedStatement)call.getArgs()[0]).getId().endsWith(".LibraryMapper.initialize")) {
                 assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
                 var connection = ((org.apache.ibatis.executor.Executor)call.getTarget()).getTransaction().getConnection();
                 try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT CONNECTION_ID()")) {
