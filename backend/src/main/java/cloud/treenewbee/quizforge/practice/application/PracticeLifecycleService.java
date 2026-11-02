@@ -20,6 +20,8 @@ import tools.jackson.databind.node.ObjectNode;
 /** Context-serialized lifecycle writes; extension execution never holds a database transaction. */
 @Service
 public class PracticeLifecycleService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.exam.ExamHistoryUpdates examHistory;
     private final PracticeReadService reads;
     private final PracticeReadMapper readMapper;
     private final PracticeLifecycleMapper mapper;
@@ -97,6 +99,7 @@ public class PracticeLifecycleService {
                         stored.gradingStatus(), stored.outlineStatesJson(), stored.projectedJson(), clock.instant()) != 1) throw revisionConflict();
                 var response = response(template, prepared, answer, stored, revision + 1, "submitted");
                 changed(context, userId);
+                examHistory.reviewed(context.id(), userId, qid);
                 return response;
             });
         });

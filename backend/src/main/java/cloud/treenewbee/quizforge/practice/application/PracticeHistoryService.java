@@ -41,9 +41,9 @@ public class PracticeHistoryService {
         owned(user,collection);
         var header=mapper.find(id,user,collection).orElseThrow(ContentPages::notFound);
         var snapshot=(ObjectNode)json.readTree(header.collectionSnapshot());
-        var response=json.createObjectNode().put("id",id).put("mode","practice").put("status","completed")
+        var response=json.createObjectNode().put("id",id).put("mode",header.mode()).put("status","completed")
                 .put("snapshotVersion",snapshot.path("snapshotVersion").asInt()).put("collectionTitle",snapshot.path("title").asString())
-                .put("createdAt",header.createdAt().toString()).put("updatedAt",header.updatedAt().toString());
+                .put("examId",header.examId()).put("createdAt",header.createdAt().toString()).put("updatedAt",header.updatedAt().toString());
         var summary=json.readTree(header.summary());response.set("summary",summary);
         for(String name:java.util.List.of("questionCount","submittedCount","pendingCount","score","maxScore"))response.set(name,summary.path(name));
         var entries=mapper.entries(id,user);var questions=response.putArray("questions");var pageValues=response.putObject("pages");
@@ -111,7 +111,7 @@ public class PracticeHistoryService {
     public void delete(String user,String collection,String id) {
         owned(user,collection);
         tx.executeWithoutResult(status->{mapper.lock(id,user,collection).orElseThrow(ContentPages::notFound);
-            mapper.deleteAnnotations(id,user);if(mapper.delete(id,user,clock.instant())!=1)throw new IllegalStateException("历史记录未删除");});
+            mapper.deleteAnnotations(id,user);mapper.deleteExam(id,user);if(mapper.delete(id,user,clock.instant())!=1)throw new IllegalStateException("历史记录未删除");});
     }
     private JsonNode receipt(String user,String request,byte[] hash) {
         var row=receipts.find(user,request);if(row==null)return null;

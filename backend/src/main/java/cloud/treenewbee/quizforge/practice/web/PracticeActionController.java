@@ -19,6 +19,8 @@ public class PracticeActionController {
     public record Action(@NotBlank @Size(max = 64) String requestId, @NotNull JsonNode revision,
             @NotBlank String action, JsonNode data, String contentVersion) {}
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.exam.ExamMapper exams;
     private final DraftActionService drafts;
     private final SubmitActionService submits;
     private final PracticeLifecycleService lifecycle;
@@ -35,6 +37,12 @@ public class PracticeActionController {
     @PostMapping("/api/collections/bank/{id}/questions/{qid}/actions")
     public ResponseEntity<?> action(Principal principal, @PathVariable String id, @PathVariable String qid,
             @Valid @RequestBody Action body) {
+        if (exams.find(principal.getName(),id).isPresent())
+            throw cloud.treenewbee.quizforge.content.application.ContentPages.notFound();
+        return dispatch(principal,id,qid,body);
+    }
+
+    public ResponseEntity<?> dispatch(Principal principal,String id,String qid,Action body) {
         if (!body.revision().isIntegralNumber() || !body.revision().canConvertToLong() || body.revision().asLong() < 0
                 || body.revision().asLong() > Long.MAX_VALUE - ("submit".equals(body.action()) ? 2 : 1)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "revision 必须为有效的非负整数");

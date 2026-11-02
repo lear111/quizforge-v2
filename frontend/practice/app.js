@@ -156,7 +156,7 @@ async function flushPane(pane){
   return !pane.plugin?.hasUnsavedInput;
 }
 const pageRequest=createExtensionRouter({
-  readResource:(id,pane)=>pane.exam?request(`${collectionPath('exam',pane.id)}/resources/${id}`):readResource(id),
+  readResource:(id,pane)=>readResource(id,pane.exam?`${collectionPath('exam',pane.id)}/resources/${id}`:undefined),
   uploadResource:(args,pane)=>request(pane.exam?`${collectionPath('exam',pane.id)}/resources`:'/api/resources',{method:'POST',headers:pane.view==='practice'&&!collectionFeature(pane,'history')?{'X-QuizForge-Transient-Resource':'true'}:{},body:JSON.stringify(args)}),
   loadSdk:(id,version)=>sdkCache.load(`${id}:${version}:editor`,()=>request(`/api/sdk/${encodeURIComponent(id)}/${encodeURIComponent(version)}/editor`)),
   save:mutate,

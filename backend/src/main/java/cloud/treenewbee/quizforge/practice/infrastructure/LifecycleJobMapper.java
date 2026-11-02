@@ -128,4 +128,12 @@ public interface LifecycleJobMapper {
             </script>
             """)
     Optional<QuestionCursor> nextQuestion(@Param("bankId") String bankId, @Param("after") Integer after);
+
+    @Update("""
+            UPDATE practice_lifecycle_job SET kind='exam_archive',status='queued',total=#{total},completed=0,
+                archive_position=NULL,lease_owner=NULL,lease_until=NULL,updated_at=#{now}
+            WHERE id=#{id} AND lease_owner=#{owner} AND status='running'
+            """)
+    int archiveExam(@Param("id") String id, @Param("owner") String owner,
+            @Param("total") int total, @Param("now") Instant now);
 }

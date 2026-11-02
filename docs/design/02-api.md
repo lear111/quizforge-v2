@@ -137,6 +137,16 @@
 
 服务端在每个考试请求中都检查截止时间（数据库设计 5.6 节），不依赖前端倒计时。
 
+个人模拟考试（L2）使用 `practice_context.kind=exam`，开考时冻结 `bank_id` 与显示标题，普通练习与各场考试的作答、白板完全独立。`features.exam=false` 返回 403 `FEATURE_DISABLED`。时长为整数 1～1440，省略或 null 为不限时。
+
+- 考试元数据使用 `status: in-progress / grading / completed`，包含 `id`、`bankKind:bank`、`bankId`（来源实例 ID）、`startedAt`、`deadline`（可空）、`serverTime`、`durationMinutes`、`version`、`historyId`、后台任务进度与 `gradingErrors`。概览在 `exam` 中附带同一结构；列表 `{records:[...]}` 只列进行中和待处理评分的考试。
+- `POST E/exam {requestId}` 只登记后台任务，规则判分不占用请求线程或数据库事务。用户交卷与到期扫描共用 context 锁和带 status/version 的条件更新；重复交卷不创建第二个任务或轮次。评分失败保留固定答案，使用新 requestId 重试；重放旧 requestId 返回原回执。
+- 作答中仅允许 draft/whiteboard；单题 submit/retry/review/AI 返回 409 `EXAM_ACTION_FORBIDDEN`。已交卷后草稿、白板、上传返回 409 `EXAM_LOCKED`；截止后写入返回 409 `EXAM_DEADLINE_PASSED`。归属及截止检查均在短事务锁定 context 后复查，不能通过普通 bank 路由传考试 ID 绕过限制。
+- 交卷后可人工评分；任务正在修改状态时返回现有 `PRACTICE_BUSY`，待任务结束后可重试。**已完成考试也可人工改分**，与题目状态、冻结单题快照及历史汇总在同一事务更新（作者确认，覆盖旧版已完成考试全部只读的规则）。历史详情附 `examId`，页面提供“核对考试评分”入口。AI 能力保持关闭，预留操作返回 501。
+- 全部判分完成后自动按 position 键集分页冻结完整历史，`mode=exam`、`snapshotVersion=1`；未作答按 0 计入总分，主观题 pending/null 不阻止完成。历史列表只返回摘要，详情才加载快照。
+- 删除进行中或待评分考试返回 `{deleted:examId}`，重复删除相同响应；保留删除标记，丢弃在途评分。已完成返回 409 `EXAM_COMPLETED`，应从历史删除；重放已删除考试的创建请求返回 409 `EXAM_DELETED`。
+
+
 ### 2.4 资源与页面（resource / content）
 
 | 方法与路径 | 说明 | 差异 |
