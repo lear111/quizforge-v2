@@ -55,8 +55,10 @@ public class AdminOverviewController {
         LocalDate today = LocalDate.ofInstant(clock.instant(), ActivityTracker.ZONE);
         LocalDate first = today.minusDays(DAYS - 1);
         Map<LocalDate, Long> registered = new HashMap<>();
-        for (UserAdminMapper.DailyRegistrations row
-                : accounts.registrationsSince(first.atStartOfDay(ActivityTracker.ZONE).toInstant())) {
+        // 窗口 = 北京时间 [6 天前 0 点, 明天 0 点)，与趋势中的 7 个日期完全对应。
+        var from = first.atStartOfDay(ActivityTracker.ZONE).toInstant();
+        var to = today.plusDays(1).atStartOfDay(ActivityTracker.ZONE).toInstant();
+        for (UserAdminMapper.DailyRegistrations row : accounts.registrationsBetween(from, to)) {
             registered.put(row.day(), row.registered());
         }
         Map<LocalDate, ActivityMapper.DailyCount> active = new HashMap<>();

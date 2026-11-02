@@ -68,11 +68,11 @@ public interface UserAdminMapper {
     record DailyRegistrations(java.time.LocalDate day, long registered) {
     }
 
-    /** 按北京时间的日期统计注册数（created_at 以 UTC 保存，+08:00 换算）。 */
+    /** 按北京时间的日期统计 [from, to) 内的注册数（created_at 以 UTC 保存，+08:00 换算）。 */
     @Select("""
             SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) AS day, COUNT(*) AS registered
-              FROM account_user WHERE created_at >= #{since}
+              FROM account_user WHERE created_at >= #{from} AND created_at < #{to}
              GROUP BY day ORDER BY day
             """)
-    List<DailyRegistrations> registrationsSince(@Param("since") Instant since);
+    List<DailyRegistrations> registrationsBetween(@Param("from") Instant from, @Param("to") Instant to);
 }

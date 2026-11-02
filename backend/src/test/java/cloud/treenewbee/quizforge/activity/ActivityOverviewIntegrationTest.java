@@ -139,18 +139,21 @@ class ActivityOverviewIntegrationTest extends MySqlTestBase {
         assertThat(get("/api/admin/overview", member.cookie()).statusCode()).isEqualTo(403);
         assertThat(get("/api/admin/overview", null).statusCode()).isEqualTo(401);
 
-        // 一个 8 天前注册的用户不计入近 7 天。
-        jdbc.update("""
-                INSERT INTO account_user (id, email, name, password_hash, password_algo, is_admin, created_at, updated_at, version)
-                VALUES (?, ?, 'Old', 'x', 'scrypt-v1', FALSE, '2026-10-24 00:00:00.000', '2026-10-24 00:00:00.000', 0)
-                """, UUID.randomUUID().toString(), "old-" + System.nanoTime() + "@example.test");
+        // 窗口边界（固定时钟：今天为北京时间 2026-11-01）：[2026-10-25T16:00Z, 2026-11-01T16:00Z)。
+        // 窗口前一毫秒与“明天”0 点的用户都不计入，窗口第一毫秒计入。
+        account("2026-10-24 00:00:00.000");
+        account("2026-10-25 15:59:59.999");
+        account("2026-10-25 16:00:00.000");
+        account("2026-11-01 16:00:00.000");
         post("/api/activity", "{\"kind\":\"practice\"}", member.cookie());
         post("/api/activity", "{\"kind\":\"heartbeat\"}", admin.cookie());
 
         JsonNode overview = JSON.readTree(get("/api/admin/overview", admin.cookie()).body());
         long total = jdbc.queryForObject("SELECT COUNT(*) FROM account_user", Long.class);
-        long recent = jdbc.queryForObject("SELECT COUNT(*) FROM account_user WHERE created_at >= ?", Long.class,
-                "2026-10-25 16:00:00");
+        // 共享数据库中还有其他测试按真实时间创建的用户：期望值使用与应用完全相同的上下界计算，
+        // 不依赖运行当天的日期，也不依赖其他测试留下的数据。
+        long recent = jdbc.queryForObject("SELECT COUNT(*) FROM account_user WHERE created_at >= ? AND created_at < ?",
+                Long.class, "2026-10-25 16:00:00.000", "2026-11-01 16:00:00.000");
         assertThat(overview.path("users").path("total").asLong()).isEqualTo(total);
         assertThat(overview.path("users").path("newLast7Days").asLong()).isEqualTo(recent).isLessThan(total);
         assertThat(overview.path("online").asLong()).isEqualTo(2);
@@ -158,6 +161,13 @@ class ActivityOverviewIntegrationTest extends MySqlTestBase {
                 jdbc.queryForObject("SELECT COALESCE(SUM(storage_used), 0) FROM quota_account", Long.class));
         JsonNode trend = overview.path("trend");
         assertThat(trend.size()).isEqualTo(7);
+        long trendSum = 0;
+        for (JsonNode day : trend) trendSum += day.path("registered").asLong();
+        assertThat(trendSum).isEqualTo(overview.path("users").path("newLast7Days").asLong());
+        // 窗口第一毫秒注册的用户落在第一天。
+        assertThat(trend.get(0).path("registered").asLong()).isEqualTo(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM account_user WHERE created_at >= ? AND created_at < ?", Long.class,
+                "2026-10-25 16:00:00.000", "2026-10-26 16:00:00.000")).isPositive();
         assertThat(trend.get(0).path("day").asString()).isEqualTo("2026-10-26");
         JsonNode today = trend.get(6);
         assertThat(today.path("day").asString()).isEqualTo("2026-11-01");
@@ -182,6 +192,14 @@ class ActivityOverviewIntegrationTest extends MySqlTestBase {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         return new Session(JSON.readTree(response.body()).path("user").path("id").asString(),
                 response.headers().firstValue("Set-Cookie").orElseThrow().split(";")[0]);
+    }
+
+    private void account(String createdAt) {
+        jdbc.update("""
+                INSERT INTO account_user (id, email, name, password_hash, password_algo, is_admin, created_at, updated_at, version)
+                VALUES (?, ?, 'Edge', 'x', 'scrypt-v1', FALSE, ?, ?, 0)
+                """, UUID.randomUUID().toString(), "edge-" + SEQUENCE.incrementAndGet() + "-" + System.nanoTime()
+                + "@example.test", createdAt, createdAt);
     }
 
     private boolean practiced(String userId) {
