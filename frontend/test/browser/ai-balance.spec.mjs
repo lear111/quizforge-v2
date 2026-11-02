@@ -84,9 +84,28 @@ test('AI balance: default credit, admin codes and adjustments, redeem on the acc
   await expect(memberPage.locator('#ai-ledger li').first()).toContainText('管理员调整：浏览器测试扣减');
   await expect(memberPage.locator('#ai-ledger li')).toHaveCount(3);
 
+  // AI 服务：添加 Key 后只显示末 4 位；可以停用和删除。
+  await page.goto('/admin/#ai-service');
+  await expect(page.getByRole('heading',{name:'AI 服务'})).toBeVisible();
+  await expect(page.locator('.qa-facts')).toContainText('qwen');
+  const secret=`sk-browser-${crypto.randomUUID()}`;
+  const keyForm=page.locator('form[data-action="add-ai-key"]');
+  await keyForm.locator('input[name="apiKey"]').fill(secret);
+  await keyForm.locator('input[name="note"]').fill('浏览器测试 Key');
+  await keyForm.locator('button[type="submit"]').click();
+  await expect(page.locator('#admin-toast')).toHaveText('Key 已保存');
+  const keyRow=page.locator('tr[data-key-id]').filter({hasText:'浏览器测试 Key'});
+  await expect(keyRow).toContainText(`…${secret.slice(-4)}`);
+  await expect(page.locator('main')).not.toContainText(secret);
+  await keyRow.getByRole('button',{name:'停用'}).click();
+  await expect(page.locator('#admin-toast')).toHaveText('已停用');
+  await page.locator('tr[data-key-id]').filter({hasText:'浏览器测试 Key'}).getByRole('button',{name:'删除'}).click();
+  await expect(page.locator('#admin-toast')).toHaveText('已删除');
+  await expect(page.locator('tr[data-key-id]').filter({hasText:'浏览器测试 Key'})).toHaveCount(0);
+
   // 操作日志中显示中文的操作名。
   await page.goto('/admin/#audit');
-  for(const label of ['调整 AI 余额','生成 AI 兑换码','停用 AI 兑换码'])await expect(page.locator('tbody')).toContainText(label);
+  for(const label of ['调整 AI 余额','生成 AI 兑换码','停用 AI 兑换码','添加 AI Key','停用 AI Key','删除 AI Key'])await expect(page.locator('tbody')).toContainText(label);
 
   // 非管理员不能访问兑换码接口。
   expect((await memberPage.request.get('/api/admin/ai-codes')).status()).toBe(403);

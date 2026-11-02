@@ -19,6 +19,13 @@ const ACTIONS = {
   'ai-balance-adjusted': '调整 AI 余额',
   'ai-codes-created': '生成 AI 兑换码',
   'ai-code-revoked': '停用 AI 兑换码',
+  'ai-key-added': '添加 AI Key',
+  'ai-key-enabled': '启用 AI Key',
+  'ai-key-disabled': '停用 AI Key',
+  'ai-key-prices': '修改 AI Key 单价',
+  'ai-keys-reordered': '调整 AI Key 顺序',
+  'ai-key-deleted': '删除 AI Key',
+  'ai-key-tested': '测试 AI Key',
 };
 
 export async function render(container, context) {
