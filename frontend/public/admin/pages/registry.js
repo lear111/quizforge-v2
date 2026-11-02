@@ -10,6 +10,7 @@ export const pages = Object.freeze([
   { id: 'users', label: '用户管理', group: '用户与账号', load: () => import('./users.js') },
   { id: 'authentication', label: '登录与注册设置', group: '用户与账号', load: () => import('./authentication.js') },
   { id: 'invitations', label: '邀请码', group: '用户与账号', load: () => import('./invitations.js') },
+  { id: 'notifications', label: '站内通知', group: '运营', load: () => import('./notifications.js') },
   { id: 'audit', label: '操作日志', group: '系统', load: () => import('./audit.js') },
 ]);
 
