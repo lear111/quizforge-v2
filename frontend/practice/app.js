@@ -100,7 +100,7 @@ async function mutate(pane,action,data,options={}){
   if(action==='submit'||action==='retry'&&pane.plugin?.frame?.qfSharedAnswerAreas?.length){pane.whiteboard.flush();await saveInk(pane);}
   const value=await pane.writes.enqueue(qid,action,answerState?{...data,answerState}:data,{contentVersion});
   if(action==='whiteboard')return {ok:true,data:{revision:value.whiteboard.revision}};
-  if(preview)confirmAnswerPreview(pane,qid,preview);
+  if(preview){confirmAnswerPreview(pane,qid,preview);if(active()===pane)renderOutline();}
   if(action==='submit'||action==='retry')pane.answerPreviews?.delete(qid);
   for(const [stateId,snapshot]of pane.answerStateSnapshots||[])if(snapshot.qid===qid&&(['submit','retry'].includes(action)||stateId===options.answerStateId))pane.answerStateSnapshots.delete(stateId);
   if(active()===pane){renderOutline();saveStatus(pane.writes.hasFailures?'仍有内容未保存':pane.answerPreviews?.size?'答案尚未保存':practiceSaveLabel(pane),pane.writes.hasFailures?'error':pane.answerPreviews?.size?'saving':'');}

@@ -172,12 +172,14 @@ public class PracticeReadService {
     }
 
     /** Internal rule input; ownership, availability and exact question lookup match the read path. */
-    public record RuleQuestion(JsonNode data, RulePackage rulePackage) {}
+    public record RuleQuestion(JsonNode data, RulePackage rulePackage, JsonNode outline) {
+        public RuleQuestion(JsonNode data, RulePackage rulePackage) { this(data, rulePackage, null); }
+    }
 
     public RuleQuestion ruleQuestion(String userId, String collectionId, String questionId) {
         var source = source(userId, collectionId, questionId);
         return new RuleQuestion(json.readTree(source.question().data()),
-                pages.rulePackage(pages.extension(source.question().extensionDigest())));
+                pages.rulePackage(pages.extension(source.question().extensionDigest())), decode(source.question().outline()));
     }
 
     private record QuestionSource(PracticeReadRows.Collection collection, QuestionRow question) {}

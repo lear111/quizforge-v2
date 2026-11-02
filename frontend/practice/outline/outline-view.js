@@ -3,6 +3,11 @@ import {visibleQuestions,visibleQuestionId,hasScoreSummary,outlineStateFor} from
 
 const renderedOutlines=new WeakMap();
 
+// 未提供进度与已确认未作答不同；校验失败不能显示成确定的空答案。
+export function draftChildStatus(reported,state){
+  return reported==='draft'?'draft':reported==='unanswered'?'unanswered':state.status==='draft'&&state.answerState?.status!=='unanswered'?'unknown':'unanswered';
+}
+
 export function renderOutlineView({document,pane,onNavigate,onSummary}){
   const $=selector=>document.querySelector(selector);
   const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!=null)node.textContent=text;return node;};
@@ -17,7 +22,7 @@ export function renderOutlineView({document,pane,onNavigate,onSummary}){
   if(previous&&previous.pane===pane&&previous.signature===signature)return;
   root.replaceChildren();
   const roundScores=new Map(pane?.summaryShown?(pane.scoreSummary?.questions||[]).map(question=>[question.id,question]):[]);
-  const statusLabels={unanswered:'未作答',draft:'已作答，待提交',pending:'已提交，待评分',correct:'正确',incorrect:'错误'};
+  const statusLabels={unanswered:'未作答',draft:'已作答，待提交',unknown:'作答已保存，小题状态暂未知',pending:'已提交，待评分',correct:'正确',incorrect:'错误'};
   for(const group of consecutiveQuestionGroups(rows)){
     const section=el('section','outline-group'),matrix=el('div','outline-matrix');if(group.name!=null)section.append(el('h2','outline-group-title',group.name));section.append(matrix);root.append(section);
     for(const {question:row,number}of group.items){
@@ -28,7 +33,7 @@ export function renderOutlineView({document,pane,onNavigate,onSummary}){
       const childStates=new Map((Array.isArray(details)?details:[]).filter(item=>typeof item?.id==='string'&&Object.hasOwn(statusLabels,item.status)).map(item=>[item.id,item.status]));
       for(const item of children){
         const reported=childStates.get(item.id);
-        const status=submitted?(reported==='draft'?'':reported||''):reported==='draft'?'draft':'unanswered';
+        const status=submitted?(reported==='draft'?'':reported||''):draftChildStatus(reported,state);
         const selected=row.id===qid&&pane.outlineItemId===item.id,child=el('button',`outline-item outline-child ${status}${selected?' active':''}`,item.label);
         const statusLabel=statusLabels[status]||'未提供小题状态';
         child.type='button';child.dataset.questionId=row.id;child.dataset.outlineItemId=item.id;child.title=`第 ${label} 题 · ${item.label} · ${statusLabel}`;child.setAttribute('aria-label',`第 ${label} 题，小题 ${item.label}：${statusLabel}`);child.setAttribute('aria-current',selected?'true':'false');

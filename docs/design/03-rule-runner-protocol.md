@@ -123,6 +123,10 @@
 
 ### 5.2 保存草稿
 
+> **L1.6 产品任务更正（2026-11-01）：** 在线版先提交草稿与幂等回执，再在事务外调用本题 `validateAnswer` 计算进度；超时、规则拒绝或不可用不撤销草稿，`answerState / outlineStates = null` 表示进度暂未知。下方“校验失败拒绝保存”是早期契约，已由本条取代。规则请求默认 deadline 为 250ms（`qf.practice.draft-validation-deadline` 可配置），Java HTTP 最多另等协议既有的 1 秒宽限，不占数据库事务。
+>
+> `answer-state` 能力沿用 API：校验成功后接收页面随本次答案发送的进度，只允许本题大纲 ID 与 `unanswered / draft`。旧拓展使用 `outlineScore.outlineStates`；没有返回小题进度时按答案非空推断。部分作答由各小题状态的组合表达，不增加规则 API 枚举。进度写入限定同一用户、同一题、同一 revision 且仍为 draft；同一请求的进度写入原回执一次，重放不重新调用规则。
+
 ```text
 1. validateAnswer(data, answer, outlineAfterValidation = !answerStateDeclared)
 2. 校验通过 → 事务内条件更新作答状态，同时写入 outlineScore 中的小题进度
