@@ -339,6 +339,21 @@ class LibraryIntegrationTest extends MySqlTestBase {
         }
     }
 
+    @Test void reimportOfSharedLegacyContentBackfillsAuthorDocumentWithoutChangingBankId() throws Exception {
+        var first = imported(user, "单选题");
+        var original = exportMapper.document(user, first.id()).orElseThrow();
+        jdbc.update("DELETE FROM content_bank_document WHERE bank_id=?", first.bankId());
+        try {
+            var second = imported(user(), "单选题");
+            assertThat(second.bankId()).isEqualTo(first.bankId());
+            var download = exports.export(user, new LibraryExportService.Request(first.id(), null));
+            assertThat(exportedUuid(download.path())).isEqualTo(ImportArchives.BANK_IDS.get("单选题"));
+            assertThat(download.warnings()).isEmpty();
+        } finally {
+            mapper.preserve(first.bankId(), original.authorJson(), original.authorBindings());
+        }
+    }
+
     @Test void overLimitDeletesPartialTemporaryFileAndDoesNotTouchTraffic() throws Exception {
         var bank = imported(user, "单选题");
         var small = new LibraryExportService(mapper, exportMapper, blobs, json, Clock.systemUTC(), ROOT.toString(), 100);

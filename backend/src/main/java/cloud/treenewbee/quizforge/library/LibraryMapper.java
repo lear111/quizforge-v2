@@ -78,7 +78,7 @@ public interface LibraryMapper {
     int update(@Param("userId") String userId, @Param("id") String id,
             @Param("title") String title, @Param("group") String group);
 
-    @Insert("INSERT INTO content_bank_document (bank_id, author_json, author_bindings) VALUES (#{id}, #{document}, #{bindings})")
+    @Insert("INSERT IGNORE INTO content_bank_document (bank_id, author_json, author_bindings) VALUES (#{id}, #{document}, #{bindings})")
     int preserve(@Param("id") String id, @Param("document") String document, @Param("bindings") String bindings);
 
     @Select("SELECT CAST(author_json AS CHAR CHARACTER SET utf8mb4) FROM content_bank_document WHERE bank_id = #{id}")

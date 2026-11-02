@@ -246,8 +246,9 @@ public class ImportService {
             ids.put(bank.hash(), id);
             Map<String, String> bindings = new LinkedHashMap<>();
             extensions.forEach((path, extension) -> bindings.put(path, extension.parsed().digest()));
-            if (!created) continue;
+            // 独立文档表的忽略插入可补全旧内容，不升级 content_bank 上的共享锁。
             libraryMapper.preserve(id, encode(author), encode(bindings));
+            if (!created) continue;
             List<QuestionRow> rows = new ArrayList<>();
             for (int index = 0; index < bank.questions().size(); index++) {
                 Question question = bank.questions().get(index);
