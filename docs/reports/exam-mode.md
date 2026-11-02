@@ -29,7 +29,7 @@
 | `backend/.../content/infrastructure/ContentAccessMapper.java` | 开考后题库更新时，仍按冻结 bank 授权拓展与资源 |
 | `backend/.../db/migration/V22__personal_exams.sql` | 任务 kind、冻结标题、历史反查索引；不修改既有迁移 |
 | `backend/.../test/.../exam/ExamModeIntegrationTest.java` | 真实 MySQL、真实 runner、可控时钟、门控并发及本机性能探针 |
-| `frontend/practice/exam/exam-mode.js`、`practice/practice-context.js` | 接通既有考试界面，完成后人工核对入口与阶段能力 |
+| `frontend/practice/exam/exam-mode.js`、`exam-mode.css`、`practice/practice-context.js` | 接通既有考试界面，完成后人工核对入口与阶段能力 |
 | `frontend/practice/app.js`、`shared/api.js` | 考试资源沿用二进制资源解码，不把图片当 JSON |
 | `frontend/test/exam.test.mjs`、`test/browser/exam.spec.mjs` | 阶段能力、时钟、桌面与手机浏览器流程 |
 | `docs/design/01-database.md`、`02-api.md`、`07-frontend-api-map.md` | 实际字段、路由、生命周期及本次产品决定 |
@@ -86,4 +86,6 @@ runner 采样结束时启动总数 8、LRU 回收 0、超时停止 0、异常退
 
 本机独立 Compose 项目 `qf-exam-mode`，端口 8113；使用合成样例和假验证码，不连接外部部署。桌面和 375px 手机视口验证：注册 → 导入/本机审核样例 → 开始限时考试 → 图片加载 → 保存独立答案 → 校准服务器截止时间 → 自动交卷 → 原题库历史 → 查看考试结果 → 返回完成考试核对评分。截图存于 git 忽略的 `.artifacts/local/exam/`。
 
-最终构建、浏览器、CI 结果与实际 EXPLAIN 在提交 PR 前补齐。未实现 AI 评分属于明确的后续范围；没有迁移真实用户数据。
+到期扫描本机 EXPLAIN：`type=range`、`key=idx_exam_deadline`、`key_len=9`、`rows=1`、`Extra=Using index condition`，没有 filesort。
+
+最终浏览器和 CI 结果在提交 PR 前补齐。本机考试测试 27 例，0 失败、0 错误、1 个默认跳过的性能探针；Maven package 成功。未实现 AI 评分属于明确的后续范围；没有迁移真实用户数据。

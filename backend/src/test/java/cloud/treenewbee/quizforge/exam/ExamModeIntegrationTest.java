@@ -208,6 +208,7 @@ class ExamModeIntegrationTest extends MySqlTestBase {
         assertThat(regular.path("whiteboard").path("draft").path("strokes")).isEmpty();
         for (String action:List.of("submit", "retry", "review", "ai"))
         error(action(id, "判断题", action, 1, action, Map.of("answer", answer("判断题", true))), 409, "EXAM_ACTION_FORBIDDEN");
+        error(send("POST", question(id, "判断题") + "/ai/grade", Map.of()), 409, "EXAM_ACTION_FORBIDDEN");
         error(send("POST", "/api/collections/bank/" + id + "/questions/" + qid("判断题") + "/actions", Map.of("action", "submit", "requestId", "bypass", "revision", 1, "data", Map.of("answer", answer("判断题", true)))), 404, "NOT_FOUND");
         error(send("GET", "/api/collections/bank/" + id + "/summary", null), 404, "NOT_FOUND");
         verifyNoInteractions(grader);

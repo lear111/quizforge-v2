@@ -106,6 +106,17 @@ public class ExamController {
         throw new ApiException(HttpStatus.CONFLICT, "EXAM_ACTION_FORBIDDEN", "考试只能保存草稿与白板，交卷后才能人工评分");
     }
 
+    @PostMapping({"/api/collections/exam/{id}/questions/{qid}/ai/grade",
+            "/api/collections/exam/{id}/questions/{qid}/ai/tasks/{taskId}/retry",
+            "/api/collections/exam/{id}/questions/{qid}/ai/tasks/{taskId}/confirm"})
+    public ResponseEntity<?> ai(Principal principal, @PathVariable String id, @PathVariable String qid) {
+        var exam = exams.observe(principal.getName(), id);
+        reads.resolveTarget(principal.getName(), id, qid);
+        if (exam.status().equals("in_progress"))
+            throw new ApiException(HttpStatus.CONFLICT, "EXAM_ACTION_FORBIDDEN", "考试期间不能进行 AI 评分");
+        throw new ApiException(HttpStatus.NOT_IMPLEMENTED, "FEATURE_NOT_AVAILABLE", "考试 AI 评分尚未开放");
+    }
+
     @GetMapping("/api/collections/exam/{id}/questions/{qid}/page")
     public ResponseEntity<?> page(Principal principal, @PathVariable String id, @PathVariable String qid) throws IOException {
         exams.observe(principal.getName(), id);

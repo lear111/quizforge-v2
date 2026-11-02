@@ -18,7 +18,8 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   const bank=collections.find(row=>row.title==='单选题');expect(bank.id).toMatch(/^[a-f0-9-]{36}$/);
   sql(`INSERT INTO admin_extension_review(digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id='${bank.id}' ON DUPLICATE KEY UPDATE status='approved';`);
   await page.goto('/practice/');
-  await expect(page.locator('.question-pane:not([hidden]) iframe.question-frame')).toHaveCount(1);
+  await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+  await expect(page.locator('#collection-loading')).toBeHidden();
   if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
   await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
   await expect(page.locator('#collection-loading')).toBeHidden();
@@ -45,13 +46,16 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   await expect.poll(async()=>{const response=await page.request.get(`/api/collections/exam/${exam.id}/exam`);expect(response.status()).toBe(200);return (await response.json()).status;},{timeout:60000}).toBe('completed');
   await expect(page.locator('#exam-status')).toContainText('考试已完成');
   await page.reload();
-  await expect(page.locator('.question-pane:not([hidden]) iframe.question-frame')).toHaveCount(1);
+  await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+  await expect(page.locator('#collection-loading')).toBeHidden();
   if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
   await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
   await page.locator('#history-open').click();await expect(page.locator('.history-exam-badge')).toContainText('考试');
   await page.locator('.history-row').first().click();
   await expect(page.locator('#mode-label')).toContainText('考试');
   await expect(page.frameLocator('.question-pane:not([hidden]) iframe.question-frame').locator('#result')).toBeVisible();
+  await expect(page.locator('#exam-review')).toBeVisible();
+  expect((await page.locator('#exam-review').boundingBox()).height).toBeLessThan(60);
   await page.screenshot({path:resolve(directory,`exam-${info.project.name}-history.png`),fullPage:true,animations:'disabled'});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.locator('#exam-review')).toBeVisible();
