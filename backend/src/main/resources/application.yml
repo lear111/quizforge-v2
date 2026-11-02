@@ -4,7 +4,8 @@ spring:
   servlet:
     multipart:
       max-file-size: 128MB
-      max-request-size: 129MB
+      # 发布到题库广场：128 MiB 题库包 + 最多 6 张 3 MiB 截图 + 表单字段。
+      max-request-size: 150MB
       file-size-threshold: 0
       resolve-lazily: true
   datasource:

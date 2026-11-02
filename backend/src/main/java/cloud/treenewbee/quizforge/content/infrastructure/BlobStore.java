@@ -43,44 +43,75 @@ public final class BlobStore {
         // The caller may reuse its array while this write is pending.
         byte[] content = bytes.clone();
         String sha256 = HexFormat.of().formatHex(digest(content));
-        Path target = path(sha256);
         if (exists(sha256)) {
-            verifyExisting(target, sha256);
+            verifyExisting(path(sha256), sha256);
             register(sha256, content.length);
             return sha256;
         }
-        Path temporaryDirectory = directory(root.resolve(".tmp"));
-        Path temporary = Files.createTempFile(temporaryDirectory, "blob-", ".tmp");
+        Path temporary = Files.createTempFile(directory(root.resolve(".tmp")), "blob-", ".tmp");
         try {
             try (FileChannel output = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
                 ByteBuffer buffer = ByteBuffer.wrap(content);
                 while (buffer.hasRemaining()) output.write(buffer);
-                // The read-only runner uses a different UID on the shared volume.
-                try { Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r--r--")); }
-                catch (UnsupportedOperationException ignored) { /* Windows ACLs govern visibility. */ }
                 output.force(true);
             }
-            ReentrantLock local = LOCKS[Math.floorMod(root.hashCode(), LOCKS.length)];
-            local.lock();
-            try (FileChannel lock = FileChannel.open(root.resolve(".publish.lock"),
-                    StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
-                    FileLock ignored = lock.lock()) {
-                // OS lock coordinates separate JVMs; JVM lock avoids overlapping FileLocks.
-                directory(target.getParent());
-                if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-                    verifyExisting(target, sha256);
-                } else {
-                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-                    forceDirectory(target.getParent());
-                }
-            } finally { local.unlock(); }
+            publish(temporary, sha256);
             // A failed DB write may leave an orphan. A retry registers the same immutable file.
             register(sha256, content.length);
             return sha256;
         } finally { Files.deleteIfExists(temporary); }
     }
 
-    private void register(String sha256, int size) {
+    /**
+     * 按流复制一个可能很大的文件（例如作者上传的原始 .qbank），不整体读入内存；内容与原文件逐字节一致。
+     */
+    public String putFile(Path source) throws IOException {
+        Path temporary = Files.createTempFile(directory(root.resolve(".tmp")), "blob-", ".tmp");
+        try {
+            MessageDigest digest = sha256();
+            long size = 0;
+            try (InputStream input = Files.newInputStream(source);
+                 var output = Files.newOutputStream(temporary, StandardOpenOption.WRITE)) {
+                byte[] buffer = new byte[65536];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read);
+                    output.write(buffer, 0, read);
+                    size += read;
+                }
+            }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) { channel.force(true); }
+            String sha256 = HexFormat.of().formatHex(digest.digest());
+            if (exists(sha256)) verifyExisting(path(sha256), sha256);
+            else publish(temporary, sha256);
+            register(sha256, size);
+            return sha256;
+        } finally { Files.deleteIfExists(temporary); }
+    }
+
+    /** 把已写好的临时文件原子地移到内容地址；调用方随后删除临时文件（已移走时不存在）。 */
+    private void publish(Path temporary, String sha256) throws IOException {
+        Path target = path(sha256);
+        // The read-only runner uses a different UID on the shared volume.
+        try { Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r--r--")); }
+        catch (UnsupportedOperationException ignored) { /* Windows ACLs govern visibility. */ }
+        ReentrantLock local = LOCKS[Math.floorMod(root.hashCode(), LOCKS.length)];
+        local.lock();
+        try (FileChannel lock = FileChannel.open(root.resolve(".publish.lock"),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                FileLock ignored = lock.lock()) {
+            // OS lock coordinates separate JVMs; JVM lock avoids overlapping FileLocks.
+            directory(target.getParent());
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                verifyExisting(target, sha256);
+            } else {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+                forceDirectory(target.getParent());
+            }
+        } finally { local.unlock(); }
+    }
+
+    private void register(String sha256, long size) {
         blobs.insertIfAbsent(new BlobRow(HexFormat.of().parseHex(sha256), size,
                 "application/octet-stream", clock.instant().truncatedTo(ChronoUnit.MILLIS)));
     }

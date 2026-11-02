@@ -147,7 +147,7 @@ class ImportPrepMapperTest extends MySqlTestBase {
     }
 
     private static BankRow bank(byte[] digest) {
-        return new BankRow(Ids.uuidV7(), digest, "题库", null, 2, "{}", null, 1, NOW);
+        return new BankRow(Ids.uuidV7(), digest, null, null, "题库", null, 2, "{}", null, 1, NOW);
     }
 
     private static QuestionRow question(String bank, String id, int position) throws Exception {

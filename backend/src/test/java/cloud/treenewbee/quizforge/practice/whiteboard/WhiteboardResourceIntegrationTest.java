@@ -254,7 +254,7 @@ class WhiteboardResourceIntegrationTest extends MySqlTestBase {
         jdbc.update("INSERT INTO content_extension_package (digest,extension_id,version,name,manifest,api_major,api_min_minor,created_at) VALUES (UNHEX(?),'test.board','1','白板测试',?,1,0,NOW(3))",digest,"{\"rules\":\"rules.js\",\"questionSchema\":\"q.json\",\"answerSchema\":\"a.json\",\"requiresApi\":{\"major\":1,\"minMinor\":0,\"capabilities\":[]}}");
         for(String file:List.of("rules.js","q.json","a.json"))jdbc.update("INSERT INTO content_extension_file VALUES (UNHEX(?),?,UNHEX(REPEAT('bb',32)))",digest,file);
         jdbc.update("INSERT INTO admin_extension_review (digest,extension_id,version,status) VALUES (UNHEX(?),'test.board','1','approved')",digest);
-        jdbc.update("INSERT INTO content_bank VALUES (?,UNHEX(?),'白板测试',NULL,2,'{\"whiteboard\":true}',NULL,1,NOW(3))",bank,Ids.uuidV7().replace("-","")+"b".repeat(32));
+        jdbc.update("INSERT INTO content_bank (id,content_sha256,source_title,description,format_version,features,listening,question_count,created_at) VALUES (?,UNHEX(?),'白板测试',NULL,2,'{\"whiteboard\":true}',NULL,1,NOW(3))",bank,Ids.uuidV7().replace("-","")+"b".repeat(32));
         jdbc.update("INSERT INTO content_question (bank_id,question_id,position,title,extension_digest,data,max_score,content_sha256) VALUES (?,'q1',0,'测试题',UNHEX(?),'{}',1,UNHEX(REPEAT('aa',32)))",bank,digest);
         jdbc.update("INSERT INTO practice_collection (id,user_id,bank_id,title,source,created_at) VALUES (?,?,?,'白板测试','{}',NOW(3))",collection,user.userId(),bank);
         jdbc.update("INSERT INTO practice_context (id,user_id,collection_id,kind,scope_key,created_at,updated_at) VALUES (?,?,?,'practice','default',NOW(3),NOW(3))",context,user.userId(),collection);

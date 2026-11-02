@@ -26,6 +26,11 @@ const ACTIONS = {
   'ai-keys-reordered': '调整 AI Key 顺序',
   'ai-key-deleted': '删除 AI Key',
   'ai-key-tested': '测试 AI Key',
+  'pack-revision-approved': '题库版本审核通过',
+  'pack-revision-rejected': '题库版本审核拒绝',
+  'extension-approved': '批准拓展',
+  'extension-rejected': '拒绝拓展',
+  'extension-revoked': '撤销拓展',
 };
 
 export async function render(container, context) {

@@ -440,10 +440,11 @@ CREATE TABLE exam_exam (
 
 | 模块 | 表 | 主要字段 / 说明 |
 | --- | --- | --- |
-| catalog | `catalog_pack` | 对应旧 `packs`：id, user_id, title, summary, description, category, tags(JSON), version, downloads, status, revision, **approved_revision**（最新已审核版本）, review_note, reviewed_by/at, created/updated_at |
-| catalog | `catalog_pack_bank` | 某版本中的一本题库：pack_id, revision, bank_key, bank_id（共享内容）, title；DDL 见[题库共享与版本更新](04-bank-sharing-and-updates.md)第 4 节 |
-| catalog | `catalog_pack_revision` | 每个已提交版本的 `.qbank`：pack_id, revision, blob_sha256, size, submitted_at（对应旧 `pack_admin_reviews`，不可变） |
-| catalog | `catalog_pack_file` | 截图等附件：id, pack_id, kind, name, mime, size, blob_sha256 |
+| catalog | `catalog_pack` | id, owner_id, latest_revision, **approved_revision**（最新已审核版本）, status(active/deleted), created/updated/deleted_at；广场信息按版本保存在 `catalog_pack_revision`（V21，设计 04 第 6.6 节）。下载计数在题库广场 2/4 增加 |
+| catalog | `catalog_pack_bank` | 某版本中的一本题库：pack_id, revision, bank_uuid, bank_id（共享内容）, title, position；DDL 见 V21 |
+| catalog | `catalog_pack_revision` | 每个已提交版本：pack_id, revision, 广场信息（title, summary, description, category, tags, release_notes）, source(upload/library), filename, blob_sha256, size, extension_digests, review_status/reviewer_id/review_note/reviewed_at, submitted_by/at |
+| catalog | `catalog_pack_file` | 截图等附件，按版本保存：id, pack_id, revision, kind, position, name, mime, size, blob_sha256 |
+| catalog | `catalog_pack_event` | 发布者操作与审核结果的记录（只插入）：pack_id, revision, actor_id, action, detail, created_at |
 | catalog | `catalog_pack_revision` 的审核列 | 每个版本只审核一次（需求 FR-10 v1.5），审核状态、审核人、意见、时间作为版本表的列，不另设审核记录表；云端许可（含该版本所用拓展摘要列表）同样记在版本上 |
 | catalog | `catalog_favorite`、`catalog_like` | 收藏、点赞：PK(user_id, pack_id)，防止重复；点赞只后台记录 |
 | notify | `notification` | id, kind（system / announcement / bank_update）, title, body, sender_kind（system / admin）, sender_id（管理员发送时填写）, pack_id（题库更新通知关联的题库包）, created_at；全站一条，不为每个用户复制（需求 FR-12） |

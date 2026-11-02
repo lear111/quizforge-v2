@@ -194,9 +194,15 @@ class NotificationIntegrationTest extends MySqlTestBase {
         Session owner = register();
         Session former = register();
         Session stranger = register();
-        String bankKey = "bank-" + UUID.randomUUID();
+        String bankKey = UUID.randomUUID().toString();
         collection(owner.id(), bankKey, false);
         collection(former.id(), bankKey, true);
+        // 私人导入了同一 UUID 的题库：不是从题库广场加入的，不接收题库通知。
+        Session importer = register();
+        jdbc.update("""
+                INSERT INTO practice_collection (id, user_id, bank_id, title, source, source_bank_uuid, created_at)
+                VALUES (?, ?, ?, '题库', '{"type":"upload"}', ?, NOW(3))
+                """, UUID.randomUUID().toString(), importer.id(), UUID.randomUUID().toString(), bankKey);
 
         String id = notifications.publishToBankOwners(bankKey, "题库升级到 1.1", "新增 10 道题", owner.id());
         assertThat(count("notification")).isEqualTo(1);
@@ -205,6 +211,7 @@ class NotificationIntegrationTest extends MySqlTestBase {
         assertThat(unseen(owner)).isTrue();
         assertThat(unseen(former)).isFalse();
         assertThat(unseen(stranger)).isFalse();
+        assertThat(unseen(importer)).isFalse();
         assertThat(json(send("GET", "/api/notifications", null, owner.cookie())).path("items").get(0).path("id").asString())
                 .isEqualTo(id);
         assertThat(json(send("GET", "/api/notifications", null, stranger.cookie())).path("items").size()).isZero();
@@ -216,7 +223,7 @@ class NotificationIntegrationTest extends MySqlTestBase {
     @Test
     void bellQueryUsesTheAudienceIndexInsteadOfScanning() throws Exception {
         Session user = register();
-        String bankKey = "bank-" + UUID.randomUUID();
+        String bankKey = UUID.randomUUID().toString();
         collection(user.id(), bankKey, false);
         // 足够多的通知，让优化器在索引与全表扫描之间真正做出选择。
         jdbc.update("""
@@ -284,9 +291,10 @@ class NotificationIntegrationTest extends MySqlTestBase {
 
     private void collection(String userId, String bankKey, boolean deleted) {
         jdbc.update("""
-                INSERT INTO practice_collection (id, user_id, bank_id, title, source, source_bank_key, created_at, deleted_at)
-                VALUES (?, ?, ?, '题库', '{}', ?, NOW(3), ?)
-                """, UUID.randomUUID().toString(), userId, UUID.randomUUID().toString(), bankKey,
+                INSERT INTO practice_collection (id, user_id, bank_id, title, source, source_pack_id, source_bank_uuid,
+                                                 created_at, deleted_at)
+                VALUES (?, ?, ?, '题库', '{}', ?, ?, NOW(3), ?)
+                """, UUID.randomUUID().toString(), userId, UUID.randomUUID().toString(), UUID.randomUUID().toString(), bankKey,
                 deleted ? java.sql.Timestamp.valueOf("2026-11-01 00:00:00") : null);
     }
 

@@ -39,7 +39,7 @@ class ContentMapperTest extends MySqlTestBase {
     static byte[] hash() throws Exception { return MessageDigest.getInstance("SHA-256").digest(Ids.uuidV7().getBytes(StandardCharsets.UTF_8)); }
 
     private BankRow bank(byte[] digest) {
-        return new BankRow(Ids.uuidV7(), digest, "中文题库", "说明😀", 1, "{\"exam\":true}", "{\"tracks\":[]}", 2, NOW);
+        return new BankRow(Ids.uuidV7(), digest, null, null, "中文题库", "说明😀", 1, "{\"exam\":true}", "{\"tracks\":[]}", 2, NOW);
     }
 
     @Test
@@ -89,7 +89,7 @@ class ContentMapperTest extends MySqlTestBase {
         }
         assertThatThrownBy(() -> banks.insert(bank(digest))).isInstanceOf(DuplicateKeyException.class);
         assertThat(banks.findById(Ids.uuidV7())).isEmpty(); assertThat(banks.findByContentSha256(hash())).isEmpty();
-        var nullable = new BankRow(Ids.uuidV7(), hash(), "上传题库", null, 1, "{}", null, 0, NOW);
+        var nullable = new BankRow(Ids.uuidV7(), hash(), null, null, "上传题库", null, 1, "{}", null, 0, NOW);
         banks.insert(nullable);
         assertThat(banks.findById(nullable.id()).orElseThrow()).usingRecursiveComparison().isEqualTo(nullable);
     }

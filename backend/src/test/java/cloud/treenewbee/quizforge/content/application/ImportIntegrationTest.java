@@ -353,7 +353,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(response.statusCode()).isEqualTo(200);
         String bank = body(response).path("collections").get(0).path("bankId").asString();
         assertThat(availability.isAvailable(bank)).isFalse();
-        jdbc.update("INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT digest,extension_id,version,'approved' FROM content_extension_package");
+        jdbc.update("UPDATE admin_extension_review SET status='approved'");
         assertThat(availability.isAvailable(bank)).isTrue();
         for (String status : List.of("revoked", "pending", "rejected")) {
             jdbc.update("UPDATE admin_extension_review SET status=?", status);
@@ -476,7 +476,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT SUM(max_score) FROM content_question", java.math.BigDecimal.class)).isEqualByComparingTo("6");
         assertThat(jdbc.queryForObject("SELECT outline->>'$.level' FROM content_question WHERE question_id='q3'", String.class)).isEqualTo("question");
         assertThat(jdbc.queryForObject("SELECT outline->>'$.level' FROM content_question WHERE question_id='q1'", String.class)).isEqualTo("parts");
-        jdbc.update("INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT digest,extension_id,version,'approved' FROM content_extension_package");
+        jdbc.update("UPDATE admin_extension_review SET status='approved'");
         String path = "/api/collections/bank/" + imported.path("id").asString();
         var overview = get(cookie, path); assertThat(overview.statusCode()).as(overview.body()).isEqualTo(200);
         JsonNode rows = body(overview).path("questions");

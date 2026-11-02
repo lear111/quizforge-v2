@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>发布题库 · QuizForge</title>
+  <link rel="icon" href="../quizforge-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../auth.css">
+  <link rel="stylesheet" href="./publish.css">
+  <script type="module" src="./publish.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="../" aria-label="QuizForge 账号中心">
+      <img src="../quizforge-icon.svg" width="40" height="40" alt="">
+      <span><strong>QuizForge</strong><span class="brand-caption">让学习更有条理</span></span>
+    </a>
+    <nav class="publish-nav" aria-label="发布">
+      <a href="#new" data-view="new">发布题库</a>
+      <a href="#mine" data-view="mine">我的发布</a>
+    </nav>
+  </header>
+  <main class="publish-main">
+    <section class="publish-card" aria-live="polite">
+      <p id="publish-feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
+      <p id="publish-notice" class="notice" role="status" hidden></p>
+      <div id="publish-view"><p class="publish-muted">正在加载…</p></div>
+    </section>
+  </main>
+  <footer>QuizForge · 在线学习，从这里开始</footer>
+</body>
+</html>

@@ -19,25 +19,46 @@ public interface BankMapper {
             """)
     boolean isAvailable(@Param("bankId") String bankId);
 
+    /** 题库所用拓展中最差的审核状态及未通过的原因（设计 04 第 6.2 节）；在读取时由白名单推算。 */
+    record ReviewState(String status, String reason) {}
+
+    @Select("""
+            SELECT CASE WHEN SUM(r.status = 'rejected') > 0 THEN 'rejected'
+                        WHEN SUM(r.status = 'revoked') > 0 THEN 'revoked'
+                        WHEN SUM(r.digest IS NULL OR r.status = 'pending') > 0 THEN 'pending'
+                        ELSE 'approved' END AS status,
+                   MAX(CASE WHEN r.status = 'rejected' THEN r.reason END) AS reason
+              FROM (SELECT DISTINCT extension_digest FROM content_question WHERE bank_id = #{bankId}) q
+              LEFT JOIN admin_extension_review r ON r.digest = q.extension_digest
+            """)
+    ReviewState reviewState(@Param("bankId") String bankId);
+
     @Select("""
             SELECT id FROM content_bank WHERE content_sha256 = #{contentSha256} FOR SHARE
             """)
     Optional<String> findIdByContentSha256ForShare(@Param("contentSha256") byte[] contentSha256);
 
+    /** 本功能之前导入的内容没有 UUID 与 bank.json：再次导入相同内容时补上（内容相同，两者也相同）。 */
+    @org.apache.ibatis.annotations.Update("""
+            UPDATE content_bank SET bank_uuid = #{bankUuid}, bank_json_sha256 = #{bankJsonSha256}
+             WHERE id = #{id} AND bank_json_sha256 IS NULL
+            """)
+    int fillIdentity(@Param("id") String id, @Param("bankUuid") String bankUuid, @Param("bankJsonSha256") byte[] bankJsonSha256);
+
     @Insert("""
-            INSERT INTO content_bank (id, content_sha256, source_title, description, format_version, features, listening, question_count, created_at)
-            VALUES (#{id}, #{contentSha256}, #{sourceTitle}, #{description}, #{formatVersion}, #{features}, #{listening}, #{questionCount}, #{createdAt})
+            INSERT INTO content_bank (id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at)
+            VALUES (#{id}, #{contentSha256}, #{bankUuid}, #{bankJsonSha256}, #{sourceTitle}, #{description}, #{formatVersion}, #{features}, #{listening}, #{questionCount}, #{createdAt})
             """)
     int insert(BankRow row);
 
     @Select("""
-            SELECT id, content_sha256, source_title, description, format_version, features, listening, question_count, created_at
+            SELECT id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at
               FROM content_bank WHERE id = #{id}
             """)
     Optional<BankRow> findById(@Param("id") String id);
 
     @Select("""
-            SELECT id, content_sha256, source_title, description, format_version, features, listening, question_count, created_at
+            SELECT id, content_sha256, bank_uuid, bank_json_sha256, source_title, description, format_version, features, listening, question_count, created_at
               FROM content_bank WHERE content_sha256 = #{contentSha256}
             """)
     Optional<BankRow> findByContentSha256(@Param("contentSha256") byte[] contentSha256);

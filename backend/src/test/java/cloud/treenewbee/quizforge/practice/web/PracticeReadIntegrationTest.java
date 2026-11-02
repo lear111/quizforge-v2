@@ -402,7 +402,12 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
         if (status.equals("absent")) jdbc.update("DELETE r FROM admin_extension_review r JOIN content_question q ON q.extension_digest=r.digest WHERE q.bank_id=?", bank);
         else jdbc.update("UPDATE admin_extension_review SET status=? WHERE digest=UNHEX(?)", status, digest());
         var catalog = body(get("/api/library/index", cookie));
-        assertThat(catalog.path("banks").get(0).path("availability").path("message").asString()).isEqualTo("审核中");
+        // 状态在读取时由白名单推算（设计 04 第 6.2 节）：未审核 / 未登记为审核中，未通过、拓展已停用分别显示。
+        assertThat(catalog.path("banks").get(0).path("availability").path("message").asString()).isEqualTo(switch (status) {
+            case "revoked" -> "拓展已停用";
+            case "rejected" -> "未通过";
+            default -> "审核中";
+        });
         error(get(base(), cookie), 422, "CLOUD_EXTENSION_REVIEW_REQUIRED");
         error(get(questionPath(), cookie, stamp), 422, "CLOUD_EXTENSION_REVIEW_REQUIRED");
         error(get("/api/extensions/" + digest() + "/" + version() + "/page", cookie), 404, "NOT_FOUND");

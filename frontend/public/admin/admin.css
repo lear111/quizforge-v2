@@ -110,3 +110,8 @@ textarea { width: 100%; resize: vertical; }
 .qa-bar.registered { background: #c9b8f2; }
 .qa-bar.active { background: var(--qa-accent); }
 .qa-negative { color: var(--qa-danger); }
+.qa-warning { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fff7e6; color: #8a5a00; font-size: 13px; line-height: 1.7; }
+.qa-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.qa-shots { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.qa-shots img { display: block; width: 180px; height: 112px; object-fit: cover; border-radius: 10px; border: 1px solid var(--qa-line, #e4e2ec); }
+.qa-history { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.9; }

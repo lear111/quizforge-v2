@@ -11,7 +11,7 @@ public record PracticeCollectionRow(
         String source,
         String legacyRouteId,
         String sourcePackId,
-        String sourceBankKey,
+        String sourceBankUuid,
         Integer sourceRevision,
         String updateStatus,
         Instant createdAt,
