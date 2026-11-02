@@ -11,10 +11,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import cloud.treenewbee.quizforge.identity.application.AccountAdminService;
 import cloud.treenewbee.quizforge.identity.infrastructure.SessionMapper;
 
 // 服务器维护命令以非 Web 方式启动应用（MaintenanceCommand），此时不装配 HTTP 安全过滤链。
@@ -40,6 +45,7 @@ public class SecurityConfig {
             @Value("${qf.security.allowed-origin}") String allowedOrigin,
             SessionMapper sessions,
             AuthRateLimiter rateLimiter,
+            AccountAdminService admins,
             Clock clock) throws Exception {
         http
                 // 会话由 auth_session 持久化。
@@ -56,15 +62,33 @@ public class SecurityConfig {
                                 "/api/auth/register", "/api/auth/login", "/api/auth/logout",
                                 "/api/auth/email-code", "/api/auth/phone-code", "/api/auth/login-code",
                                 "/api/auth/password-reset-code", "/api/auth/password-reset").permitAll()
+                        // 所有后台接口统一检查：会话用户必须是未被封禁的管理员（只从会话取身份）。
+                        .requestMatchers("/api/admin/**").access((authentication, context) ->
+                                new AuthorizationDecision(isAdmin(authentication.get(), admins)))
                         .anyRequest().authenticated())
-                // 认证失败也使用统一 JSON 错误格式。
-                .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated()))
+                // 认证失败与权限不足都使用统一 JSON 错误格式。
+                .exceptionHandling(e -> e.authenticationEntryPoint(unauthenticated())
+                        .accessDeniedHandler(forbidden()))
                 .addFilterBefore(new OriginCheckFilter(allowedOrigin), UsernamePasswordAuthenticationFilter.class)
                 // 来源校验之后按 IP 限制匿名认证接口。
                 .addFilterBefore(new AuthRateLimitFilter(rateLimiter), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SessionAuthenticationFilter(sessions, clock),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private static boolean isAdmin(Authentication authentication, AccountAdminService admins) {
+        return authentication instanceof UsernamePasswordAuthenticationToken token && token.isAuthenticated()
+                && admins.isAdmin(token.getName());
+    }
+
+    private static AccessDeniedHandler forbidden() {
+        return (request, response, exception) -> {
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.getWriter().write("{\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"仅管理员可以执行此操作\"}}");
+        };
     }
 
     private static AuthenticationEntryPoint unauthenticated() {

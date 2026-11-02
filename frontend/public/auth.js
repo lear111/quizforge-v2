@@ -399,6 +399,7 @@ function showAccount(data) {
   byId('contact-section').hidden = missing === null;
   byId('contact-summary').textContent = missing ? `绑定${missing}` : '绑定联系方式';
   contactForm.elements.namedItem('identifier').placeholder = missing === '邮箱' ? '要绑定的邮箱' : '要绑定的中国大陆手机号';
+  byId('admin-link').hidden = user.admin !== true;
   document.title = '账号 · QuizForge';
   for (const form of [loginForm, registerForm, resetForm, contactForm]) form.reset();
   void loadQuota();

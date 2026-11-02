@@ -50,6 +50,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper json;
+    @Autowired cloud.treenewbee.quizforge.admin.application.AdminAuditService audit;
     @Autowired MutableClock clock;
     @Autowired cloud.treenewbee.quizforge.quota.infrastructure.QuotaMapper quotaMapper;
     @Autowired cloud.treenewbee.quizforge.identity.infrastructure.UserMapper userMapper;
@@ -224,7 +225,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         var user = user(false); var admin = user(true);
         quotas.adjust(admin.id(), user.id(), null, 100L);
         tx.executeWithoutResult(s -> quotas.consumeDownload(user.id(), 100));
-        var freshService = new QuotaService(quotaMapper,userMapper,clock,json);
+        var freshService = new QuotaService(quotaMapper,userMapper,clock,json,audit);
         assertThat(tx.execute(s -> freshService.usage(user.id())).dailyDownload().usedBytes()).isEqualTo(100);
         assertThat(quotas.usage(user.id()).day()).isEqualTo(LocalDate.parse("2026-11-01"));
         assertThat(quotas.usage(user.id()).resetsAt()).isEqualTo(Instant.parse("2026-11-01T16:00:00Z"));

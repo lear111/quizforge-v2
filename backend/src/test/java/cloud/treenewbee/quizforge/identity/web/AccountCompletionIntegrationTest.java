@@ -498,7 +498,7 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         assertError(post("/api/auth/login-code", Map.of("identifier", identifier, "password", PASSWORD), null),
                 401, "INVALID_CREDENTIALS");
         setPolicy(false, false, false, false, false);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM account_audit WHERE target = ? AND action = ?",
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM admin_audit WHERE target = ? AND action = ?",
                 Long.class, id, "user-blocked")).isEqualTo(1);
 
         assertThat(put("/api/admin/users/" + id + "/block", Map.of("blocked", false), admin).statusCode())
@@ -552,7 +552,7 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         String second = admin();
         long revision = JSON.readTree(get("/api/admin/authentication", first).body()).path("policy")
                 .path("revision").asLong();
-        long audits = jdbc.queryForObject("SELECT COUNT(*) FROM account_audit WHERE action = ?", Long.class,
+        long audits = jdbc.queryForObject("SELECT COUNT(*) FROM admin_audit WHERE action = ?", Long.class,
                 "authentication-policy-updated");
 
         assertOk200(put("/api/admin/authentication", Map.of("loginCaptchaRequired", true, "revision", revision),
@@ -564,7 +564,7 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         assertThat(policy.path("loginCaptchaRequired").asBoolean()).isTrue();
         assertThat(policy.path("registrationCodeRequired").asBoolean()).isFalse();
         assertThat(policy.path("revision").asLong()).isEqualTo(revision + 1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM account_audit WHERE action = ?", Long.class,
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM admin_audit WHERE action = ?", Long.class,
                 "authentication-policy-updated")).isEqualTo(audits + 1);
 
         // 缺少 revision、或启用尚未配置的服务都被拒绝。
@@ -671,7 +671,7 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         var row = jdbc.queryForMap("SELECT login_code, login_captcha, registration_code, registration_captcha "
                 + "FROM auth_policy WHERE id = 1");
         assertThat(row.values()).containsExactly(false, false, true, true);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM account_audit WHERE action = ? AND actor_id = ?",
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM admin_audit WHERE action = ? AND actor_id = ?",
                 Long.class, "authentication-login-recovery", id)).isEqualTo(1);
         assertThat(maintenance("promote", "nobody@example.test").exit()).isEqualTo(1);
         assertThat(maintenance("unknown", identifier).exit()).isEqualTo(2);
