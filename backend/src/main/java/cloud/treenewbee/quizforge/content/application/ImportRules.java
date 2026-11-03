@@ -25,6 +25,14 @@ public class ImportRules {
     private final RuleRunnerClient runner;
     private final RuleRunnerProperties properties;
     private final JsonMapper json;
+    private final ThreadLocal<Runnable> guard = ThreadLocal.withInitial(() -> () -> {});
+
+    public <T> T guarded(Runnable check, java.util.function.Supplier<T> action) {
+        Runnable previous = guard.get();
+        guard.set(check);
+        try { return action.get(); }
+        finally { guard.set(previous); }
+    }
 
     public ImportRules(RuleRunnerClient runner, RuleRunnerProperties properties, JsonMapper json) {
         this.runner = runner; this.properties = properties; this.json = json;
@@ -46,6 +54,7 @@ public class ImportRules {
     }
 
     public JsonNode call(RulePackage spec, String op, Map<String, ?> input) {
+        guard.get().run();
         try {
             var result = runner.execute(op, spec, input);
             if (!result.ok()) {
@@ -54,6 +63,8 @@ public class ImportRules {
             }
             if (result.data() == null || !result.data().isObject()) throw unavailable();
             return result.data();
+        } catch (RuleRunnerClient.BackgroundBusy busy) {
+            throw busy;
         } catch (RuleRunnerException error) { throw unavailable(); }
     }
 
@@ -94,6 +105,8 @@ public class ImportRules {
         envelope.put("protocolVersion", 1); envelope.put("requestId", "00000000-0000-0000-0000-000000000000");
         envelope.put("op", op); envelope.put("deadlineMs", properties.defaultDeadline().toMillis());
         envelope.put("package", spec); envelope.put("input", input);
+        // 后台请求额外携带优先级，分批时预留其完整信封大小。
+        envelope.put("priority", "background");
         return json.writeValueAsBytes(envelope).length;
     }
 

@@ -116,7 +116,7 @@ public interface CatalogMapper {
             SELECT r.pack_id, r.revision, r.title, p.owner_id, u.name AS owner_name, r.submitted_at, p.approved_revision, r.size
               FROM catalog_pack_revision r JOIN catalog_pack p ON p.id = r.pack_id
               LEFT JOIN account_user u ON u.id = p.owner_id
-             WHERE r.review_status = 'pending' AND p.status = 'active'
+             WHERE r.review_status = 'pending' AND p.status = 'active' AND p.visibility='public' AND r.validation_status='validated'
              ORDER BY r.submitted_at, r.pack_id LIMIT 200
             """)
     List<PendingRow> pending();

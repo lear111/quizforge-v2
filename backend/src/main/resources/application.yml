@@ -46,6 +46,12 @@ qf:
       cleanup-interval: ${QF_PRACTICE_JOBS_CLEANUP_INTERVAL:PT1H}
       cleanup-batch-size: ${QF_PRACTICE_JOBS_CLEANUP_BATCH_SIZE:200}
   import:
+    max-upload-bytes: ${QF_IMPORT_MAX_UPLOAD_BYTES:134217728}
+    daily-upload-limit: ${QF_IMPORT_DAILY_UPLOAD_LIMIT:20}
+    extension-concurrency: ${QF_IMPORT_EXTENSION_CONCURRENCY:2}
+    runner-worker-limit: ${QF_RULE_WORKER_LIMIT:8}
+    jobs:
+      concurrency: ${QF_IMPORT_JOBS_CONCURRENCY:1}
     max-concurrency: ${QF_IMPORT_CONCURRENCY:2}
     requests-per-minute: ${QF_IMPORT_REQUESTS_PER_MINUTE:5}
   storage:

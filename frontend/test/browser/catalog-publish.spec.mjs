@@ -11,7 +11,7 @@ function promote(email) {
 const PNG=Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000'+'1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082','hex');
 
 test('publish → admin approves → publisher is notified → new version → rejected with a reason',async({page,browser},info)=>{
-  // 发布要经过完整导入（规则服务校验），整个流程比其他测试长。
+  // 接收先返回，后台校验完成后才进入管理员版本审核列表。
   test.setTimeout(240000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   page.on('dialog',dialog=>dialog.accept());
@@ -42,6 +42,15 @@ test('publish → admin approves → publisher is notified → new version → r
   adminPage.on('dialog',dialog=>dialog.accept());
   const admin=await registerByApi(adminPage,'reviewer','审核员');
   promote(admin.email);
+  const waitForReview = async revision => {
+    await expect.poll(async () => {
+      const response = await adminPage.request.get('/api/admin/catalog/reviews');
+      expect(response.status()).toBe(200);
+      const {items} = await response.json();
+      return items.some(item => item.title === title && item.revision === revision);
+    }, {timeout: 90000}).toBe(true);
+  };
+  await waitForReview(1);
   await adminPage.goto('/admin/#pack-reviews');
   await expect(adminPage.getByRole('heading',{name:'题库审核'})).toBeVisible();
   await adminPage.getByRole('link',{name:title}).click();
@@ -83,6 +92,7 @@ test('publish → admin approves → publisher is notified → new version → r
   await expect(pack.locator('.badge.public')).toHaveText('广场公开第 1 版');
 
   // 管理员拒绝第 2 版，必须填写原因；差异按 bank.json 的 UUID 计算。
+  await waitForReview(2);
   await adminPage.goto('/admin/#pack-reviews');
   await adminPage.locator('tr').filter({hasText:title}).filter({hasText:'第 2 版'}).getByRole('link').click();
   // central-outline 中的简答题与 basic-types 的简答题 UUID 相同：按 UUID 对应为“更新”，其余四本为“移除”。

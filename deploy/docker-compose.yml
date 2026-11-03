@@ -50,6 +50,11 @@ services:
       QF_DB_USER: quizforge
       QF_DB_PASSWORD: ${QF_DB_PASSWORD:-quizforge}
       QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
+      QF_RULE_WORKER_LIMIT: ${QF_RULE_WORKER_LIMIT:-4}
+      QF_IMPORT_MAX_UPLOAD_BYTES: ${QF_IMPORT_MAX_UPLOAD_BYTES:-134217728}
+      QF_IMPORT_DAILY_UPLOAD_LIMIT: ${QF_IMPORT_DAILY_UPLOAD_LIMIT:-20}
+      QF_IMPORT_JOBS_CONCURRENCY: ${QF_IMPORT_JOBS_CONCURRENCY:-1}
+      QF_IMPORT_EXTENSION_CONCURRENCY: ${QF_IMPORT_EXTENSION_CONCURRENCY:-2}
       QF_BLOB_DIR: /data/blobs
       QF_PUBLIC_ORIGIN: ${QF_PUBLIC_ORIGIN:-http://localhost:8088}
       # 邮件 / 短信验证码与人机验证（L4）。本机开发与 CI 默认使用假实现（验证码写入应用日志，
@@ -102,7 +107,7 @@ services:
     environment:
       QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:-quizforge-local-rule-token}
       QF_BLOB_DIR: /data/blobs
-      QF_RULE_WORKER_LIMIT: "4"
+      QF_RULE_WORKER_LIMIT: ${QF_RULE_WORKER_LIMIT:-4}
     volumes:
       - blobs:/data/blobs:ro
     networks: [rules-private]
