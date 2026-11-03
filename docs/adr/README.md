@@ -23,6 +23,7 @@ ADR 记录一项重要架构决策：当时面对什么问题、考虑过哪些�
 | [ADR-008](ADR-008-data-migration.md) | 旧数据采用停机一次性迁移，以接口输出对比验证 | 提议 |
 | [ADR-009](ADR-009-redis.md) | Redis 用于 AI 短期对话记忆与限流计数 | 提议 |
 | [ADR-010](ADR-010-rabbitmq-outbox.md) | RabbitMQ 处理 AI 评分与通知任务，配合事务发件箱 | 提议 |
+| [ADR-011](ADR-011-browser-grading.md) | 判分与规则计算尽量在浏览器中执行，服务器兜底 | 已接受 |
 
 ## 模板
 
