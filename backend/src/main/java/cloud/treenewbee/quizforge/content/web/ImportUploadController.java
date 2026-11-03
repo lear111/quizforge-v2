@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.security.Principal;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import cloud.treenewbee.quizforge.content.application.ImportUploadService;
 import cloud.treenewbee.quizforge.content.infrastructure.ImportCatalogMapper;
@@ -16,26 +17,22 @@ public class ImportUploadController {
     private final ImportUploadService uploads;
     private final ImportCatalogMapper metadata;
     private final ImportQueueMapper jobs;
-    private final cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper catalog;
     private final cloud.treenewbee.quizforge.content.application.ImportQueueJobs worker;
 
     public ImportUploadController(ImportUploadService uploads, ImportCatalogMapper metadata, ImportQueueMapper jobs,
-            cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper catalog,
             cloud.treenewbee.quizforge.content.application.ImportQueueJobs worker) {
         this.uploads = uploads;
         this.metadata = metadata;
         this.jobs = jobs;
-        this.catalog = catalog;
         this.worker = worker;
     }
 
-    @PostMapping(value="/api/library/uploads", consumes="application/octet-stream")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public org.springframework.http.ResponseEntity<ImportUploadService.Accepted> upload(Principal user, @RequestParam String filename,
-            @RequestParam(required=false) String packId, HttpServletRequest request) throws IOException {
+    @PostMapping(value = "/api/library/uploads", consumes = "application/octet-stream")
+    public ResponseEntity<ImportUploadService.Accepted> upload(Principal user, @RequestParam String filename,
+            @RequestParam(required = false) String packId, HttpServletRequest request) throws IOException {
         long started = System.nanoTime();
         var accepted = uploads.receivePrivate(user.getName(), packId, filename, request.getContentLengthLong(), request.getInputStream());
-        return org.springframework.http.ResponseEntity.accepted().header("Server-Timing",
+        return ResponseEntity.accepted().header("Server-Timing",
                 "upload;dur=" + (System.nanoTime() - started) / 1_000_000).body(accepted);
     }
 
@@ -57,7 +54,7 @@ public class ImportUploadController {
     public void delete(Principal user, @PathVariable String id) { uploads.delete(user.getName(), id); }
 
     @GetMapping("/api/admin/import-jobs")
-    public Map<String,Object> queue() { return Map.of("items", jobs.active()); }
+    public Map<String, Object> queue() { return Map.of("items", jobs.active()); }
 
     @PostMapping("/api/admin/import-jobs/{id}/retry")
     @ResponseStatus(HttpStatus.NO_CONTENT)

@@ -286,6 +286,12 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
         assertThat(response.statusCode()).isEqualTo(404);
         assertThatThrownBy(() -> uploads.delete(stranger.id(), accepted.packId()))
                 .isInstanceOf(cloud.treenewbee.quizforge.shared.web.ApiException.class);
+        byte[] content = archive();
+        assertThatThrownBy(() -> uploads.receivePrivate(stranger.id(), accepted.packId(), "越权.qbank",
+                content.length, new ByteArrayInputStream(content)))
+                .isInstanceOf(cloud.treenewbee.quizforge.shared.web.ApiException.class)
+                .extracting(error -> ((cloud.treenewbee.quizforge.shared.web.ApiException) error).code())
+                .isEqualTo("PACK_NOT_FOUND");
     }
 
     @Test

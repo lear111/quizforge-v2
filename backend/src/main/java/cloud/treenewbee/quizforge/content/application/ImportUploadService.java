@@ -221,10 +221,8 @@ public class ImportUploadService {
     }
 
     private void requireRejected(String user, String pack) {
-        var current = catalog.pack(pack).filter(row -> row.ownerId().equals(user) && "active".equals(row.status()))
-                .orElseThrow(ImportUploadService::notFound);
-        var revision = catalog.revision(pack, current.latestRevision()).orElseThrow(ImportUploadService::notFound);
-        if (!"rejected".equals(reviewState(user, pack, revision.revision()).status())) {
+        var current = metadata.latestOwned(pack, user).orElseThrow(ImportUploadService::notFound);
+        if (!"rejected".equals(reviewState(user, pack, current.revision()).status())) {
             throw new ApiException(HttpStatus.CONFLICT, "PACK_NOT_REJECTED", "只有未通过的私人条目可以重新上传");
         }
     }

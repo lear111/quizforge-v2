@@ -16,6 +16,13 @@ public interface ImportCatalogMapper {
             """)
     Optional<State> owned(@Param("pack") String pack, @Param("user") String user, @Param("revision") int revision);
 
+    @Select("""
+            SELECT p.id AS pack_id,r.revision,p.visibility,r.validation_status,r.validation_reason
+              FROM catalog_pack p JOIN catalog_pack_revision r ON r.pack_id=p.id AND r.revision=p.latest_revision
+             WHERE p.id=#{pack} AND p.owner_id=#{user} AND p.status='active'
+            """)
+    Optional<State> latestOwned(@Param("pack") String pack, @Param("user") String user);
+
     @Update("UPDATE catalog_pack SET visibility=#{visibility} WHERE id=#{pack} AND owner_id=#{user}")
     int visibility(@Param("pack") String pack, @Param("user") String user, @Param("visibility") String visibility);
 
