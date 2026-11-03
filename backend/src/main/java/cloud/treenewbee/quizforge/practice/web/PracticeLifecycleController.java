@@ -16,6 +16,12 @@ import tools.jackson.databind.JsonNode;
 public class PracticeLifecycleController {
     public record Restart(@NotBlank @Size(max = 64) String requestId, JsonNode roundId,
             @NotBlank @Size(max = 64) String summaryVersion) {}
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.exam.ExamMapper exams;
+    private void bank(Principal principal,String id) {
+        if(exams.find(principal.getName(),id).isPresent())
+            throw cloud.treenewbee.quizforge.content.application.ContentPages.notFound();
+    }
     private final PracticeLifecycleService lifecycle;
     private final PracticeSummaryService summaries;
     private final cloud.treenewbee.quizforge.practice.application.PracticeLifecycleJobs jobs;
@@ -25,11 +31,13 @@ public class PracticeLifecycleController {
 
     @GetMapping("/api/collections/bank/{id}/summary")
     public ResponseEntity<JsonNode> summary(Principal principal, @PathVariable String id) {
+        bank(principal,id);
         return noStore(summaries.summary(principal.getName(), id));
     }
 
     @PostMapping("/api/collections/bank/{id}/restart")
     public ResponseEntity<JsonNode> restart(Principal principal, @PathVariable String id, @Valid @RequestBody Restart body) {
+        bank(principal,id);
         if (body.roundId() == null || (!body.roundId().isNull() && (!body.roundId().isString()
                 || body.roundId().asString().length() > 36)))
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "缺少有效的 roundId（尚无轮次时为 null）");
@@ -39,6 +47,7 @@ public class PracticeLifecycleController {
 
     @PostMapping("/api/collections/bank/{id}/finish")
     public ResponseEntity<JsonNode> finish(Principal principal,@PathVariable String id,@Valid @RequestBody Restart body) {
+        bank(principal,id);
         if(body.roundId()==null || (!body.roundId().isNull() && (!body.roundId().isString() || body.roundId().asString().length()>36)))
             throw new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","缺少有效的 roundId");
         return ResponseEntity.accepted().cacheControl(org.springframework.http.CacheControl.noStore()).body(jobs.begin(
@@ -46,6 +55,7 @@ public class PracticeLifecycleController {
     }
     @GetMapping("/api/collections/bank/{id}/jobs/{jobId}")
     public ResponseEntity<JsonNode> progress(Principal principal,@PathVariable String id,@PathVariable String jobId) {
+        bank(principal,id);
         return noStore(jobs.progress(principal.getName(),id,jobId));
     }
 

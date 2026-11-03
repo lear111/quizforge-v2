@@ -9,9 +9,9 @@ export function canStartExam(pane){return !!pane?.collection&&!pane.exam&&['bank
 
 export function bindExamMode({document,request,active,flush,open,refresh,onError,collectionPath,makeRequestId,onDeadline,now=Date.now}){
   const create=(tag,text,className)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(className)node.className=className;return node;};
-  const actions=document.querySelector('.document-actions'),start=create('button','开始考试','header-action'),status=create('span','','exam-status'),submit=create('button','交卷','header-action'),back=create('button','返回练习','header-action');
-  start.id='exam-start';submit.id='exam-submit';status.id='exam-status';back.id='exam-return';status.setAttribute('role','status');
-  for(const button of [start,submit,back])button.type='button';actions.prepend(start,status,submit,back);
+  const actions=document.querySelector('.document-actions'),start=create('button','开始考试','header-action'),status=create('span','','exam-status'),submit=create('button','交卷','header-action'),back=create('button','返回练习','header-action'),review=create('button','核对考试评分');
+  start.id='exam-start';submit.id='exam-submit';status.id='exam-status';back.id='exam-return';review.id='exam-review';status.setAttribute('role','status');
+  for(const button of [start,submit,back,review])button.type='button';actions.prepend(start,status,submit,back);document.querySelector('#mode-bar > div').append(review);
   const dialog=create('dialog',null,'exam-dialog'),form=create('form'),header=create('div',null,'exam-dialog-heading'),heading=create('h2','开始考试'),close=create('button','×','exam-dialog-close'),intro=create('p','设置本次考试时长，或继续未完成的考试。','exam-intro');
   heading.id='exam-dialog-title';dialog.setAttribute('aria-labelledby',heading.id);close.type='button';close.setAttribute('aria-label','关闭考试设置');header.append(heading,close);
   const settings=create('section',null,'exam-settings'),label=create('label','考试时长','exam-duration-label'),durationControl=create('div',null,'exam-duration-control'),duration=create('input'),unit=create('span','分钟'),unlimitedLabel=create('label',null,'exam-unlimited'),unlimited=create('input'),hint=create('p','到时自动交卷；交卷后锁定答案，统一评分。','exam-hint');
@@ -37,6 +37,7 @@ export function bindExamMode({document,request,active,flush,open,refresh,onError
       clearTimeout(deadlineTimer);deadlineTimer=null;scheduledAt=deadline;scheduledPane=pane;
       if(Number.isFinite(deadline))deadlineTimer=setTimeout(()=>{deadlineTimer=null;sync();pollExam();},Math.max(0,deadline-now()));
     }
+    review.hidden=!(pane?.view==='history'&&pane.historyEntry?.mode==='exam'&&pane.historyEntry?.examId);review.disabled=busy;
     start.hidden=!canStartExam(pane);start.disabled=busy||!!pane?.loading;
     status.hidden=!exam;submit.hidden=!exam||exam.status==='completed'||pane?.view==='history';back.hidden=!exam;back.disabled=busy;
     if(exam){const issue=exam.gradingErrors?.length||exam.aiErrors?.length;status.textContent=expired?'时间已到 · 正在自动交卷':examActive(pane)?examTimeLabel(exam,time):exam.status==='completed'?'考试已完成':issue?'评分失败，待处理':'已交卷 · 评分中';submit.textContent=expired?'正在交卷…':examActive(pane)?'交卷':issue?'重试评分':'评分中';submit.disabled=busy||!!pane.loading||!examActive(pane)&&!issue;}
@@ -84,9 +85,10 @@ export function bindExamMode({document,request,active,flush,open,refresh,onError
     if(examActive(pane))await flush(pane);
     const value=await request(`${collectionPath('exam',pane.id)}/exam`,{method:'POST',body:JSON.stringify({requestId:makeRequestId()}),timeoutMs:135000});observe(value);await refresh(pane,value);
   }catch(e){onError(e);}finally{busy=false;sync();}});
+  review.addEventListener('click',()=>{const id=active()?.historyEntry?.examId;if(id)open('exam',id).catch(onError);});
   back.addEventListener('click',()=>{const exam=active()?.exam;if(exam)open(exam.bankKind,exam.bankId).catch(onError);});
   sync();
   async function pollExam(){const expired=sync(),pane=active();if(!pane?.exam||pane.exam.status==='completed'||polling||busy||!expired&&now()-lastPoll<3000)return;polling=true;lastPoll=now();try{const value=await request(`${collectionPath('exam',pane.id)}/exam`);observe(value);await refresh(pane,value);}catch(e){status.textContent=expired?'时间已到，答案已锁定 · 正在重试交卷状态':'考试连接中断，正在重试';}finally{polling=false;}}
   const timer=setInterval(pollExam,1000);
-  return {sync,observe,destroy(){clearInterval(timer);clearTimeout(deadlineTimer);if(deleteDecision)decideDelete(false);dialog.remove();deleteDialog.remove();for(const node of [start,status,submit,back])node.remove();}};
+  return {sync,observe,destroy(){clearInterval(timer);clearTimeout(deadlineTimer);if(deleteDecision)decideDelete(false);dialog.remove();deleteDialog.remove();for(const node of [start,status,submit,back,review])node.remove();}};
 }

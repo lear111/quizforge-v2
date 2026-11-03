@@ -57,6 +57,8 @@ public class PracticeLifecycleJobs {
     private final JsonMapper json;
     private final Clock clock;
     private final String owner = UUID.randomUUID().toString();
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.exam.ExamMapper exams;
     private Instant nextCleanup;
     LifecycleJobPoller poller;
 
@@ -189,6 +191,26 @@ public class PracticeLifecycleJobs {
         }
     }
 
+    /** 调用者已锁 context 和考试；任务与交卷状态在同一事务提交。 */
+    public String beginExam(cloud.treenewbee.quizforge.exam.ExamRow exam) {
+        var context = contexts.lockForUpdate(exam.contextId(), exam.userId()).orElseThrow();
+        Instant now = clock.instant();
+        String round = context.currentRoundId();
+        if (round == null) {
+            round = Ids.uuidV7();
+            changed(rounds.insertRound(new PracticeRoundRow(round, exam.userId(), exam.collectionId(), context.id(),
+                    "exam", "in_progress", "{}", null, now, now, null, null)));
+            changed(contexts.setCurrentRound(context.id(), exam.userId(), round, now));
+        }
+        String id = Ids.uuidV7();
+        int total = summaries.current(exam.userId(), exam.bankId(), context).path("answeredUnsubmittedCount").asInt();
+        changed(jobs.insert(id, exam.userId(), exam.collectionId(), context.id(), round, "exam_finish", total, now));
+        changed(contexts.phase(context.id(), exam.userId(), "finishing", id, now));
+        changed(exams.submit(exam.id(), exam.userId(), exam.version(), round, now));
+        wakeAfterCommit();
+        return id;
+    }
+
     public JsonNode progress(String user, String collection, String id) {
         // 查询所属任务只读一行，不执行规则、不遍历题库。
         var job = jobs.find(id, user, collection)
@@ -247,11 +269,17 @@ public class PracticeLifecycleJobs {
     }
 
     private void step(LifecycleJobMapper.Job job) {
-        var target = reads.resolveCollection(job.userId(), job.collectionId());
-        if (job.kind().equals("finish")) {
+        boolean examJob = job.kind().startsWith("exam_");
+        var exam = examJob ? exams.context(job.userId(), job.contextId()).orElseThrow() : null;
+        if (examJob && !"grading".equals(exam.status())) {
+            throw conflict("EXAM_DELETED", "考试已删除，丢弃评分结果");
+        }
+        String scope = examJob ? exam.id() : job.collectionId();
+        var target = reads.resolveCollection(job.userId(), scope);
+        if (job.kind().equals("finish") || job.kind().equals("exam_finish")) {
             var work = jobs.nextAnswer(target.bankId(), job.contextId(), job.userId()).orElse(null);
             if (work != null) {
-                var outcome = grader.grade(job.userId(), job.collectionId(), work.questionId(), json.readTree(work.answer()));
+                var outcome = grader.grade(job.userId(), scope, work.questionId(), json.readTree(work.answer()));
                 tx.executeWithoutResult(status -> {
                     check(job);
                     if (states.submit(outcome.resultJson(), outcome.gradingStatus(), scale(outcome.score()),
@@ -268,18 +296,32 @@ public class PracticeLifecycleJobs {
             tx.executeWithoutResult(status -> {
                 var context = check(job);
                 changed(contexts.phase(job.contextId(), job.userId(), "completed", job.id(), clock.instant()));
-                changed(lifecycle.complete(job.roundId(), job.userId(), "{}", clock.instant()));
+                if (!examJob || lifecycle.round(job.roundId(), job.contextId(), job.userId()).orElseThrow().status().equals("in_progress")) {
+                    changed(lifecycle.complete(job.roundId(), job.userId(), "{}", clock.instant()));
+                }
                 var summary = summaries.current(job.userId(), target.bankId(),
                         contexts.lockForUpdate(context.id(), job.userId()).orElseThrow());
                 changed(lifecycle.updateCompletedSummary(job.roundId(), job.userId(),
                         json.writeValueAsString(summary), clock.instant()));
-                finish(job, summary);
+                if (examJob) {
+                    var snapshot = (ObjectNode) json.readTree(reads.collectionSnapshot(job.userId(), scope));
+                    snapshot.put("kind", "exam").put("mode", "exam").put("snapshotVersion", 1);
+                    snapshot.put("sourceBankId", target.bankId());
+                    snapshot.set("listeningSource", histories.listening(target.bankId())
+                            .map(json::readTree).orElse(json.nullNode()));
+                    changed(jobs.collection(job.roundId(), job.userId(), json.writeValueAsString(snapshot), clock.instant()));
+                    histories.copyAssets(job.roundId(), target.bankId());
+                    changed(contexts.phase(job.contextId(), job.userId(), "archiving", job.id(), clock.instant()));
+                    changed(jobs.archiveExam(job.id(), owner, summary.path("questionCount").asInt(), clock.instant()));
+                } else {
+                    finish(job, summary);
+                }
             });
         } else {
             var question = jobs.nextQuestion(target.bankId(), job.archivePosition()).orElse(null);
             if (question != null) {
                 String qid = question.questionId();
-                var payload = (ObjectNode) json.valueToTree(reads.question(job.userId(), job.collectionId(), qid, null));
+                var payload = (ObjectNode) json.valueToTree(reads.question(job.userId(), scope, qid, null));
                 // 空答案草稿没有参与完成判分，历史中与从未作答一致。
                 var state = (ObjectNode) payload.get("state");
                 if (!"submitted".equals(state.path("status").asString())) {
@@ -291,7 +333,7 @@ public class PracticeLifecycleJobs {
                 var signals = jobs.signals(job.contextId(), qid, job.userId())
                         .orElse(new LifecycleJobMapper.Signals(0, null, null));
                 payload.set("practiceSignals", json.valueToTree(signals));
-                var digest = reads.resolveTarget(job.userId(), job.collectionId(), qid).extensionDigest();
+                var digest = reads.resolveTarget(job.userId(), scope, qid).extensionDigest();
                 tx.executeWithoutResult(status -> {
                     check(job);
                     if (rounds.upsertRoundQuestion(new PracticeRoundQuestionRow(job.roundId(), qid, job.userId(),
@@ -311,6 +353,12 @@ public class PracticeLifecycleJobs {
                 summary.put("processing", false).put("jobId", (String) null).put("canFinish", false).put("canRestart", false);
                 if (jobs.freeze(job.roundId(), job.userId(), json.writeValueAsString(summary), clock.instant()) != 1) {
                     throw new IllegalStateException("历史已冻结");
+                }
+                if (examJob) {
+                    changed(exams.complete(context.id(), job.userId()));
+                    changed(contexts.phase(context.id(), job.userId(), "completed", job.id(), clock.instant()));
+                    finish(job, json.createObjectNode().put("historyId", job.roundId()).put("mode", "exam"));
+                    return;
                 }
                 lifecycle.reset(context.id(), job.userId(), clock.instant());
                 lifecycle.resetWhiteboards(context.id(), job.userId(), clock.instant());

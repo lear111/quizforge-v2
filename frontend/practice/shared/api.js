@@ -32,9 +32,9 @@ export async function request(path, options = {}) {
 export const collectionPath=(kind,id)=>`/api/collections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
 export const questionPath=(kind,id,qid)=>`${collectionPath(kind,id)}/questions/${encodeURIComponent(qid)}`;
 export function makeRequestId(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;}
-export async function readResource(id) {
+export async function readResource(id,path) {
   if(!/^[a-f0-9]{64}$/.test(id))throw new Error('图片资源编号无效');
-  const blob=await request('/api/resources/'+id,{responseType:'blob',headers:{Accept:'image/*'}});
+  const blob=await request(path||'/api/resources/'+id,{responseType:'blob',headers:{Accept:'image/*'}});
   if(blob.size>4*1024*1024)throw new Error('图片超过 4 MiB 限制');
   const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('图片读取失败'));reader.readAsDataURL(blob);});
   return {id,mime:blob.type,size:blob.size,data};

@@ -285,6 +285,8 @@ public class PracticeReadService {
         return json.valueToTree(result);
     }
 
+    public void validateBank(String userId, String id) { collection(userId, id); }
+
     private PracticeReadRows.Collection collection(String userId, String id) {
         var collection = reads.collection(userId, id).orElseThrow(() -> notFound());
         if (!availability.isAvailable(collection.bankId())) {

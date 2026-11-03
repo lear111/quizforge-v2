@@ -419,6 +419,7 @@ CREATE TABLE exam_exam (
   user_id            CHAR(36)     NOT NULL,
   collection_id      CHAR(36)     NOT NULL,        -- 来源题库实例
   context_id         CHAR(36)     NOT NULL,        -- 本场考试的作答上下文（kind='exam'）
+  title              VARCHAR(200) NOT NULL,        -- 开考时冻结的显示标题（V22）
   bank_id            CHAR(36)     NOT NULL,        -- 冻结的题库内容：内容不可变，引用即冻结
   status             ENUM('in_progress','grading','completed','deleted') NOT NULL,
   duration_minutes   INT          NULL,            -- NULL 表示不限时；1～1440
@@ -432,7 +433,8 @@ CREATE TABLE exam_exam (
   UNIQUE KEY uk_exam_context (context_id),
   UNIQUE KEY uk_exam_create (user_id, create_request_id),
   KEY idx_exam_user (user_id, collection_id, status),
-  KEY idx_exam_deadline (status, deadline_at)      -- 定时任务扫描到期未交卷的考试
+  KEY idx_exam_deadline (status, deadline_at),     -- 定时任务扫描到期未交卷的考试
+  KEY idx_exam_round (round_id, user_id)           -- 删除历史时使考试失效（V22）
 );
 ```
 
@@ -567,7 +569,9 @@ SELECT COUNT(*)                                             AS question_count,
 
 - 每个考试请求都先检查 `deadline_at`，过期则拒绝写入并触发交卷。
 - 另有定时任务每分钟扫描 `WHERE status = 'in_progress' AND deadline_at < NOW()`（走 `idx_exam_deadline`）执行交卷。
-- 单实例部署下定时任务只运行一份；以后部署多个实例时，需要加分布式锁（例如 ShedLock），或使用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取任务。
+- L2 实现：每实例默认 5 秒扫描一次（`qf.exam.scan-interval-ms`），每批最多 100 条，使用 `idx_exam_deadline` 的 status 等值及 deadline 范围扫描。扫描不持锁，领取路径先锁 context，再按考试 status/version 条件更新，多实例竞争也只登记一次。
+- `practice_lifecycle_job.kind` 新增 `exam_finish / exam_archive`（V22），复用同一个后台线程、租约、后台 rule-runner 名额及空闲退避。逐题判分不持有事务；结束后同一任务转入键集分页归档，不重置考试状态或白板。失败后仍锁住固定答案，重新交卷只处理剩余草稿及未完成快照。
+- 高频草稿/白板路径只校验当前考试、context 与本题，获得 context 锁后重新检查 Clock 和 deadline。生成整卷快照、汇总与归档只发生在交卷后台路径。
 
 ### 5.7 资源鉴权（ADR-007）
 

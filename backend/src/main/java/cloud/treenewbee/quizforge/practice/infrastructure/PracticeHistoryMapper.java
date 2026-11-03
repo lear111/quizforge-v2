@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.*;
 
 @Mapper
 public interface PracticeHistoryMapper {
-    record Header(String id,String userId,String collectionId,String collectionSnapshot,String summary,Instant createdAt,Instant updatedAt) {}
+    record Header(String id,String userId,String collectionId,String collectionSnapshot,String summary,Instant createdAt,Instant updatedAt,String mode,String examId) {}
     record Digest(String id,String collectionTitle,String mode,String status,int questionCount,int submittedCount,int pendingCount,
             java.math.BigDecimal score,java.math.BigDecimal maxScore,Instant createdAt,Instant updatedAt) {}
     @Select("""
@@ -24,7 +24,8 @@ public interface PracticeHistoryMapper {
         """)
     List<Digest> list(@Param("userId") String userId,@Param("collectionId") String collectionId);
     @Select("""
-        SELECT r.id,r.user_id,r.collection_id,r.collection_snapshot,r.summary,r.created_at,r.updated_at
+        SELECT r.id,r.user_id,r.collection_id,r.collection_snapshot,r.summary,r.created_at,r.updated_at,r.mode,
+          (SELECT x.id FROM exam_exam x WHERE x.context_id=r.context_id AND x.user_id=r.user_id AND x.status='completed') AS exam_id
         FROM practice_round r JOIN practice_collection c ON c.id=r.collection_id AND c.user_id=r.user_id
         WHERE r.id=#{id} AND r.user_id=#{userId} AND r.collection_id=#{collectionId} AND r.deleted_at IS NULL
           AND c.deleted_at IS NULL AND r.history_frozen_at IS NOT NULL
@@ -58,4 +59,7 @@ public interface PracticeHistoryMapper {
         SELECT #{id},blob_sha256,path FROM content_bank_asset WHERE bank_id=#{bankId}
         """)
     int copyAssets(@Param("id") String id,@Param("bankId") String bankId);
+
+    @Update("UPDATE exam_exam SET status='deleted',version=version+1 WHERE round_id=#{id} AND user_id=#{userId} AND status='completed'")
+    int deleteExam(@Param("id") String id,@Param("userId") String userId);
 }

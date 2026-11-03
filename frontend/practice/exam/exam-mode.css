@@ -43,4 +43,4 @@
 .exam-dialog button:disabled{opacity:.55;cursor:default}
 .exam-dialog button:focus-visible,.exam-delete-dialog button:focus-visible{outline:2px solid #ae92eb;outline-offset:2px}
 @media(max-width:600px){.exam-status{font-size:11px}.document-actions{flex-wrap:wrap}.exam-dialog,.exam-delete-dialog{padding:20px}.exam-record{gap:8px}}
-#exam-start,#exam-submit,#exam-return{width:auto;padding:0 10px;white-space:nowrap;font-size:12px;flex:none}
+#exam-start,#exam-submit,#exam-return,#exam-review{width:auto;padding:0 10px;white-space:nowrap;font-size:12px;flex:none}
