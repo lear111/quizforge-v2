@@ -189,7 +189,7 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
         queue.runOne();
         verify(runner, never()).execute(anyString(), any(), anyMap());
         jdbc.update("UPDATE admin_extension_review SET status='approved'");
-        queue.reconcilePrivate();
+        queue.reconcileReviews();
         assertThat(review(first.packId())).isEqualTo("approved");
         assertThat(review(second.packId())).isEqualTo("approved");
         verify(runner, never()).execute(anyString(), any(), anyMap());
@@ -397,6 +397,11 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
             assertThat(review(second.packId())).isEqualTo("pending");
             assertThat(state(second.packId())).isEqualTo("validated");
             assertThat(quotas.usage(ordinary.id()).storage().usedBytes()).isZero();
+            jdbc.update("UPDATE admin_extension_review SET status='rejected',reason='公开拓展未通过'");
+            queue.reconcileReviews();
+            assertThat(publishing.mine(ordinary.id()).getFirst().revisions().getFirst().reviewStatus()).isEqualTo("rejected");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE target_id=?", Integer.class,
+                    ordinary.id())).isEqualTo(1);
         } finally { java.nio.file.Files.deleteIfExists(path); }
     }
 
@@ -407,10 +412,11 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
         queue.runOne();
         int before = jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE target_id=?", Integer.class, user.id());
         jdbc.update("UPDATE admin_extension_review SET status='rejected',reason='测试原因'");
-        queue.reconcilePrivate();
-        queue.reconcilePrivate();
-        queue.reconcilePrivate();
+        queue.reconcileReviews();
+        queue.reconcileReviews();
+        queue.reconcileReviews();
         assertThat(uploads.reviewState(user.id(), first.packId(), 1).status()).isEqualTo("rejected");
+        assertThat(publishing.mine(user.id()).getFirst().revisions().getFirst().reviewStatus()).isEqualTo("rejected");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE target_id=?", Integer.class, user.id())).isEqualTo(before + 1);
         byte[] data = archive();
         var second = uploads.receivePrivate(user.id(), first.packId(), "重试.qbank", data.length, new ByteArrayInputStream(data));

@@ -41,12 +41,11 @@ public interface ImportCatalogMapper {
             SELECT p.id AS pack_id,r.revision,p.visibility,r.validation_status,r.validation_reason
               FROM catalog_pack p JOIN catalog_pack_revision r ON r.pack_id=p.id
              WHERE p.status='active' AND r.review_status='pending' AND r.validation_status='validated'
-               AND p.visibility='private'
                <if test="after != null">AND (p.id > #{after} OR (p.id=#{after} AND r.revision > #{revision}))</if>
              ORDER BY p.id,r.revision LIMIT 100
             </script>
             """)
-    List<State> waitingPrivate(@Param("after") String after, @Param("revision") int revision);
+    List<State> waitingReview(@Param("after") String after, @Param("revision") int revision);
 
     @Update("""
             UPDATE catalog_pack_revision SET notified_status=#{status}

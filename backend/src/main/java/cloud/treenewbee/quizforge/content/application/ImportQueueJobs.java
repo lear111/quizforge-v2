@@ -117,7 +117,7 @@ public class ImportQueueJobs {
     boolean tick() {
         Job job = claim();
         if (job == null) {
-            reconcilePrivate();
+            reconcileReviews();
             return false;
         }
         active.put(job.id(), job);
@@ -266,8 +266,8 @@ public class ImportQueueJobs {
         if (jobs.finish(job.id(), owner, job.generation(), status, code, next, now()) != 1) throw new StaleJob();
     }
 
-    public void reconcilePrivate() {
-        var candidates = metadata.waitingPrivate(reconcileAfter, reconcileRevision);
+    public void reconcileReviews() {
+        var candidates = metadata.waitingReview(reconcileAfter, reconcileRevision);
         if (candidates.isEmpty()) {
             reconcileAfter = null;
             reconcileRevision = 0;

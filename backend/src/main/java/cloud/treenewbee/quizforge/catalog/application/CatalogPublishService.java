@@ -121,13 +121,21 @@ public class CatalogPublishService {
     public List<PackView> mine(String userId) {
         return mapper.owned(userId).stream().map(pack -> new PackView(pack.id(), pack.status(), pack.latestRevision(),
                 pack.approvedRevision(), pack.createdAt(), pack.deletedAt(),
-                mapper.revisions(pack.id()).stream().map(this::revisionView).toList())).toList();
+                mapper.revisions(pack.id()).stream().map(row -> revisionView(row,
+                        "active".equals(pack.status()) ? uploads.reviewState(userId, pack.id(), row.revision()) : null))
+                        .toList())).toList();
     }
 
     public RevisionView revisionView(RevisionRow row) {
+        return revisionView(row, null);
+    }
+
+    private RevisionView revisionView(RevisionRow row,
+            cloud.treenewbee.quizforge.content.application.ImportUploadService.ReviewState state) {
         return new RevisionView(row.revision(), row.title(), row.summary(), row.description(), row.category(),
-                readTags(row.tags()), row.releaseNotes(), row.source(), row.filename(), row.size(), row.reviewStatus(),
-                row.reviewNote(), row.reviewedAt(), row.submittedAt(),
+                readTags(row.tags()), row.releaseNotes(), row.source(), row.filename(), row.size(),
+                state == null ? row.reviewStatus() : state.status(), state == null ? row.reviewNote() : state.reason(),
+                row.reviewedAt(), row.submittedAt(),
                 mapper.banks(row.packId(), row.revision()).stream()
                         .map(bank -> new BankView(bank.bankUuid(), bank.title(), bank.questionCount())).toList(),
                 mapper.files(row.packId(), row.revision()).stream()
