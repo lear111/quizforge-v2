@@ -77,6 +77,8 @@ class CatalogIntegrationTest extends MySqlTestBase {
     @Autowired JdbcTemplate jdbc;
     @Autowired BankAvailability availability;
     @Autowired cloud.treenewbee.quizforge.content.application.ImportQueueJobs queue;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
     @Value("${local.server.port}") int port;
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
@@ -85,6 +87,8 @@ class CatalogIntegrationTest extends MySqlTestBase {
 
     @BeforeEach
     void clean() {
+        // 此类显式推进队列，只验证持久化与审核；前台让行由独立门控测试覆盖。
+        org.mockito.Mockito.doReturn(false).when(runner).foregroundRecentlyActive();
         jdbc.update("UPDATE content_import_slot SET job_id=NULL,lease_until=NULL");
         for (String table : List.of("content_import_job", "content_validation_cache", "catalog_pack_event", "catalog_pack_file", "catalog_pack_bank", "catalog_pack_revision",
                 "catalog_pack", "practice_collection", "content_question", "content_bank_asset", "content_bank",
