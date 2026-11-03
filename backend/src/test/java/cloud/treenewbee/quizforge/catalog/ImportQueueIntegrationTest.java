@@ -305,6 +305,21 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
     }
 
     @Test
+    void recentForegroundTrafficDefersBeforeParsingWithoutConsumingRetryBudget() throws Exception {
+        receive(user(false), archive());
+        doReturn(true).when(runner).foregroundRecentlyActive();
+        assertThat(queue.runOne()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT attempts FROM content_import_job", Integer.class)).isZero();
+        assertThat(count("content_question")).isZero();
+        assertThat(count("content_validation_cache")).isZero();
+        verify(runner, never()).execute(anyString(), any(), anyMap());
+        doReturn(false).when(runner).foregroundRecentlyActive();
+        clock.now = clock.now.plusMillis(250);
+        assertThat(queue.runOne()).isTrue();
+        assertThat(count("content_question")).isEqualTo(1);
+    }
+
+    @Test
     void rulesAreOutsideTransactionAndOtherClaimCannotExceedConcurrency() throws Exception {
         User owner = user(false);
         var first = receive(owner, archive());

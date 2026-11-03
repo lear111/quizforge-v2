@@ -57,6 +57,7 @@ public class ImportQueueJobs {
     private final AdminAuditService audit;
     private final NotificationService notifications;
     private final JsonMapper json;
+    private final cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
     private final boolean enabled;
     private final int concurrency;
     private final ConcurrentHashMap<String, Job> active = new ConcurrentHashMap<>();
@@ -70,6 +71,7 @@ public class ImportQueueJobs {
             ImportService imports, BlobStore blobs, TransactionTemplate tx, Clock clock,
             ExtensionReviewService reviews, ExtensionReviewMapper reviewRows, AccountAdminService admins,
             AdminAuditService audit, NotificationService notifications, JsonMapper json,
+            cloud.treenewbee.quizforge.rules.RuleRunnerClient runner,
             @Value("${qf.import.jobs.enabled:true}") boolean enabled,
             @Value("${qf.import.jobs.concurrency:1}") int concurrency) {
         if (concurrency < 1 || concurrency > 16) throw new IllegalArgumentException("导入任务并发范围为 1..16");
@@ -86,6 +88,7 @@ public class ImportQueueJobs {
         this.audit = audit;
         this.notifications = notifications;
         this.json = json;
+        this.runner = runner;
         this.enabled = enabled;
         this.concurrency = concurrency;
     }
@@ -115,6 +118,7 @@ public class ImportQueueJobs {
     }
 
     boolean tick() {
+        if (runner.foregroundRecentlyActive()) return false;
         Job job = claim();
         if (job == null) {
             reconcileReviews();
@@ -173,12 +177,16 @@ public class ImportQueueJobs {
     public void process(Job job) {
         Path temporary = null;
         try {
+            current(job);
             var revision = catalog.revision(job.packId(), job.revision()).orElseThrow(StaleJob::new);
             temporary = Files.createTempFile("qf-validation-", ".qbank");
             try (var input = blobs.open(HexFormat.of().formatHex(revision.blobSha256()))) {
                 Files.copy(input, temporary, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
-            imports.ingestQueued(temporary, () -> current(job), group -> fence(job), ingested -> {
+            imports.ingestQueued(temporary, () -> current(job), group -> {
+                current(job);
+                fence(job);
+            }, ingested -> {
                 List<PackBankRow> banks = new java.util.ArrayList<>();
                 for (int i = 0; i < ingested.banks().size(); i++) {
                     var bank = ingested.banks().get(i);
@@ -236,6 +244,7 @@ public class ImportQueueJobs {
         var found = jobs.find(job.id()).orElseThrow(StaleJob::new);
         if (!"running".equals(found.status()) || !owner.equals(found.leaseOwner())
                 || found.generation() != job.generation() || !found.leaseUntil().isAfter(now())) throw new StaleJob();
+        if (runner.foregroundRecentlyActive()) throw new cloud.treenewbee.quizforge.rules.RuleRunnerClient.BackgroundBusy();
     }
 
     private void fail(Job job, String code, String reason, boolean retryable) {
