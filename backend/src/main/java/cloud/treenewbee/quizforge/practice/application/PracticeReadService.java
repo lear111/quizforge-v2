@@ -294,8 +294,8 @@ public class PracticeReadService {
     }
 
     private Availability available(String bankId) {
-        boolean available = availability.isAvailable(bankId);
-        return new Availability(available, available ? null : "CLOUD_EXTENSION_REVIEW_REQUIRED", available ? null : "审核中");
+        var state = availability.state(bankId);
+        return new Availability(state.available(), state.available() ? null : "CLOUD_EXTENSION_REVIEW_REQUIRED", state.message());
     }
 
     private String context(String userId, String collection) {

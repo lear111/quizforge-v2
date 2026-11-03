@@ -154,12 +154,12 @@ public class NotificationService {
     /** 铃铛红点：是否有比上次打开通知界面更新的可见通知。每次打开页面都会调用，只做索引上的“是否存在”判断。 */
     public boolean hasUnseen(String userId) {
         Instant since = mapper.seenAt(userId).orElse(Instant.EPOCH);
-        return mapper.hasNewer(userId, banks.ownedBankKeys(userId, MAX_BANKS), since);
+        return mapper.hasNewer(userId, banks.ownedBankUuids(userId, MAX_BANKS), since);
     }
 
     /** 通知列表（不改变任何状态；打开界面时另调 {@link #markSeen}）。 */
     public UserList list(String userId) {
-        List<String> keys = banks.ownedBankKeys(userId, MAX_BANKS);
+        List<String> keys = banks.ownedBankUuids(userId, MAX_BANKS);
         var items = mapper.userList(userId, keys, USER_LIST_LIMIT).stream()
                 .map(row -> new UserItem(row.id(), row.source(), row.title(), row.pinned(), row.createdAt(), row.read()))
                 .toList();
@@ -168,7 +168,7 @@ public class NotificationService {
     }
 
     public Detail detail(String userId, String id) {
-        NotificationRow row = mapper.findVisible(id, userId, banks.ownedBankKeys(userId, MAX_BANKS))
+        NotificationRow row = mapper.findVisible(id, userId, banks.ownedBankUuids(userId, MAX_BANKS))
                 .orElseThrow(NotificationService::notFound);
         return new Detail(row.id(), row.source(), row.title(), row.body(), row.pinned(), row.createdAt());
     }
@@ -180,7 +180,7 @@ public class NotificationService {
 
     /** 点开一条通知：记录已查看；不可见的通知返回 404。 */
     public void markRead(String userId, String id) {
-        List<String> keys = banks.ownedBankKeys(userId, MAX_BANKS);
+        List<String> keys = banks.ownedBankUuids(userId, MAX_BANKS);
         if (mapper.findVisible(id, userId, keys).isEmpty()) throw notFound();
         mapper.markRead(id, userId, keys, clock.instant());
     }

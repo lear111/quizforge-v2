@@ -25,7 +25,7 @@ class PracticeCollectionMapperTest extends MySqlTestBase {
     @ValueSource(strings = {"current", "pending", "removed"})
     void insertPersistsAllV1Columns(String updateStatus) {
         var row = new PracticeCollectionRow(Ids.uuidV7(), Ids.uuidV7(), Ids.uuidV7(), "我的题库😀", "组", "{\"type\":\"upload\"}",
-                "g.legacy", Ids.uuidV7(), "question-banks/组/题库/", 3, updateStatus, NOW, NOW.plusSeconds(10));
+                "g.legacy", Ids.uuidV7(), "0f8fad5b-d9cb-469f-a165-70867728950e", 3, updateStatus, NOW, NOW.plusSeconds(10));
         assertThat(collections.insert(row)).isEqualTo(1);
         var stored = jdbc.queryForMap("SELECT * FROM practice_collection WHERE id=?", row.id());
         assertThat(stored).hasSize(13);
@@ -38,7 +38,7 @@ class PracticeCollectionMapperTest extends MySqlTestBase {
                 .isEqualTo(JsonMapper.builder().build().readTree(row.source()));
         assertThat(stored.get("legacy_route_id")).isEqualTo(row.legacyRouteId());
         assertThat(stored.get("source_pack_id")).isEqualTo(row.sourcePackId());
-        assertThat(stored.get("source_bank_key")).isEqualTo(row.sourceBankKey());
+        assertThat(stored.get("source_bank_uuid")).isEqualTo(row.sourceBankUuid());
         assertThat(stored.get("source_revision")).isEqualTo(row.sourceRevision());
         assertThat(stored.get("update_status")).isEqualTo(row.updateStatus());
         assertThat(jdbc.<Instant>queryForObject("SELECT created_at FROM practice_collection WHERE id=?",
@@ -56,7 +56,7 @@ class PracticeCollectionMapperTest extends MySqlTestBase {
         assertThat(collections.insert(second)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_collection WHERE user_id=? AND bank_id=?", Integer.class, user, bank)).isEqualTo(2);
         var stored = jdbc.queryForMap("SELECT * FROM practice_collection WHERE id=?", first.id());
-        for (String column : new String[] {"group_name", "legacy_route_id", "source_pack_id", "source_bank_key", "source_revision", "deleted_at"}) {
+        for (String column : new String[] {"group_name", "legacy_route_id", "source_pack_id", "source_bank_uuid", "source_revision", "deleted_at"}) {
             assertThat(stored.get(column)).as(column).isNull();
         }
     }

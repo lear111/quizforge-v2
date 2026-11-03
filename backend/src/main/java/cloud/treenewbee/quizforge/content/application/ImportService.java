@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.content.application;
 
+import cloud.treenewbee.quizforge.admin.application.ExtensionReviewService;
 import cloud.treenewbee.quizforge.practice.management.PracticeDirectoryService;
 import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
@@ -32,6 +33,9 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,20 +63,28 @@ public class ImportService {
     private final Clock clock;
     private final Path temporaryDirectory;
     private final QuotaService quotas;
+    private final ExtensionReviewService reviews;
     private final PracticeDirectoryService directory;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
             BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
             BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
             @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
-            QuotaService quotas, PracticeDirectoryService directory) {
+            QuotaService quotas, ExtensionReviewService reviews, PracticeDirectoryService directory) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
         this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
         this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
         this.temporaryDirectory = Path.of(temporaryDirectory);
         this.quotas = quotas;
+        this.reviews = reviews;
         this.directory = directory;
     }
+
+    /** 导入后的一本题库：bankUuid 为 bank.json 中的 UUID（小写），bankId 为共享内容 content_bank.id。 */
+    public record StoredBank(String bankUuid, String bankId, String title, String bankKey, int questionCount,
+            long logicalBytes, List<String> omittedIds) {}
+    /** 一次导入存储的结果；extensionDigests 为包内全部拓展的审核摘要（十六进制，排序）。 */
+    public record Ingested(String group, List<StoredBank> banks, List<String> extensionDigests, Instant now) {}
 
     public record ImportWarning(String code, String message, int count, List<String> questionIds) {}
     public record ImportedCollection(String id, String bankId, String title, String groupName, boolean available,
@@ -85,6 +97,15 @@ public class ImportService {
 
     /** Caller owns the input stream. Parsing and all HTTP calls finish before the business transaction starts. */
     public List<ImportedCollection> importArchive(String userId, String filename, InputStream upload) {
+        Path temporary = spool(upload);
+        try {
+            return ingest(temporary, group -> directory.beginImport(userId, group),
+                    ingested -> createCollections(userId, filename, ingested));
+        } finally { delete(temporary); }
+    }
+
+    /** 把上传写入临时文件（不超过 128 MiB）；调用方负责用 {@link #delete(Path)} 删除。 */
+    public Path spool(InputStream upload) {
         Path temporary = null;
         try {
             Files.createDirectories(temporaryDirectory);
@@ -97,29 +118,50 @@ public class ImportService {
                     output.write(buffer, 0, read);
                 }
             }
-            QbankPackageParser parser = new QbankPackageParser(blobs::put);
-            Map<String, Long> fileSizes = new LinkedHashMap<>();
-            QbankArchiveReader.read(temporary, ArchiveLimits.DEFAULT, (path, bytes) -> {
-                parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
-            });
-            var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
-            Map<String, Extension> extensions = new LinkedHashMap<>();
-            for (ParsedExtension extension : parsed.extensions()) {
-                for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
-                    throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
-                }
-                RulePackage spec = rules.spec(extension);
-                JsonNode capabilities = rules.call(spec, "capabilities", Map.of());
-                if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
-                extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
-            }
-            List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
-            return transactions.execute(status -> persist(userId, filename, parsed.manifest().group(), extensions, prepared));
-        } catch (IOException error) { throw new UncheckedIOException("无法读取上传的题库包", error); }
-        finally {
-            if (temporary != null) try { Files.deleteIfExists(temporary); }
-            catch (IOException cleanup) { LOG.warn("Unable to remove an import temporary file", cleanup); }
+            return temporary;
+        } catch (IOException error) {
+            delete(temporary);
+            throw new UncheckedIOException("无法读取上传的题库包", error);
+        } catch (RuntimeException error) {
+            delete(temporary);
+            throw error;
         }
+    }
+
+    public void delete(Path temporary) {
+        if (temporary == null) return;
+        try { Files.deleteIfExists(temporary); }
+        catch (IOException cleanup) { LOG.warn("Unable to remove an import temporary file", cleanup); }
+    }
+
+    /**
+     * 解析、校验并存储一个 .qbank（私人导入与题库广场共用，设计 04 第 6.1 节）：相同内容只存一份，
+     * 未知的拓展摘要登记为待审核。解析与规则调用在事务外完成；存储与 {@code sameTransaction} 在同一个事务中执行。
+     * {@code beforeStore} 在事务开始、写入任何内容之前执行（参数为包的分组名），用于先锁住调用方的行，保持加锁顺序
+     * （私人导入先锁用户的练习空间目录）。
+     */
+    public <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
+        QbankPackageParser parser = new QbankPackageParser(blobs::put);
+        Map<String, Long> fileSizes = new LinkedHashMap<>();
+        QbankArchiveReader.read(archive, ArchiveLimits.DEFAULT, (path, bytes) -> {
+            parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
+        });
+        var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
+        Map<String, Extension> extensions = new LinkedHashMap<>();
+        for (ParsedExtension extension : parsed.extensions()) {
+            for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
+                throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
+            }
+            RulePackage spec = rules.spec(extension);
+            JsonNode capabilities = rules.call(spec, "capabilities", Map.of());
+            if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
+            extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
+        }
+        List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
+        return transactions.execute(status -> {
+            beforeStore.accept(parsed.manifest().group());
+            return sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared));
+        });
     }
 
     @SuppressWarnings("unchecked")
@@ -211,8 +253,7 @@ public class ImportService {
         }
     }
 
-    private List<ImportedCollection> persist(String userId, String filename, String group, Map<String, Extension> extensions, List<Bank> prepared) {
-        directory.beginImport(userId, group);
+    private Ingested persist(String group, Map<String, Extension> extensions, List<Bank> prepared) {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         // All shared keys are acquired in a consistent order, including partially overlapping packages.
         for (Extension extension : extensions.values().stream().sorted(Comparator.comparing(e -> e.parsed().digest())).toList()) {
@@ -223,18 +264,23 @@ public class ImportService {
             for (var file : parsed.files().entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
                 files.insertIfAbsent(new ExtensionFileRow(hex(parsed.digest()), file.getKey(), hex(file.getValue())));
             }
+            // 未知的拓展摘要自动提交审核（路线图 L3.1）；已有记录（任何状态）不变。
+            reviews.registerPending(parsed.digest(), (String) manifest.get("id"), (String) manifest.get("version"));
         }
         Map<String, String> ids = new HashMap<>();
         for (Bank bank : prepared.stream().sorted(Comparator.comparing(Bank::hash)).toList()) {
             String id = Ids.uuidV7();
             boolean created = true;
             Map<String, Object> author = bank.parsed().bank();
+            String uuid = bankUuid(author);
             try {
-                banks.insert(new BankRow(id, hex(bank.hash()), bank.parsed().folderName(), (String) author.get("description"), 2,
-                        encode(bank.parsed().features()), nullableJson(author.get("listening")), bank.questions().size(), now));
+                banks.insert(new BankRow(id, hex(bank.hash()), uuid, bank.parsed().folderName(),
+                        (String) author.get("description"), 2, encode(bank.parsed().features()), nullableJson(author.get("listening")),
+                        bank.questions().size(), now));
             } catch (DuplicateKeyException conflict) {
                 id = banks.findIdByContentSha256ForShare(hex(bank.hash())).orElseThrow(() -> conflict);
                 created = false;
+                banks.fillIdentity(id, uuid);
             }
             ids.put(bank.hash(), id);
             if (!created) continue;
@@ -255,18 +301,32 @@ public class ImportService {
                 assets.insertBatch(assetRows);
             }
         }
+        List<StoredBank> stored = prepared.stream().map(bank -> new StoredBank(bankUuid(bank.parsed().bank()),
+                ids.get(bank.hash()), bank.parsed().folderName(), bank.parsed().bankKey(), bank.questions().size(),
+                bank.logicalBytes(), bank.omittedIds())).toList();
+        List<String> digests = extensions.values().stream().map(e -> e.parsed().digest()).distinct().sorted().toList();
+        return new Ingested(group, stored, digests, now);
+    }
+
+    private List<ImportedCollection> createCollections(String userId, String filename, Ingested ingested) {
         List<ImportedCollection> result = new ArrayList<>();
-        for (Bank bank : prepared) {
-            String id = Ids.uuidV7(), bankId = ids.get(bank.hash()), title = directory.importTitle(userId, bank.parsed().folderName(), group);
-            collections.insert(new PracticeCollectionRow(id, userId, bankId, title, group,
-                    encode(Map.of("type", "upload", "filename", filename)), null, null, bank.parsed().bankKey(), null, "current", now, null));
+        for (StoredBank bank : ingested.banks()) {
+            String id = Ids.uuidV7(), title = directory.importTitle(userId, bank.title(), ingested.group());
+            collections.insert(new PracticeCollectionRow(id, userId, bank.bankId(), title, ingested.group(),
+                    encode(Map.of("type", "upload", "filename", filename)), null, null, bank.bankUuid(), null, "current",
+                    ingested.now(), null));
             quotas.setStorage(userId, "import", id, id, bank.logicalBytes());
             List<ImportWarning> warnings = bank.omittedIds().isEmpty() ? List.of() : List.of(new ImportWarning(
                     "QUESTIONS_NOT_IN_OUTLINE", bank.omittedIds().size() + " 道题未出现在大纲中，不会显示",
                     bank.omittedIds().size(), bank.omittedIds()));
-            result.add(new ImportedCollection(id, bankId, title, group, availability.isAvailable(bankId), warnings));
+            result.add(new ImportedCollection(id, bank.bankId(), title, ingested.group(),
+                    availability.isAvailable(bank.bankId()), warnings));
         }
         return List.copyOf(result);
+    }
+
+    private static String bankUuid(Map<String, Object> bank) {
+        return ((String) bank.get("id")).toLowerCase(Locale.ROOT);
     }
 
     private String nullableJson(Object value) { return value == null ? null : encode(value); }
