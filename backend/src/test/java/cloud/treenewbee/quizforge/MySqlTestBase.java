@@ -21,6 +21,7 @@ import org.testcontainers.mysql.MySQLContainer;
         // 缓存的测试上下文共用数据库，但各自使用不同的模拟或真实 runner。
         // 生命周期测试显式推进任务，真实调度由 Compose 浏览器验收覆盖。
         "qf.practice.jobs.enabled=false",
+        "qf.import.jobs.enabled=false",
         // Cached test contexts share one MySQL; do not retain ten idle connections per context.
         "spring.datasource.hikari.minimum-idle=0",
         "spring.datasource.hikari.maximum-pool-size=4",

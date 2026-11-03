@@ -76,6 +76,9 @@ class CatalogIntegrationTest extends MySqlTestBase {
     @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
     @Autowired BankAvailability availability;
+    @Autowired cloud.treenewbee.quizforge.content.application.ImportQueueJobs queue;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
     @Value("${local.server.port}") int port;
     final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
@@ -84,7 +87,10 @@ class CatalogIntegrationTest extends MySqlTestBase {
 
     @BeforeEach
     void clean() {
-        for (String table : List.of("catalog_pack_event", "catalog_pack_file", "catalog_pack_bank", "catalog_pack_revision",
+        // 此类显式推进队列，只验证持久化与审核；前台让行由独立门控测试覆盖。
+        org.mockito.Mockito.doReturn(false).when(runner).foregroundRecentlyActive();
+        jdbc.update("UPDATE content_import_slot SET job_id=NULL,lease_until=NULL");
+        for (String table : List.of("content_import_job", "content_validation_cache", "catalog_pack_event", "catalog_pack_file", "catalog_pack_bank", "catalog_pack_revision",
                 "catalog_pack", "practice_collection", "content_question", "content_bank_asset", "content_bank",
                 "content_extension_file", "content_extension_package", "admin_extension_review")) {
             jdbc.update("DELETE FROM " + table);
@@ -433,12 +439,18 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     private HttpResponse<String> publish(User user, byte[] archive, Map<String, String> fields, List<byte[]> shots) throws Exception {
-        return multipart(user, "/api/catalog/packs", fields, archive, shots, List.of());
+        return validated(multipart(user, "/api/catalog/packs", fields, archive, shots, List.of()));
     }
 
     private HttpResponse<String> revise(User user, String pack, byte[] archive, Map<String, String> fields, List<byte[]> shots,
                                         List<String> keep) throws Exception {
-        return multipart(user, "/api/catalog/packs/" + pack + "/revisions", fields, archive, shots, keep);
+        return validated(multipart(user, "/api/catalog/packs/" + pack + "/revisions", fields, archive, shots, keep));
+    }
+
+    // 既有审核用例显式推进后台任务；接收请求本身的异步行为由队列用例断言。
+    private HttpResponse<String> validated(HttpResponse<String> response) {
+        if (response.statusCode() == 201) assertThat(queue.runOne()).isTrue();
+        return response;
     }
 
     private HttpResponse<String> privateImport(User user, byte[] archive) throws Exception {

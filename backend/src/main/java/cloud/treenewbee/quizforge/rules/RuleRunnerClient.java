@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Component;
 
@@ -46,6 +47,10 @@ public class RuleRunnerClient {
     private final HttpClient http;
     private final Semaphore permits;
     private final MeterRegistry meters;
+    private final java.util.function.LongSupplier ticker;
+    private final java.util.concurrent.atomic.AtomicInteger foregroundActive = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long foregroundFinishedAt;
+    private volatile boolean foregroundSeen;
     private final ThreadLocal<Boolean> background = ThreadLocal.withInitial(() -> false);
     public static final class BackgroundBusy extends RuleRunnerException {
         public BackgroundBusy() { super("后台规则任务等待前台请求释放名额"); }
@@ -63,7 +68,13 @@ public class RuleRunnerClient {
 
     @Autowired
     public RuleRunnerClient(RuleRunnerProperties properties, JsonMapper json, MeterRegistry meters) {
+        this(properties, json, meters, System::nanoTime);
+    }
+
+    RuleRunnerClient(RuleRunnerProperties properties, JsonMapper json, MeterRegistry meters,
+            java.util.function.LongSupplier ticker) {
         this.meters = meters;
+        this.ticker = ticker;
         this.properties = properties;
         this.json = json;
         this.http = HttpClient.newBuilder()
@@ -75,6 +86,12 @@ public class RuleRunnerClient {
                 p -> properties.maxConcurrency() - p.availablePermits()).register(meters);
         Gauge.builder("qf.rule.runner.bulkhead.limit", properties, RuleRunnerProperties::maxConcurrency).register(meters);
         meters.counter("qf.rule.runner.bulkhead.rejected");
+    }
+
+    /** 导入在前台调用期间及其后一个调度周期让行，避免连续请求之间的短空隙反复启动重活。 */
+    public boolean foregroundRecentlyActive() {
+        return foregroundActive.get() > 0 || foregroundSeen
+                && ticker.getAsLong() - foregroundFinishedAt < TimeUnit.MILLISECONDS.toNanos(250);
     }
 
     /** 使用默认时限执行一个操作。 */
@@ -92,12 +109,14 @@ public class RuleRunnerClient {
         HttpRequest request = buildRequest(op, rulePackage, input, deadline);
 
         String operation = metricOp(op);
+        boolean foregroundCall = !background.get();
         boolean acquired;
         synchronized (permits) {
             // 后台让出前台保留名额，交给任务调度器稍后重试。
             if (background.get() && permits.availablePermits() <= properties.maxConcurrency()/2)
                 throw new BackgroundBusy();
             acquired = permits.tryAcquire();
+            if (acquired && foregroundCall) foregroundActive.incrementAndGet();
         }
         Timer.Sample timing = Timer.start(meters);
         try {
@@ -123,7 +142,16 @@ public class RuleRunnerClient {
             }
             throw e;
         } finally {
-            if (acquired) permits.release();
+            if (acquired) {
+                synchronized (permits) {
+                    if (foregroundCall) {
+                        foregroundFinishedAt = ticker.getAsLong();
+                        foregroundSeen = true;
+                        foregroundActive.decrementAndGet();
+                    }
+                    permits.release();
+                }
+            }
             timing.stop(Timer.builder("qf.rule.runner.duration").tag("op", operation).register(meters));
         }
     }

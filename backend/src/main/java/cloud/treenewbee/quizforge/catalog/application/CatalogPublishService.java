@@ -2,13 +2,11 @@ package cloud.treenewbee.quizforge.catalog.application;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,7 +19,6 @@ import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.FileRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackBankRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.RevisionRow;
-import cloud.treenewbee.quizforge.content.application.ImportService;
 import cloud.treenewbee.quizforge.content.infrastructure.BlobStore;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionMapper;
 import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionRow;
@@ -33,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  * 发布到题库广场（设计 04 第 2、6.1 节，需求 FR-10 v1.13、FR-11）。
  *
  * <ul>
- *   <li>从本地上传 .qbank：保存作者上传的原文件（以后下载逐字节一致，C-05），走与私人导入相同的导入代码，
+ *   <li>从本地上传 .qbank：保存作者上传的原文件（以后下载逐字节一致，C-05），进入后台校验队列，
  *       未知拓展登记为待审核。从私人题库包（“我的题库”资源）发布在下一个 PR 中加入，同样直接使用原文件（设计 04 第 6.0 节）。</li>
  *   <li>发布者只能对整个题库包操作：上传整包新版本、删除整个包。归属写在 SQL 条件里。</li>
  *   <li>每个版本只审核一次。新版本提交时，尚未审核的旧版本不再审核（superseded）；审核期间继续公开上一个已审核版本。</li>
@@ -70,18 +67,19 @@ public class CatalogPublishService {
     }
 
     private final CatalogMapper mapper;
-    private final ImportService imports;
     private final BlobStore blobs;
     private final PracticeCollectionMapper collections;
     private final JsonMapper json;
+    private final cloud.treenewbee.quizforge.content.application.ImportUploadService uploads;
 
-    public CatalogPublishService(CatalogMapper mapper, ImportService imports, BlobStore blobs,
-                                 PracticeCollectionMapper collections, JsonMapper json) {
+    public CatalogPublishService(CatalogMapper mapper, BlobStore blobs,
+                                 PracticeCollectionMapper collections, JsonMapper json,
+                                 cloud.treenewbee.quizforge.content.application.ImportUploadService uploads) {
         this.mapper = mapper;
-        this.imports = imports;
         this.blobs = blobs;
         this.collections = collections;
         this.json = json;
+        this.uploads = uploads;
     }
 
     // ---------------------------------------------------------------- 发布
@@ -91,7 +89,7 @@ public class CatalogPublishService {
                                    List<Screenshot> screenshots) {
         requireRights(rights);
         List<FileRow> shots = storeScreenshots(screenshots, 0);
-        return submit(userId, null, info, archive, qbankName(filename), "upload", shots, List.of());
+        return submit(userId, null, info, archive, qbankName(filename), shots, List.of());
     }
 
     /** 上传整包新版本；keepScreenshots 为沿用的上一版本截图 ID。 */
@@ -102,76 +100,20 @@ public class CatalogPublishService {
                 .orElseThrow(CatalogPublishService::packNotFound);
         List<String> keep = keepScreenshots == null ? List.of() : List.copyOf(new java.util.LinkedHashSet<>(keepScreenshots));
         List<FileRow> shots = storeScreenshots(screenshots, keep.size());
-        return submit(userId, pack.id(), info, archive, qbankName(filename), "upload", shots, keep);
+        return submit(userId, pack.id(), info, archive, qbankName(filename), shots, keep);
     }
 
-    private Submitted submit(String userId, String existingPack, PackInfo info, Path archive, String filename, String source,
+    private Submitted submit(String userId, String existingPack, PackInfo info, Path archive, String filename,
                              List<FileRow> shots, List<String> keep) {
-        String sha256;
-        long size;
-        try {
-            size = Files.size(archive);
-            sha256 = blobs.putFile(archive); // 原文件逐字节保存（C-05）
-        } catch (IOException error) {
-            throw new UncheckedIOException("无法保存题库文件", error);
-        }
-        return imports.ingest(archive, group -> { }, ingested -> {
-            String packId = existingPack;
-            int revision;
-            Instant now = ingested.now();
-            if (packId == null) {
-                packId = Ids.uuidV7();
-                mapper.insertPack(packId, userId, now);
-                revision = 1;
-            } else {
-                PackRow pack = mapper.lockOwned(packId, userId).orElseThrow(CatalogPublishService::packNotFound);
-                revision = pack.latestRevision() + 1;
-                mapper.closePending(packId, "superseded");
-                if (mapper.advance(packId, revision, now) != 1) throw new IllegalStateException("catalog_pack changed while locked");
-            }
-            mapper.insertRevision(new RevisionRow(packId, revision, info.title(), info.summary(), info.description(),
-                    info.category(), json.writeValueAsString(info.tags()), info.releaseNotes(), source, filename,
-                    HexFormat.of().parseHex(sha256), size, json.writeValueAsString(ingested.extensionDigests()), "pending",
-                    null, null, null, null, userId, now));
-            List<PackBankRow> banks = new ArrayList<>();
-            for (int i = 0; i < ingested.banks().size(); i++) {
-                var bank = ingested.banks().get(i);
-                banks.add(new PackBankRow(bank.bankUuid(), bank.bankId(), bank.title(), i, bank.questionCount(), null));
-            }
-            mapper.insertBanks(packId, revision, banks);
-            int position = 0;
-            if (!keep.isEmpty()) {
-                List<FileRow> previous = mapper.files(packId, revision - 1);
-                for (String id : keep) {
-                    FileRow file = previous.stream().filter(row -> row.id().equals(id)).findFirst()
-                            .orElseThrow(() -> PackInfo.invalid("要沿用的截图不属于上一个版本，请刷新后重试"));
-                    mapper.insertFile(new FileRow(Ids.uuidV7(), packId, revision, file.kind(), position++, file.name(),
-                            file.mime(), file.size(), file.blobSha256()));
-                }
-            }
-            for (FileRow shot : shots) {
-                mapper.insertFile(new FileRow(Ids.uuidV7(), packId, revision, "screenshot", position++, shot.name(),
-                        shot.mime(), shot.size(), shot.blobSha256()));
-            }
-            Map<String, Object> detail = new LinkedHashMap<>();
-            detail.put("source", source);
-            detail.put("filename", filename);
-            detail.put("size", size);
-            detail.put("sha256", sha256);
-            detail.put("banks", banks.size());
-            event(packId, revision, userId, revision == 1 ? "published" : "revised", detail, now);
-            return new Submitted(packId, revision);
-        });
+        var accepted = uploads.acceptFile(userId, existingPack, false, info, archive, filename, shots, keep);
+        return new Submitted(accepted.packId(), accepted.revision());
     }
 
     // ---------------------------------------------------------------- 删除整个包
 
     @org.springframework.transaction.annotation.Transactional
     public void delete(String userId, String packId) {
-        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
-        if (mapper.delete(packId, userId, now) != 1) throw packNotFound();
-        mapper.closePending(packId, "withdrawn");
-        event(packId, null, userId, "deleted", Map.of(), now);
+        uploads.delete(userId, packId);
     }
 
     // ---------------------------------------------------------------- 我的发布
@@ -179,13 +121,21 @@ public class CatalogPublishService {
     public List<PackView> mine(String userId) {
         return mapper.owned(userId).stream().map(pack -> new PackView(pack.id(), pack.status(), pack.latestRevision(),
                 pack.approvedRevision(), pack.createdAt(), pack.deletedAt(),
-                mapper.revisions(pack.id()).stream().map(this::revisionView).toList())).toList();
+                mapper.revisions(pack.id()).stream().map(row -> revisionView(row,
+                        "active".equals(pack.status()) ? uploads.reviewState(userId, pack.id(), row.revision()) : null))
+                        .toList())).toList();
     }
 
     public RevisionView revisionView(RevisionRow row) {
+        return revisionView(row, null);
+    }
+
+    private RevisionView revisionView(RevisionRow row,
+            cloud.treenewbee.quizforge.content.application.ImportUploadService.ReviewState state) {
         return new RevisionView(row.revision(), row.title(), row.summary(), row.description(), row.category(),
-                readTags(row.tags()), row.releaseNotes(), row.source(), row.filename(), row.size(), row.reviewStatus(),
-                row.reviewNote(), row.reviewedAt(), row.submittedAt(),
+                readTags(row.tags()), row.releaseNotes(), row.source(), row.filename(), row.size(),
+                state == null ? row.reviewStatus() : state.status(), state == null ? row.reviewNote() : state.reason(),
+                row.reviewedAt(), row.submittedAt(),
                 mapper.banks(row.packId(), row.revision()).stream()
                         .map(bank -> new BankView(bank.bankUuid(), bank.title(), bank.questionCount())).toList(),
                 mapper.files(row.packId(), row.revision()).stream()
@@ -197,7 +147,8 @@ public class CatalogPublishService {
         FileRow file = mapper.file(fileId).orElseThrow(CatalogPublishService::fileNotFound);
         PackRow pack = mapper.pack(file.packId()).orElseThrow(CatalogPublishService::fileNotFound);
         boolean visible = admin || pack.ownerId().equals(userId)
-                || "active".equals(pack.status()) && pack.approvedRevision() != null && pack.approvedRevision() == file.revision();
+                || "active".equals(pack.status()) && pack.approvedRevision() != null && pack.approvedRevision() == file.revision()
+                    && uploads.isPublic(pack.id(), pack.ownerId(), file.revision());
         if (!visible) throw fileNotFound();
         return file;
     }
@@ -209,6 +160,7 @@ public class CatalogPublishService {
     public Joined join(String userId, String packId, List<String> bankUuids) {
         PackRow pack = mapper.pack(packId).filter(row -> "active".equals(row.status()) && row.approvedRevision() != null)
                 .orElseThrow(CatalogPublishService::packNotFound);
+        if (!uploads.isPublic(pack.id(), pack.ownerId(), pack.approvedRevision())) throw packNotFound();
         int revision = pack.approvedRevision();
         RevisionRow info = mapper.revision(packId, revision).orElseThrow(CatalogPublishService::packNotFound);
         List<PackBankRow> banks = mapper.banks(packId, revision);
@@ -252,10 +204,6 @@ public class CatalogPublishService {
             }
         }
         return stored;
-    }
-
-    private void event(String packId, Integer revision, String actorId, String action, Map<String, ?> detail, Instant now) {
-        mapper.insertEvent(Ids.uuidV7(), packId, revision, actorId, action, json.writeValueAsString(detail), now);
     }
 
     @SuppressWarnings("unchecked")

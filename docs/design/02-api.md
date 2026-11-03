@@ -85,6 +85,17 @@
 
 ---
 
+### 原文件接收与后台校验（FR-11 v1.16，第一切片）
+
+- `POST /api/library/uploads?filename=题库.qbank`：正文为 `application/octet-stream` 原始字节，成功立即返回 `202 {packId,revision}`。登录、次数及声明长度检查先于读取正文；实际流也逐块计数。可用 `packId` 在未通过的私人条目内提交新版本。
+- `GET /api/library/uploads/{id}/revisions/{revision}`：仅所有者可读，返回 `{packId,revision,status,reason}`。状态为 `pending / approved / rejected`；排队、校验中、基础设施重试及处理失败均对用户显示待审核。白名单撤销在下一个请求生效。
+- `DELETE /api/library/uploads/{id}`：仅所有者可删；取消任务、使旧代次失效，释放尚未关联练习实例的原文件配额。
+- `POST /api/catalog/packs` 与 `POST /api/catalog/packs/{id}/revisions` 保留既有 multipart 字段与 `201 {packId,revision}` 响应，接收完成后立即入队。普通公开版本仍需管理员审核；管理员上传通过校验后可自动批准，但绝不恢复已经拒绝或撤销的拓展。
+- `GET /api/admin/import-jobs` 返回待处理、正在处理及处理失败的任务；`POST /api/admin/import-jobs/{id}/retry` 重试仍属于最新有效版本的失败任务。只允许未封禁管理员。
+- 后台规则调用携带低优先级并保留前台舱壁名额；本实例检测到前台规则调用时，及其结束后 250 ms 内，暂缓领取/推进导入。规则批次之间与业务落库前再次检查，让行不消耗基础设施重试次数。持续的前台负载可能延长排队时间。
+- 默认单包 128 MiB、每用户每日接收尝试 20 次；日期按北京时间计算。中断尝试计次数，不建立条目、不占配额；超过次数返回 `429 UPLOAD_LIMIT`，提示“请稍后再试”。私人包按原文件大小预留个人配额，公开包不计个人配额（作者确认，2026-11-02）；配额与版本、任务在同一短事务内写入，超额全部回滚。
+- 第一切片保留旧 `POST /api/library/import` 及练习空间上传入口以兼容已交付界面；下一切片接入主页“我的题库”，再将练习空间改为只创建实例。
+
 ## 2. 浏览器接口清单
 
 “模块”列表示由哪个后端模块实现（ADR-001）；“差异”列说明与旧接口相比的变化，留空表示行为一致。

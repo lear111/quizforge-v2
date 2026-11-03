@@ -1,6 +1,7 @@
 import {test, expect as baseExpect} from '@playwright/test';
 import {mkdir, readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {registerByApi} from './accounts.mjs';
 
 const expect = baseExpect.configure({timeout: 30000});
@@ -15,9 +16,19 @@ test('existing dialogs manage empty groups, names, moves, conflicts and irrevers
   });
   expect(response.status(), await response.text()).toBe(200);
   const {collections} = await response.json();
+  // 目录管理不验证审核流程；独立准备本测试的样例，避免依赖先运行的读题/考试测试。
+  const project = process.env.QF_COMPOSE_PROJECT;
+  if (!project?.startsWith('qf-')) throw new Error('需要独立的本机 Compose 项目');
+  for (const item of collections) expect(item.id).toMatch(/^[a-f0-9-]{36}$/);
+  const ids = collections.map(item => `'${item.id}'`).join(',');
+  const approval = `UPDATE admin_extension_review r JOIN content_question q ON q.extension_digest=r.digest JOIN practice_collection c ON c.bank_id=q.bank_id SET r.status='approved' WHERE c.id IN (${ids});`;
+  execFileSync('docker', ['compose', '-p', project, '-f', resolve('../deploy/docker-compose.yml'), 'exec', '-T', 'mysql', 'sh', '-c', 'exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'], {input: approval, stdio: ['pipe', 'pipe', 'pipe']});
   const bank = collections[0];
   await page.goto('/practice/');
   const showLibrary = async target => {
+    // 首次题卡提交会调用 closeDrawers；等候真正激活的题卡，避免它关闭刚打开的手机抽屉。
+    await expect(target.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+    await expect(target.locator('#collection-loading')).toBeHidden();
     if (await target.locator('#library-toggle').getAttribute('aria-expanded') !== 'true') await target.locator('#library-toggle').click();
     await expect(target.locator('#library-list')).toBeVisible();
   };

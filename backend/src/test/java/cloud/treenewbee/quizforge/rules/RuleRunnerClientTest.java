@@ -74,6 +74,31 @@ class RuleRunnerClientTest {
     }
 
     @Test
+    void foregroundActivityIncludesInflightCallsAndOneControlledSchedulingInterval() throws Exception {
+        try (var peer = new FakeRuleRunner(); var pool = Executors.newSingleThreadExecutor()) {
+            var tick = new java.util.concurrent.atomic.AtomicLong();
+            var client = new RuleRunnerClient(new RuleRunnerProperties(peer.uri(), TOKEN, 4, DEADLINE), JSON,
+                    new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), tick::get);
+            assertThat(client.foregroundRecentlyActive()).isFalse();
+            client.background(() -> execute(client));
+            assertThat(client.foregroundRecentlyActive()).isFalse();
+            var gate = peer.block(1);
+            var running = pool.submit(() -> execute(client));
+            gate.awaitEntered();
+            try {
+                tick.set(TimeUnit.SECONDS.toNanos(5));
+                assertThat(client.foregroundRecentlyActive()).isTrue();
+            } finally { gate.close(); }
+            assertThat(running.get(10, TimeUnit.SECONDS).ok()).isTrue();
+            assertThat(client.foregroundRecentlyActive()).isTrue();
+            tick.addAndGet(TimeUnit.MILLISECONDS.toNanos(249));
+            assertThat(client.foregroundRecentlyActive()).isTrue();
+            tick.addAndGet(TimeUnit.MILLISECONDS.toNanos(1));
+            assertThat(client.foregroundRecentlyActive()).isFalse();
+        }
+    }
+
+    @Test
     void backgroundPriorityIsScopedAndRestoredEvenAfterFailure() throws Exception {
         try(var peer=new FakeRuleRunner()) {
             var client=client(peer.uri(),4);

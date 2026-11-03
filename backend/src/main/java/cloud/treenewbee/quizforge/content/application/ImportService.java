@@ -65,12 +65,14 @@ public class ImportService {
     private final QuotaService quotas;
     private final ExtensionReviewService reviews;
     private final PracticeDirectoryService directory;
+    private final QueuedImportValidation queuedValidation;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
             BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
             BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
             @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
-            QuotaService quotas, ExtensionReviewService reviews, PracticeDirectoryService directory) {
+            QuotaService quotas, ExtensionReviewService reviews, PracticeDirectoryService directory,
+            QueuedImportValidation queuedValidation) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
         this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
         this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
@@ -78,6 +80,7 @@ public class ImportService {
         this.quotas = quotas;
         this.reviews = reviews;
         this.directory = directory;
+        this.queuedValidation = queuedValidation;
     }
 
     /** 导入后的一本题库：bankUuid 为 bank.json 中的 UUID（小写），bankId 为共享内容 content_bank.id。 */
@@ -141,31 +144,54 @@ public class ImportService {
      * （私人导入先锁用户的练习空间目录）。
      */
     public <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
+        return ingest(archive, beforeStore, sameTransaction, false, () -> {});
+    }
+
+    /** 队列入口跨题库归组，所有规则调用使用后台名额；提交前由调用方检查租约栅栏。 */
+    public <T> T ingestQueued(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
+        return ingest(archive, beforeStore, sameTransaction, true, () -> {});
+    }
+
+    public <T> T ingestQueued(Path archive, Runnable guard, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
+        return ingest(archive, beforeStore, sameTransaction, true, guard);
+    }
+
+    private <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction, boolean queued, Runnable guard) {
+        long started = System.nanoTime();
         QbankPackageParser parser = new QbankPackageParser(blobs::put);
         Map<String, Long> fileSizes = new LinkedHashMap<>();
         QbankArchiveReader.read(archive, ArchiveLimits.DEFAULT, (path, bytes) -> {
             parser.accept(path, bytes); fileSizes.put(path, (long) bytes.length);
         });
         var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
+        long parsedAt = System.nanoTime();
+        var validated = queued ? queuedValidation.validate(parsed.extensions(), parsed.banks(), guard) : null;
         Map<String, Extension> extensions = new LinkedHashMap<>();
         for (ParsedExtension extension : parsed.extensions()) {
             for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
                 throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
             }
             RulePackage spec = rules.spec(extension);
-            JsonNode capabilities = rules.call(spec, "capabilities", Map.of());
+            JsonNode capabilities = queued ? validated.get(extension.path()).capabilities()
+                    : rules.call(spec, "capabilities", Map.of());
             if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
             extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
         }
-        List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes)).toList();
-        return transactions.execute(status -> {
+        List<Bank> prepared = parsed.banks().stream().map(bank -> prepare(bank, extensions, fileSizes, validated)).toList();
+        long validatedAt = System.nanoTime();
+        T result = transactions.execute(status -> {
             beforeStore.accept(parsed.manifest().group());
             return sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared));
         });
+        LOG.info("题库包处理完成：parseMs={} validateMs={} storeMs={} banks={} queued={}",
+                (parsedAt - started) / 1_000_000, (validatedAt - parsedAt) / 1_000_000,
+                (System.nanoTime() - validatedAt) / 1_000_000, prepared.size(), queued);
+        return result;
     }
 
     @SuppressWarnings("unchecked")
-    private Bank prepare(ParsedBank bank, Map<String, Extension> extensions, Map<String, Long> fileSizes) {
+    private Bank prepare(ParsedBank bank, Map<String, Extension> extensions, Map<String, Long> fileSizes,
+            Map<String, QueuedImportValidation.Validated> validated) {
         Map<String, String> assetHashes = new LinkedHashMap<>();
         bank.assets().forEach((path, asset) -> {
             if (path.codePointCount(0, path.length()) > 255) throw new ImportFailure("INVALID_QUESTION_BANK", "题库「" + bank.folderName() + "」资源路径超过存储上限");
@@ -195,15 +221,18 @@ public class ImportService {
         for (var group : groups.entrySet()) {
             Extension extension = extensions.get(group.getKey());
             List<Object> data = group.getValue().stream().map(i -> authorQuestions.get(i).get("data")).toList();
-            rules.batch(extension.spec(), "validateBank", data, null);
+            var outcomes = validated == null ? null : validated.get(group.getKey()).questions();
+            if (outcomes == null) rules.batch(extension.spec(), "validateBank", data, null);
             List<Integer> missingOutline = group.getValue().stream().filter(i -> {
                 Placement placement = placements.get(authorQuestions.get(i).get("id"));
                 return placement == null || placement.outline() == null;
             }).toList();
             Map<Integer, Object> outlines = new HashMap<>();
             if (extension.canOutline() && extension.spec().outlineItemsDeclared() && !missingOutline.isEmpty()) {
-                List<JsonNode> generated = rules.batch(extension.spec(), "outlineBatch",
-                        missingOutline.stream().map(i -> authorQuestions.get(i).get("data")).toList(), "outlineItems");
+                List<JsonNode> generated = outcomes == null ? rules.batch(extension.spec(), "outlineBatch",
+                        missingOutline.stream().map(i -> authorQuestions.get(i).get("data")).toList(), "outlineItems")
+                        : missingOutline.stream().map(i -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash
+                                .compute(authorQuestions.get(i).get("data"))).path("outlineItems")).toList();
                 for (int i = 0; i < missingOutline.size(); i++) {
                     if (!generated.get(i).isArray()) throw ImportRules.unavailable();
                     JsonNode items = generated.get(i);
@@ -216,7 +245,9 @@ public class ImportService {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("data", value); item.put("state", Map.of("status", "unanswered", "submitted", false)); return item;
             }).toList();
-            List<JsonNode> scores = rules.batch(extension.spec(), "scoreBatch", scoreInput, "scores");
+            List<JsonNode> scores = outcomes == null ? rules.batch(extension.spec(), "scoreBatch", scoreInput, "scores")
+                    : data.stream().map(value -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash.compute(value))
+                            .path("score")).toList();
             for (int i = 0; i < group.getValue().size(); i++) {
                 int index = group.getValue().get(i);
                 Map<String, Object> author = authorQuestions.get(index);

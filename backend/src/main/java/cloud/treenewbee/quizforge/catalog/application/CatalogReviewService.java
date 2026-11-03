@@ -60,9 +60,11 @@ public class CatalogReviewService {
     private final AdminAuditService audit;
     private final JsonMapper json;
     private final Clock clock;
+    private final cloud.treenewbee.quizforge.content.infrastructure.ImportCatalogMapper validation;
 
     public CatalogReviewService(CatalogMapper mapper, CatalogPublishService publishing, ExtensionReviewService extensions,
-                                NotificationService notifications, AdminAuditService audit, JsonMapper json, Clock clock) {
+                                NotificationService notifications, AdminAuditService audit, JsonMapper json, Clock clock,
+                                cloud.treenewbee.quizforge.content.infrastructure.ImportCatalogMapper validation) {
         this.mapper = mapper;
         this.publishing = publishing;
         this.extensions = extensions;
@@ -70,6 +72,7 @@ public class CatalogReviewService {
         this.audit = audit;
         this.json = json;
         this.clock = clock;
+        this.validation = validation;
     }
 
     public List<Pending> pending() {
@@ -139,6 +142,9 @@ public class CatalogReviewService {
         PackRow pack = mapper.lock(packId).orElseThrow(CatalogPublishService::packNotFound);
         if (!"active".equals(pack.status())) throw changed("题库包已被发布者删除");
         RevisionRow row = mapper.revision(packId, revision).orElseThrow(CatalogPublishService::packNotFound);
+        if (!"validated".equals(validation.validationStatus(packId, revision))) {
+            throw changed("题库包尚未通过后台内容校验");
+        }
         List<String> digests = digests(row);
         var states = extensions.states(digests);
         List<String> unapproved = digests.stream()
