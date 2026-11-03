@@ -192,7 +192,9 @@ def main():
         for qid in identifiers[:20]:
             submit(qid)
         with ThreadPoolExecutor(max_workers=2) as foreground_workers:
+            before_baseline = metrics()
             baseline = list(foreground_workers.map(submit, identifiers[20:120]))
+            baseline_lru = metrics() - before_baseline
             running = threading.Event()
 
             def background_imports():
@@ -214,7 +216,9 @@ def main():
                 if not running.wait(180):
                     task.result()
                     raise RuntimeError('未能与导入重叠')
+                before_import = metrics()
                 during = list(foreground_workers.map(submit, identifiers[120:220]))
+                during_lru = metrics() - before_import
                 packs = task.result()
         for pack in packs:
             deadline = time.monotonic()+180
@@ -225,7 +229,9 @@ def main():
         def summary(values):
             return dict(count=len(values), p95Ms=sorted(values)[math.ceil(len(values)*.95)-1],
                         meanMs=sum(values)/len(values), maxMs=max(values), errors=0)
-        result = dict(mode='foreground', vus=2, baseline=summary(baseline), duringImport=summary(during))
+        result = dict(mode='foreground', vus=2, baseline=summary(baseline), duringImport=summary(during),
+                      baselineLruStops=baseline_lru, duringImportLruStops=during_lru,
+                      baselineSamplesMs=baseline, duringImportSamplesMs=during)
         (LOCAL / 'benchmark-foreground.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result))
         return

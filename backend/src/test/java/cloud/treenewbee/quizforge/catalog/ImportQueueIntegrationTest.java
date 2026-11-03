@@ -389,11 +389,14 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
             verifyNoInteractions(runner);
             queue.runOne();
             assertThat(review(first.packId())).isEqualTo("approved");
-            var second = publishing.publishUpload(user(false).id(), new cloud.treenewbee.quizforge.catalog.application.PackInfo(
+            assertThat(quotas.usage(admin.id()).storage().usedBytes()).isZero();
+            User ordinary = user(false);
+            var second = publishing.publishUpload(ordinary.id(), new cloud.treenewbee.quizforge.catalog.application.PackInfo(
                     "普通公开验收", "简介", "说明", "其他", List.of(), ""), true, path, "公开.qbank", List.of());
             queue.runOne();
             assertThat(review(second.packId())).isEqualTo("pending");
             assertThat(state(second.packId())).isEqualTo("validated");
+            assertThat(quotas.usage(ordinary.id()).storage().usedBytes()).isZero();
         } finally { java.nio.file.Files.deleteIfExists(path); }
     }
 
