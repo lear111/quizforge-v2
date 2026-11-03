@@ -226,10 +226,14 @@ public class ImportQueueJobs {
             LOG.warn("导入后台处理失败：job={}", job.id(), error);
             fail(job, "PROCESSING_FAILED", "处理失败，请联系管理员", true);
         } finally {
-            jobs.release(job.id(), job.generation());
-            if (temporary != null) {
-                try { Files.deleteIfExists(temporary); }
-                catch (IOException error) { LOG.warn("清理后台校验临时文件失败：job={}", job.id()); }
+            try {
+                jobs.release(job.id(), job.generation());
+            } finally {
+                // 数据库断开导致释放槽位失败，也必须删除本次临时文件。
+                if (temporary != null) {
+                    try { Files.deleteIfExists(temporary); }
+                    catch (IOException error) { LOG.warn("清理后台校验临时文件失败：job={}", job.id()); }
+                }
             }
         }
     }
