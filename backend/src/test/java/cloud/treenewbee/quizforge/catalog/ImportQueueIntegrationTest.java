@@ -416,7 +416,7 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
         queue.reconcileReviews();
         queue.reconcileReviews();
         assertThat(uploads.reviewState(user.id(), first.packId(), 1).status()).isEqualTo("rejected");
-        assertThat(publishing.mine(user.id()).getFirst().revisions().getFirst().reviewStatus()).isEqualTo("rejected");
+        assertThat(publishing.mine(user.id())).isEmpty();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE target_id=?", Integer.class, user.id())).isEqualTo(before + 1);
         byte[] data = archive();
         var second = uploads.receivePrivate(user.id(), first.packId(), "重试.qbank", data.length, new ByteArrayInputStream(data));

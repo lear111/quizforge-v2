@@ -115,7 +115,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 768m
-    pids_limit: 64
+    # 包含 Node 的辅助线程及健康探针，允许现有压测基线的 8 个工作进程。
+    pids_limit: 128
     ulimits:
       core: 0
     restart: unless-stopped

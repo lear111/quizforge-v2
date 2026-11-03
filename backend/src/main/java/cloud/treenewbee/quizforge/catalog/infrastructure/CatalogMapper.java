@@ -73,7 +73,7 @@ public interface CatalogMapper {
             """)
     int delete(@Param("id") String id, @Param("ownerId") String ownerId, @Param("now") Instant now);
 
-    @Select("SELECT " + PACK + " FROM catalog_pack WHERE owner_id = #{ownerId} ORDER BY created_at DESC, id LIMIT 200")
+    @Select("SELECT " + PACK + " FROM catalog_pack WHERE owner_id = #{ownerId} AND visibility='public' ORDER BY created_at DESC, id LIMIT 200")
     List<PackRow> owned(@Param("ownerId") String ownerId);
 
     // ---------------------------------------------------------------- 版本

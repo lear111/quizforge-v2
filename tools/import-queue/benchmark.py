@@ -195,6 +195,8 @@ def main():
             before_baseline = metrics()
             baseline = list(foreground_workers.map(submit, identifiers[20:120]))
             baseline_lru = metrics() - before_baseline
+            # 每次对照都清空本项目的校验缓存，重复运行也必须是真正的冷导入。
+            sql('DELETE FROM content_validation_cache;')
             running = threading.Event()
 
             def background_imports():
