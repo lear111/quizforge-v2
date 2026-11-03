@@ -62,7 +62,7 @@ class SubmitGraderIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @Autowired SubmitGrader grader;
     @Autowired PracticeReadService reads;
     @Autowired QuestionMapper questions;

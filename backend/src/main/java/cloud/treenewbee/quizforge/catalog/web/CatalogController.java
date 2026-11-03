@@ -107,7 +107,7 @@ public class CatalogController {
                 .header("X-Accel-Redirect", "/_qf_blobs/" + sha.substring(0, 2) + "/" + sha.substring(2, 4) + "/" + sha).build();
     }
 
-    /** 加入我的题库（从已审核版本按本选择）。 */
+    /** 从当前已审核的公开版本创建独立练习实例。 */
     @PostMapping("/api/catalog/packs/{id}/practice")
     public CatalogPublishService.Joined join(Principal user, @PathVariable String id, @Valid @RequestBody Join body) {
         return publishing.join(user.getName(), id, body.banks());

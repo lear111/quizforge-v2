@@ -27,8 +27,11 @@ public class QuotaService {
     private final Clock clock;
     private final JsonMapper json;
     private final AdminAuditService audit;
-    public QuotaService(QuotaMapper mapper, UserMapper users, Clock clock, JsonMapper json, AdminAuditService audit) {
+    private final cloud.treenewbee.quizforge.quota.infrastructure.PrivateRevisionMapper privateRevisions;
+    public QuotaService(QuotaMapper mapper, UserMapper users, Clock clock, JsonMapper json, AdminAuditService audit,
+            cloud.treenewbee.quizforge.quota.infrastructure.PrivateRevisionMapper privateRevisions) {
         this.mapper = mapper; this.users = users; this.clock = clock; this.json = json; this.audit = audit;
+        this.privateRevisions = privateRevisions;
     }
     public record Amount(long usedBytes, long limitBytes, Long overrideBytes) {}
     public record Usage(Amount storage, Amount dailyDownload, LocalDate day, Instant resetsAt) {}
@@ -102,6 +105,46 @@ public class QuotaService {
         long bytes = mapper.collectionBytes(userId, collectionId).stream().reduce(0L, Math::addExact);
         mapper.storage(userId, Math.subtractExact(account.storageUsed(), bytes));
         mapper.deleteCollection(userId, collectionId);
+        privateRevisions.source(userId, collectionId).ifPresent(source -> {
+            if (privateRevisions.instances(userId, source.packId(), source.revision(), -1) != 1) {
+                throw new IllegalStateException("私人题库实例引用未释放");
+            }
+            releaseUnused(userId, source.packId());
+        });
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void retainPrivateResource(String user, String pack, int revision, long bytes) {
+        setStorage(user, "private_pack", pack + ":" + revision, null, bytes);
+        if (privateRevisions.insert(user, pack, revision) != 1) throw new IllegalStateException("私人资源引用未建立");
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void retainPrivateInstance(String user, String pack, int revision) {
+        lock(user);
+        if (privateRevisions.instances(user, pack, revision, 1) != 1) {
+            throw new IllegalStateException("私人题库版本引用不存在");
+        }
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void releasePrivateResource(String user, String pack) {
+        lock(user);
+        privateRevisions.removeResource(user, pack);
+        releaseUnused(user, pack);
+    }
+
+    private void releaseUnused(String user, String pack) {
+        for (var row : privateRevisions.references(user, pack)) {
+            if (!row.resourcePresent() && row.instanceCount() == 0) {
+                String key = pack + ":" + row.revision();
+                setStorage(user, "private_pack", key, null, 0);
+                mapper.deletePrivateItem(user, key);
+                if (privateRevisions.removeUnused(user, pack, row.revision()) != 1) {
+                    throw new IllegalStateException("私人版本引用未释放");
+                }
+            }
+        }
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

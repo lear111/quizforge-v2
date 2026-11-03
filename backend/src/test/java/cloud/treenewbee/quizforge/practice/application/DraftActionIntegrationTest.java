@@ -59,7 +59,7 @@ class DraftActionIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @Autowired JdbcTemplate jdbc;
     @Autowired org.mybatis.spring.SqlSessionTemplate sqlSession;
     @Autowired DraftSqlGate gate;

@@ -104,7 +104,7 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
     @Autowired cloud.treenewbee.quizforge.content.infrastructure.BlobStore blobs;
     @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.PracticeHistoryMapper historyMapper;
     @Autowired AuthService auth;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @MockitoSpyBean SubmitGrader grader;
     @MockitoSpyBean ReviewGrader reviewGrader;
     @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.PracticeLifecycleMapper lifecycleMapper;

@@ -11,7 +11,6 @@ export function renderLibraryView({document,catalog,listMode,activeKey,collapsed
   $('#welcome p').textContent=catalog.unavailable?'部分功能尚未开放，你可以在这里逐步体验新的练习功能。':'选择左侧题库，开始练习。';
   const root=$('#library-list');root.replaceChildren();const rows=[...(listMode==='bank'?catalog.banks:catalog.extensions)].sort(compareItems);
   $('#library-new-group').hidden=!catalog.canManage||listMode!=='bank';
-  $('#library-import').hidden=!catalog.canManage||listMode!=='bank';
   const actions=(target,row)=>{const tools=el('span','library-row-actions');if(!catalog.canManage)return tools;
     const entries=[['update','编辑','m15 4 5 5-11 11H4v-5L15 4Zm-3 3 5 5']];
     for(const [action,label,path]of entries){

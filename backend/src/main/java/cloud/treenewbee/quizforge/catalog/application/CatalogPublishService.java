@@ -5,24 +5,17 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.FileRow;
-import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackBankRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.PackRow;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper.RevisionRow;
 import cloud.treenewbee.quizforge.content.infrastructure.BlobStore;
-import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionMapper;
-import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionRow;
-import cloud.treenewbee.quizforge.shared.id.Ids;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,7 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <ul>
  *   <li>从本地上传 .qbank：保存作者上传的原文件（以后下载逐字节一致，C-05），进入后台校验队列，
- *       未知拓展登记为待审核。从私人题库包（“我的题库”资源）发布在下一个 PR 中加入，同样直接使用原文件（设计 04 第 6.0 节）。</li>
+ *       未知拓展登记为待审核。私人题库包也可从主页直接复用原文件发布（设计 04 第 6.0 节）。</li>
  *   <li>发布者只能对整个题库包操作：上传整包新版本、删除整个包。归属写在 SQL 条件里。</li>
  *   <li>每个版本只审核一次。新版本提交时，尚未审核的旧版本不再审核（superseded）；审核期间继续公开上一个已审核版本。</li>
  *   <li>公开题库不计入个人存储配额。</li>
@@ -68,16 +61,16 @@ public class CatalogPublishService {
 
     private final CatalogMapper mapper;
     private final BlobStore blobs;
-    private final PracticeCollectionMapper collections;
+    private final cloud.treenewbee.quizforge.practice.application.LibraryPracticeService practice;
     private final JsonMapper json;
     private final cloud.treenewbee.quizforge.content.application.ImportUploadService uploads;
 
     public CatalogPublishService(CatalogMapper mapper, BlobStore blobs,
-                                 PracticeCollectionMapper collections, JsonMapper json,
+                                 cloud.treenewbee.quizforge.practice.application.LibraryPracticeService practice, JsonMapper json,
                                  cloud.treenewbee.quizforge.content.application.ImportUploadService uploads) {
         this.mapper = mapper;
         this.blobs = blobs;
-        this.collections = collections;
+        this.practice = practice;
         this.json = json;
         this.uploads = uploads;
     }
@@ -153,34 +146,12 @@ public class CatalogPublishService {
         return file;
     }
 
-    // ---------------------------------------------------------------- 加入我的题库（最小实现，界面在 PR ②）
+    // ---------------------------------------------------------------- 导入练习空间
 
-    /** 从已审核版本按本加入；删除（下架）或尚未通过审核的包不能加入。同一本已加入时返回已有的实例。 */
-    @org.springframework.transaction.annotation.Transactional
+    /** 每次加入都创建独立实例；广场来源可由后续版本更新流程识别。 */
     public Joined join(String userId, String packId, List<String> bankUuids) {
-        PackRow pack = mapper.pack(packId).filter(row -> "active".equals(row.status()) && row.approvedRevision() != null)
-                .orElseThrow(CatalogPublishService::packNotFound);
-        if (!uploads.isPublic(pack.id(), pack.ownerId(), pack.approvedRevision())) throw packNotFound();
-        int revision = pack.approvedRevision();
-        RevisionRow info = mapper.revision(packId, revision).orElseThrow(CatalogPublishService::packNotFound);
-        List<PackBankRow> banks = mapper.banks(packId, revision);
-        Set<String> wanted = new HashSet<>(bankUuids == null ? List.of() : bankUuids);
-        if (wanted.isEmpty() || !banks.stream().map(PackBankRow::bankUuid).toList().containsAll(wanted)) {
-            throw PackInfo.invalid("请选择题库包中的题库");
-        }
-        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
-        List<String> ids = new ArrayList<>();
-        for (PackBankRow bank : banks) {
-            if (!wanted.contains(bank.bankUuid())) continue;
-            var existing = mapper.joined(userId, packId, bank.bankUuid());
-            if (existing.isPresent()) { ids.add(existing.get()); continue; }
-            String id = Ids.uuidV7();
-            collections.insert(new PracticeCollectionRow(id, userId, bank.bankId(), bank.title(), info.title(),
-                    json.writeValueAsString(Map.of("type", "hub", "packId", packId, "revision", revision)), null, packId,
-                    bank.bankUuid(), revision, "current", now, null));
-            ids.add(id);
-        }
-        return new Joined(ids);
+        return new Joined(practice.create(userId, packId, null, bankUuids, null, false).stream()
+                .map(cloud.treenewbee.quizforge.practice.application.LibraryPracticeService.Created::id).toList());
     }
 
     // ---------------------------------------------------------------- 内部

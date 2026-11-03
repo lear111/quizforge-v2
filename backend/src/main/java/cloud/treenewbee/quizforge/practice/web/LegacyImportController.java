@@ -1,6 +1,6 @@
-package cloud.treenewbee.quizforge.content.web;
+package cloud.treenewbee.quizforge.practice.web;
 
-import cloud.treenewbee.quizforge.content.application.ImportService;
+import cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService;
 import cloud.treenewbee.quizforge.content.domain.ImportFailure;
 import java.io.IOException;
 import java.security.Principal;
@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-public class ImportController {
-    private final ImportService imports;
-    public ImportController(ImportService imports) { this.imports = imports; }
-    public record ImportResponse(List<ImportService.ImportedCollection> collections) {}
+public class LegacyImportController {
+    private final LegacyPracticeImportService imports;
+    public LegacyImportController(LegacyPracticeImportService imports) { this.imports = imports; }
+    public record ImportResponse(List<LegacyPracticeImportService.ImportedCollection> collections) {}
 
     @PostMapping(value = "/api/library/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ImportResponse importArchive(@RequestPart("file") MultipartFile file, Principal principal) throws IOException {

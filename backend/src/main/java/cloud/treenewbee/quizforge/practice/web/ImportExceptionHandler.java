@@ -1,4 +1,4 @@
-package cloud.treenewbee.quizforge.content.web;
+package cloud.treenewbee.quizforge.practice.web;
 
 import cloud.treenewbee.quizforge.content.archive.ArchiveRejectedException;
 import cloud.treenewbee.quizforge.content.domain.ImportFailure;
@@ -14,7 +14,7 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = ImportController.class)
+@RestControllerAdvice(assignableTypes = LegacyImportController.class)
 public class ImportExceptionHandler {
     @ExceptionHandler(ArchiveRejectedException.class)
     ResponseEntity<ErrorResponse> archive(ArchiveRejectedException error) {

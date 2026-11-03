@@ -54,6 +54,9 @@ public interface CatalogMapper {
     @Select("SELECT " + PACK + " FROM catalog_pack WHERE id = #{id}")
     Optional<PackRow> pack(@Param("id") String id);
 
+    @Select("SELECT " + PACK + " FROM catalog_pack WHERE id=#{id} AND owner_id=#{user} AND status='active'")
+    Optional<PackRow> ownedActive(@Param("id") String id, @Param("user") String user);
+
     /** 发布者自己的、未删除的题库包，加锁：同一个包的新版本、删除与审核互斥。 */
     @Select("SELECT " + PACK + " FROM catalog_pack WHERE id = #{id} AND owner_id = #{ownerId} AND status = 'active' FOR UPDATE")
     Optional<PackRow> lockOwned(@Param("id") String id, @Param("ownerId") String ownerId);

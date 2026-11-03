@@ -129,62 +129,84 @@ public class ImportUploadService {
             long size = Files.size(archive);
             if (size > maxBytes) throw tooLarge();
             String hash = blobs.putFile(archive);
-            return tx.execute(status -> {
-                Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
-                String pack;
-                int revision;
-                if (existingPack == null) {
-                    pack = Ids.uuidV7();
-                    catalog.insertPack(pack, user, now);
-                    if (metadata.visibility(pack, user, privatePack ? "private" : "public") != 1) {
-                        throw new IllegalStateException("题库包归属已变化");
-                    }
-                    revision = 1;
-                } else {
-                    var owned = catalog.lockOwned(existingPack, user).orElseThrow(ImportUploadService::notFound);
-                    var before = metadata.owned(existingPack, user, owned.latestRevision()).orElseThrow(ImportUploadService::notFound);
-                    if (privatePack != "private".equals(before.visibility())) throw notFound();
-                    if (privatePack) requireRejected(user, existingPack);
-                    pack = existingPack;
-                    revision = owned.latestRevision() + 1;
-                    catalog.closePending(pack, "superseded");
-                    jobs.cancel(pack, now);
-                    if (catalog.advance(pack, revision, now) != 1) throw new IllegalStateException("题库包版本未推进");
-                }
-                if (privatePack) quotas.setStorage(user, "private_pack", pack + ":" + revision, null, size);
-                catalog.insertRevision(new RevisionRow(pack, revision, info.title(), info.summary(), info.description(),
-                        info.category(), json.writeValueAsString(info.tags()), info.releaseNotes(), "upload", name,
-                        HexFormat.of().parseHex(hash), size, "[]", "pending", null, null, null, null, user, now));
-                metadata.validation(pack, revision, "queued", null);
-                int position = 0;
-                List<FileRow> previous = revision > 1 ? catalog.files(pack, revision - 1) : List.of();
-                for (String id : keep) {
-                    FileRow shot = previous.stream().filter(file -> file.id().equals(id)).findFirst()
-                            .orElseThrow(() -> invalid("要沿用的截图不属于上一个版本"));
-                    catalog.insertFile(new FileRow(Ids.uuidV7(), pack, revision, shot.kind(), position++, shot.name(), shot.mime(), shot.size(), shot.blobSha256()));
-                }
-                for (FileRow shot : shots) {
-                    catalog.insertFile(new FileRow(Ids.uuidV7(), pack, revision, "screenshot", position++, shot.name(), shot.mime(), shot.size(), shot.blobSha256()));
-                }
-                catalog.insertEvent(Ids.uuidV7(), pack, revision, user, revision == 1 ? "published" : "revised",
-                        json.writeValueAsString(Map.of("filename", name, "size", size, "sha256", hash)), now);
-                jobs.enqueue(Ids.uuidV7(), pack, revision, now);
-                Accepted accepted = new Accepted(pack, revision);
-                events.publishEvent(accepted);
-                return accepted;
-            });
+            return acceptOriginal(user, existingPack, privatePack, info, name, size, hash, shots, keep);
         } catch (IOException error) {
             throw new UncheckedIOException("无法保存题库原文件", error);
         }
     }
 
+    /** 私人包发布直接引用原文件；不会下载、解压或重新打包。 */
+    public Accepted publishPrivate(String user, String pack, int revision, PackInfo info) {
+        preflight(user, 0, false);
+        return tx.execute(status -> {
+            catalog.lockOwned(pack, user).orElseThrow(ImportUploadService::notFound);
+            var state = metadata.owned(pack, user, revision).orElseThrow(ImportUploadService::notFound);
+            if (!"private".equals(state.visibility())) throw notFound();
+            var original = catalog.revision(pack, revision).orElseThrow(ImportUploadService::notFound);
+            if (original.blobSha256() == null) {
+                throw new ApiException(HttpStatus.CONFLICT, "ORIGINAL_UNAVAILABLE", "原文件不可用，无法直接发布");
+            }
+            return acceptOriginal(user, null, false, info, original.filename(), original.size(),
+                    HexFormat.of().formatHex(original.blobSha256()), List.of(), List.of());
+        });
+    }
+
+    private Accepted acceptOriginal(String user, String existingPack, boolean privatePack, PackInfo info,
+            String name, long size, String hash, List<FileRow> shots, List<String> keep) {
+        return tx.execute(status -> {
+            Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+            String pack;
+            int revision;
+            if (existingPack == null) {
+                pack = Ids.uuidV7();
+                catalog.insertPack(pack, user, now);
+                if (metadata.visibility(pack, user, privatePack ? "private" : "public") != 1) {
+                    throw new IllegalStateException("题库包归属已变化");
+                }
+                revision = 1;
+            } else {
+                var owned = catalog.lockOwned(existingPack, user).orElseThrow(ImportUploadService::notFound);
+                var before = metadata.owned(existingPack, user, owned.latestRevision()).orElseThrow(ImportUploadService::notFound);
+                if (privatePack != "private".equals(before.visibility())) throw notFound();
+                if (privatePack) requireRejected(user, existingPack);
+                pack = existingPack;
+                revision = owned.latestRevision() + 1;
+                catalog.closePending(pack, "superseded");
+                jobs.cancel(pack, now);
+                if (catalog.advance(pack, revision, now) != 1) throw new IllegalStateException("题库包版本未推进");
+            }
+            if (privatePack) quotas.retainPrivateResource(user, pack, revision, size);
+            catalog.insertRevision(new RevisionRow(pack, revision, info.title(), info.summary(), info.description(),
+                    info.category(), json.writeValueAsString(info.tags()), info.releaseNotes(), "upload", name,
+                    HexFormat.of().parseHex(hash), size, "[]", "pending", null, null, null, null, user, now));
+            metadata.validation(pack, revision, "queued", null);
+            int position = 0;
+            List<FileRow> previous = revision > 1 ? catalog.files(pack, revision - 1) : List.of();
+            for (String id : keep) {
+                FileRow shot = previous.stream().filter(file -> file.id().equals(id)).findFirst()
+                        .orElseThrow(() -> invalid("要沿用的截图不属于上一个版本"));
+                catalog.insertFile(new FileRow(Ids.uuidV7(), pack, revision, shot.kind(), position++, shot.name(), shot.mime(), shot.size(), shot.blobSha256()));
+            }
+            for (FileRow shot : shots) {
+                catalog.insertFile(new FileRow(Ids.uuidV7(), pack, revision, "screenshot", position++, shot.name(), shot.mime(), shot.size(), shot.blobSha256()));
+            }
+            catalog.insertEvent(Ids.uuidV7(), pack, revision, user, revision == 1 ? "published" : "revised",
+                    json.writeValueAsString(Map.of("filename", name, "size", size, "sha256", hash)), now);
+            jobs.enqueue(Ids.uuidV7(), pack, revision, now);
+            Accepted accepted = new Accepted(pack, revision);
+            events.publishEvent(accepted);
+            return accepted;
+        });
+    }
+
+
     public void delete(String user, String pack) {
         tx.executeWithoutResult(status -> {
-            catalog.lockOwned(pack, user).orElseThrow(ImportUploadService::notFound);
+            var owned = catalog.lockOwned(pack, user).orElseThrow(ImportUploadService::notFound);
+            boolean privatePack = "private".equals(metadata.owned(pack, user, owned.latestRevision()).orElseThrow(ImportUploadService::notFound).visibility());
             if (catalog.delete(pack, user, clock.instant()) != 1) throw notFound();
             jobs.cancel(pack, clock.instant());
-            // 尚未开放实例导入；下一切片将按资源与实例的共同引用保留此账目。
-            quotas.releasePrefix(user, "private_pack", pack + ":");
+            if (privatePack) quotas.releasePrivateResource(user, pack);
             catalog.closePending(pack, "withdrawn");
             catalog.insertEvent(Ids.uuidV7(), pack, null, user, "deleted", "{}", clock.instant());
         });

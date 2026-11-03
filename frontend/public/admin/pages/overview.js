@@ -10,6 +10,7 @@ export async function render(container, context) {
     ['近 7 天新注册', String(data.users.newLast7Days)],
     ['当前在线', String(data.online), '5 分钟内有活动的用户（单实例统计）'],
     ['存储总用量', bytes(data.storageUsedBytes), '私人上传的题库'],
+    ['今日上传次数', String(data.uploads.today), '北京时间；包含未完成的上传尝试'],
   ];
   const max = Math.max(1, ...data.trend.map((day) => Math.max(day.registered, day.active)));
   const bar = (value, tone) => el('span', { class: `qa-bar ${tone}`, style: `width:${(value / max) * 100}%` });
@@ -26,6 +27,10 @@ export async function render(container, context) {
           el('td', { text: String(day.practiced) }),
           el('td', { class: 'qa-bars', 'aria-hidden': 'true' }, bar(day.registered, 'registered'), bar(day.active, 'active'))))))),
       el('p', { class: 'qa-muted', text: '活跃用户：当天打开过网站的登录用户；练习用户：当天切换过题目的用户。数据每分钟写入一次。' })),
+    el('section', { class: 'qa-panel' },
+      el('h2', { text: '今日上传最多的用户（前 5）' }),
+      el('ol', {}, ...data.uploads.topUsers.map(user => el('li', {text:`${user.name}：${user.uploads} 次`}))),
+      data.uploads.topUsers.length ? null : el('p', {class:'qa-muted',text:'今天还没有上传'})),
     el('section', { class: 'qa-panel', 'data-placeholder': 'banks' },
       el('h2', { text: '题库' }),
       el('p', { class: 'qa-muted', text: '题库数量、待审核与下载等统计将在题库广场完成后加入。' })));

@@ -313,9 +313,9 @@ class CatalogIntegrationTest extends MySqlTestBase {
         User learner = user();
         String body = "{\"banks\":[\"" + ImportArchives.BANK_IDS.get("单选题") + "\"]}";
         String collection = json(post(learner, "/api/catalog/packs/" + pack + "/practice", body)).path("collections").get(0).asString();
-        // 重复加入同一本：打开已有的实例。
+        // 每次导入都创建独立实例，互不覆盖作答。
         assertThat(json(post(learner, "/api/catalog/packs/" + pack + "/practice", body)).path("collections").get(0).asString())
-                .isEqualTo(collection);
+                .isNotEqualTo(collection);
 
         assertThat(revise(stranger, pack, archive(List.of("单选题"), null), info("劫持"), List.of(), List.of()).statusCode())
                 .isEqualTo(404);

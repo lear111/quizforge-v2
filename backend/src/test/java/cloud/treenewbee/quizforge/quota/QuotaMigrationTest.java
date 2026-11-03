@@ -34,10 +34,10 @@ class QuotaMigrationTest {
             long previous = sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class);
             assertThat(previous).isPositive();
             Flyway.configure().dataSource(source).load().migrate();
-            assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category='import'",Long.class)).isEqualTo(2);
-            var sizes = sql.queryForList("SELECT size_bytes FROM quota_storage_item WHERE category='import'",Long.class);
+            assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category='private_pack'",Long.class)).isEqualTo(2);
+            var sizes = sql.queryForList("SELECT size_bytes FROM quota_storage_item WHERE category='private_pack'",Long.class);
             assertThat(sizes.get(0)).isEqualTo(sizes.get(1)).isGreaterThan(200);
-            assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category<>'import'",Long.class)).isZero();
+            assertThat(sql.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE category<>'private_pack'",Long.class)).isZero();
             assertThat(sql.queryForObject("SELECT storage_used FROM quota_account WHERE user_id='user'",Long.class)).isEqualTo(sizes.get(0)*2).isLessThan(previous);
             assertThat(sql.queryForObject("SELECT storage_limit FROM quota_account WHERE user_id='user'",Long.class)).isNull();
             assertThat(sql.queryForObject("SELECT COUNT(*) FROM practice_collection",Long.class)).isEqualTo(4);

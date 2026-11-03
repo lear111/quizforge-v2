@@ -99,7 +99,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         registry.add("qf.rule-runner.default-deadline", () -> "60s");
     }
 
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @Autowired ImportRules rules;
     @Autowired BankAvailability availability;
     @Autowired AuthService auth;

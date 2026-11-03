@@ -37,11 +37,8 @@ test('real Cookie login, refresh, shell, missing import, appearance and logout',
     await openLibrary(page);
   }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.locator('#library-import-file').setInputFiles({name:'unsupported.qbank',mimeType:'application/vnd.quizforge.qbank',buffer:Buffer.from('not a zip')});
-  await page.locator('#library-import-confirm').click();
-  await expect(page.locator('#library-import-error')).toBeVisible();
-  await expect(page.locator('#library-import-error')).not.toHaveText(/undefined|Cannot|Exception/);
-  await page.locator('#library-import-cancel').click();
+  await expect(page.locator('#library-import-file')).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'从“我的题库”导入'})).toBeVisible();
   await page.locator('#online-logout').click();await expect(page).toHaveURL(/\/$/);
   await expect(page.locator('#login-form')).toBeVisible();
   await page.goto('/practice/');await expect(page).toHaveURL(/\/\?returnTo=/);

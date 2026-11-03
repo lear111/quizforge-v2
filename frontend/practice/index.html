@@ -34,13 +34,10 @@
       <div class="brand"><img class="brand-mark" src="/practice/assets/quizforge-icon.svg" width="36" height="36" alt=""
           aria-hidden="true"><span>QuizForge<small>你的练习空间</small></span></div>
             <div class="library-heading"><span id="library-label">我的题库</span>
-        <div class="sidebar-actions"><button id="library-import" class="icon-button" title="导入题库分组" aria-label="导入题库分组"
-            hidden><svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" />
-            </svg></button><input id="library-import-file" type="file" accept=".qbank,application/vnd.quizforge.qbank"
-            hidden><button id="library-new-group" class="icon-button" title="新建分组" aria-label="新建分组"
+        <div class="sidebar-actions"><button id="library-new-group" class="icon-button" title="新建分组" aria-label="新建分组"
             hidden>+</button><button id="refresh" class="icon-button" title="刷新目录" aria-label="刷新目录">↻</button></div>
       </div>
+      <p class="library-manage-hint"><a href="/library/">从“我的题库”导入</a></p>
       <div id="library-list" class="library-list"></div>
       <nav class="library-footer online-navigation" aria-label="账号与外观">
         <button id="appearance-open" type="button">外观</button><a href="/">账号</a><button id="online-logout" type="button">退出登录</button>
@@ -104,19 +101,7 @@
     </aside>
   </div>
   <div id="scrim" class="scrim" hidden></div>
-  <dialog id="library-import-dialog" class="library-manage-dialog" aria-labelledby="library-import-title">
-    <form id="library-import-form">
-      <div class="dialog-heading">
-        <h2 id="library-import-title">导入题库分组</h2><button id="library-import-close" class="icon-button" type="button"
-          aria-label="关闭导入">×</button>
-      </div>
-      <p id="library-import-name" class="library-manage-hint"></p>
-      <p class="library-manage-hint">导入格式 4 的 .qbank 题库包及配套拓展，每本题库创建独立练习实例。已有题库、作答和历史保留。未审核拓展的题库暂不可用。</p>
-      <p id="library-import-error" class="library-manage-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button id="library-import-cancel" type="button">取消</button><button
-          id="library-import-confirm" type="submit">导入</button></div>
-    </form>
-  </dialog>
+
   <dialog id="library-manage-dialog" class="library-manage-dialog" aria-labelledby="library-manage-title">
     <form id="library-manage-form">
       <div class="dialog-heading">

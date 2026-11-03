@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByForm} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 
 test('real sample import, approval fixture, open and render all five types',async({page},info)=>{
   test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','Requires an explicitly isolated Compose fixture');
@@ -16,14 +17,9 @@ test('real sample import, approval fixture, open and render all five types',asyn
   await registerByForm(page,'read','切片验收');
   await expect(page).toHaveURL(/\/practice\/$/);
   const library=async()=>{if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();await expect(page.locator('#library-list')).toBeVisible();};
-  await library();
-  await expect(page.locator('#library-import')).toBeVisible();
-  await page.locator('#library-import-file').setInputFiles(resolve('../samples/basic-types.qbank'));
-  const importedResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/library/import'&&response.request().method()==='POST');
-  await page.locator('#library-import-confirm').click();
-  const imported=await importedResponse;expect(imported.status()).toBe(200);
-  const {collections}=await imported.json();expect(collections).toHaveLength(5);
-  await expect(page.locator('#library-import-dialog')).not.toBeVisible();
+  const {collections}=await uploadAndImportFromLibrary(page);
+  expect(collections).toHaveLength(5);
+  await page.goto('/practice/');
   // Review state is global per digest. Reset only this disposable fixture so desktop/mobile
   // and local reruns exercise the same pending -> approved path.
   const ids=collections.map(row=>row.id);for(const id of ids)expect(id).toMatch(/^[a-f0-9-]{36}$/);

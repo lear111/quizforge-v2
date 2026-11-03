@@ -4,7 +4,11 @@ import java.util.Optional;
 import org.apache.ibatis.annotations.*;
 
 @Mapper
-public interface UserResourceMapper {
+public interface UserResourceMapper extends cloud.treenewbee.quizforge.content.application.OwnedResourceAccess {
+    @Override
+    default Optional<String> ownedMime(String userId, byte[] sha256) {
+        return find(userId, sha256).map(UserResourceRow::mime);
+    }
     @Insert("""
             INSERT INTO practice_user_resource (user_id, blob_sha256, mime, size, created_at)
             VALUES (#{userId}, #{blobSha256}, #{mime}, #{size}, #{createdAt})

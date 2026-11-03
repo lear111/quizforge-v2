@@ -15,7 +15,7 @@
 | 进入练习空间 / 刷新 | GET /api/me | 已实现 | 1（前置认证） | app.js:start；先确认会话，再加载目录 |
 | 账号页 / 退出 | GET /api/me；POST /api/auth/logout | 已实现 | 1（前置认证） | public/auth.js、app.js；退出后回到 / |
 | 我的题库 / 刷新目录 | GET /api/library/index；缺失时 GET /api/catalog | 已实现（本次只读入口） | 1 | shared/online.js、library-index-client.js；两者都缺失时显示明确空状态，不造题库数据 |
-| 导入题库包 | POST /api/library/import，multipart 字段 file | 已实现（PR #43） | 1 | library-transfer.js；128 MiB、成功后重新读目录；上传入口暂留，待主页“我的题库”接入后移走 |
+| 上传私人题库包 / 从资源创建练习 | POST /api/library/uploads；POST /api/library/packs/{id}/practice | 已实现 | 1 | public/library/library.js；练习空间移除上传入口；后台审核通过后只创建实例，不调用规则 |
 | 选择题库 / 从历史返回 | GET C | 已实现 | 2 | app.js:openCollection / returnToPractice / activateReady；首次打开还会继续请求首题和拓展页面 |
 | 首题 / 切题 / 邻题预取 / 冲突后重读 | GET Q | 已实现 | 3 | app.js:loadQuestion / prefetchAdjacent；命中缓存时带 stamp 条件头 |
 | 题目拓展页面 | GET /api/extensions/{pageId 或 id}/{version}/page | 已实现 | 3 | bridge/extension-pages.js；pageId 为所绑定拓展的审核摘要；同 ID/版本不同摘要分开路由与缓存 |
