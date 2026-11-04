@@ -13,7 +13,9 @@ const vus = Number(__ENV.VUS || 20);
 if (!Number.isInteger(vus) || vus < 1 || users.length < vus) throw Error('Seed at least one fresh user per VU');
 export const options = {
   vus, duration: __ENV.DURATION || '60s', gracefulStop: '15s', setupTimeout: '120s',
-  thresholds: {checks: ['rate==1'], http_req_failed: ['rate==0']},
+  thresholds: {checks: ['rate==1'], http_req_failed: ['rate==0'],
+    // 仅生成可比较的单题提交子指标，不设容量结论用的延迟阈值。
+    'http_req_duration{name:submit}':['p(95)>=0']},
 };
 let cookie;
 function params(name) {
