@@ -17,9 +17,21 @@ test('plaza browse search detail import and favorite original download',async({p
   await expect.poll(async()=>{const r=await page.request.get('/api/library/packs/'+published);return(await r.json()).revisions[0].banks.length;},{timeout:60000}).toBeGreaterThan(0);
   const project=process.env.QF_COMPOSE_PROJECT;
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:`UPDATE catalog_pack_revision SET review_status='approved' WHERE pack_id='${published}'; UPDATE catalog_pack SET approved_revision=1 WHERE id='${published}';`,stdio:['pipe','pipe','pipe']});
-  const learner=await browser.newContext({viewport:info.project.use.viewport,isMobile:info.project.use.isMobile});const tab=await learner.newPage();
-  await tab.goto('/plaza/');await tab.locator('[name=q]').fill(title);await tab.getByRole('button',{name:'搜索',exact:true}).click();
-  await tab.getByRole('link',{name:title,exact:true}).click();await expect(tab.locator('#detail')).toContainText('公开详情介绍');
+  const learner=await browser.newContext({viewport:info.project.use.viewport,isMobile:info.project.use.isMobile});const tab=await learner.newPage();tab.on('pageerror',e=>errors.push(e.message));
+  await tab.goto('/plaza/');
+  await expect(tab.getByRole('link',{name:title,exact:true})).toBeVisible();
+  let entered,release,continued;
+  const held=new Promise(done=>entered=done),gate=new Promise(done=>release=done),finished=new Promise(done=>continued=done);
+  const matcher=url=>url.pathname==='/api/plaza/packs'&&url.searchParams.get('q')===title;
+  await tab.route(matcher,async route=>{entered();await gate;await route.continue();continued();});
+  await tab.locator('[name=q]').fill(title);await tab.getByRole('button',{name:'搜索',exact:true}).click();await held;
+  try {
+    // 搜索尚未返回时，已有卡片仍可导航；不能把 hashchange 当重复提交丢弃。
+    await tab.getByRole('link',{name:title,exact:true}).click();
+    await expect(tab.locator('#detail')).toContainText('公开详情介绍');
+  } finally {release();}
+  await finished;await tab.unroute(matcher);
+  await expect(tab.locator('#packs .plaza-card')).toHaveCount(1);
   await registerByApi(tab,'plaza-learner','广场学习者');await tab.goto('/plaza/#'+published);
   await tab.getByRole('button',{name:'收藏',exact:true}).click();await expect(tab.getByRole('button',{name:'取消收藏',exact:true})).toBeVisible();
   await tab.getByRole('button',{name:'导入练习空间',exact:true}).click();await expect(tab.locator('#feedback')).toContainText('已导入独立练习实例');

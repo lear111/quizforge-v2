@@ -9,7 +9,7 @@ async function request(path,method='GET',body) {
   if(!response.ok)throw new Error(data?.error?.message??'请求失败');
   return data;
 }
-async function work(action){if(busy)return;busy=true;try{await action();}catch(error){$('#feedback').textContent=error.message==='Failed to fetch'?'无法连接服务器':error.message;}finally{busy=false;}}
+async function work(action){if(busy)return;busy=true;$('#search button').disabled=true;$('#more').disabled=true;try{await action();}catch(error){$('#feedback').textContent=error.message==='Failed to fetch'?'无法连接服务器':error.message;}finally{busy=false;$('#search button').disabled=false;$('#more').disabled=false;}}
 async function load(more=false){
   const values=new FormData($('#search'));
   const query=new URLSearchParams({q:values.get('q'),sort:values.get('sort')});
@@ -24,7 +24,9 @@ async function load(more=false){
 }
 async function detail(){
   const id=location.hash.slice(1);if(!id){$('#detail').hidden=true;return;}
-  const data=await request('/api/plaza/packs/'+encodeURIComponent(id));const p=data.pack;
+  const data=await request('/api/plaza/packs/'+encodeURIComponent(id));
+  if(location.hash.slice(1)!==id)return;
+  const p=data.pack;
   const holder=$('#detail');holder.hidden=false;
   const favorite=el('button',{type:'button',text:data.favorite?'取消收藏':'收藏'});
   favorite.onclick=()=>work(async()=>{await request(`/api/plaza/packs/${id}/favorite`,data.favorite?'DELETE':'PUT');await detail();});
@@ -41,5 +43,6 @@ async function detail(){
   }finally{submit.disabled=false;}});};holder.append(form);
 }
 $('#search').onsubmit=e=>{e.preventDefault();work(()=>load());};$('#more').onclick=()=>work(()=>load(true));
-window.addEventListener('hashchange',()=>work(detail));
+// 导航不能被搜索或收藏的忙碌状态丢弃；详情返回时再核对当前选择。
+window.addEventListener('hashchange',()=>detail().catch(error=>{$('#feedback').textContent=error.message;}));
 work(async()=>{await load();await detail();});
