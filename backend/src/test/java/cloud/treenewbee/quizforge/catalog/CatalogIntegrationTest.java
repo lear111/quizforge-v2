@@ -261,13 +261,13 @@ class CatalogIntegrationTest extends MySqlTestBase {
         // 审核期间继续公开第 1 版：加入时拿到的是第 1 版的内容。
         assertThat(jdbc.queryForObject("SELECT approved_revision FROM catalog_pack WHERE id = ?", Integer.class, pack)).isEqualTo(1);
         User learner = user();
-        HttpResponse<String> joinOld = post(learner, "/api/catalog/packs/" + pack + "/practice",
+        HttpResponse<String> joinOld = post(learner, "/api/plaza/packs/" + pack + "/imports",
                 "{\"banks\":[\"" + ImportArchives.BANK_IDS.get("判断题") + "\"]}");
         assertThat(joinOld.statusCode()).as(joinOld.body()).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT source_revision FROM practice_collection WHERE user_id = ?", Integer.class, learner.id()))
                 .isEqualTo(1);
         // 第 2 版的多选题还没公开，不能加入。
-        assertThat(post(learner, "/api/catalog/packs/" + pack + "/practice",
+        assertThat(post(learner, "/api/plaza/packs/" + pack + "/imports",
                 "{\"banks\":[\"" + ImportArchives.BANK_IDS.get("多选题") + "\"]}").statusCode()).isEqualTo(400);
 
         // 拒绝必须填写原因；拒绝后发布者收到原因，同一版本不能再审核。
@@ -312,9 +312,9 @@ class CatalogIntegrationTest extends MySqlTestBase {
         approveEverything(pack, 1);
         User learner = user();
         String body = "{\"banks\":[\"" + ImportArchives.BANK_IDS.get("单选题") + "\"]}";
-        String collection = json(post(learner, "/api/catalog/packs/" + pack + "/practice", body)).path("collections").get(0).asString();
+        String collection = json(post(learner, "/api/plaza/packs/" + pack + "/imports", body)).path("collections").get(0).path("id").asString();
         // 每次导入都创建独立实例，互不覆盖作答。
-        assertThat(json(post(learner, "/api/catalog/packs/" + pack + "/practice", body)).path("collections").get(0).asString())
+        assertThat(json(post(learner, "/api/plaza/packs/" + pack + "/imports", body)).path("collections").get(0).path("id").asString())
                 .isNotEqualTo(collection);
 
         assertThat(revise(stranger, pack, archive(List.of("单选题"), null), info("劫持"), List.of(), List.of()).statusCode())
@@ -331,7 +331,7 @@ class CatalogIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT status FROM catalog_pack WHERE id = ?", String.class, pack)).isEqualTo("deleted");
         assertThat(jdbc.queryForObject("SELECT review_status FROM catalog_pack_revision WHERE pack_id = ? AND revision = 2",
                 String.class, pack)).isEqualTo("withdrawn");
-        assertThat(post(user(), "/api/catalog/packs/" + pack + "/practice", body).statusCode()).isEqualTo(404);
+        assertThat(post(user(), "/api/plaza/packs/" + pack + "/imports", body).statusCode()).isEqualTo(404);
         assertThat(jdbc.queryForObject("SELECT deleted_at IS NULL FROM practice_collection WHERE id = ?", Boolean.class, collection)).isTrue();
         assertThat(json(get(admin(), "/api/admin/catalog/reviews")).path("items")).isEmpty();
         assertThat(revise(owner, pack, archive(List.of("单选题"), null), info("合集"), List.of(), List.of()).statusCode()).isEqualTo(404);

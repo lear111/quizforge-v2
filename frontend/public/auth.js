@@ -5,7 +5,7 @@ import {bindActivity} from '/practice/shell/activity.js';
 function practiceReturn() {
   const raw=new URLSearchParams(location.search).get('returnTo');
   if(!raw)return null;
-  try{const target=new URL(raw,location.origin);return target.origin===location.origin&&(target.pathname.startsWith('/practice/')||target.pathname==='/library/')?target.pathname+target.search+target.hash:null;}catch{return null;}
+  try{const target=new URL(raw,location.origin);return target.origin===location.origin&&(target.pathname.startsWith('/practice/')||target.pathname==='/library/'||target.pathname==='/plaza/')?target.pathname+target.search+target.hash:null;}catch{return null;}
 }
 const byId = (id) => document.getElementById(id);
 const loginForm = byId('login-form');
