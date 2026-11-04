@@ -86,6 +86,9 @@ class LifecycleJobFollowupIntegrationTest extends MySqlTestBase {
     private PracticeLifecycleJobs create(LifecycleJobMapper jobs) {
         var result = new PracticeLifecycleJobs(jobs, contexts, lifecycle, rounds, null, reads, summaries, histories,
                 receipts, null, runner, tx, JSON, Clock.fixed(NOW, ZoneOffset.UTC));
+        // 此夹具手动构造服务，只验证服务器模式的调度；补齐新增的浏览器判分协作者。
+        org.springframework.test.util.ReflectionTestUtils.setField(result, "browserGrading",
+                mock(cloud.treenewbee.quizforge.practice.grading.BrowserGradingService.class));
         result.poller = poller;
         return result;
     }
