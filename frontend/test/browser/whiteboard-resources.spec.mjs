@@ -65,9 +65,14 @@ test('answer text, image and ink are captured before submit; ink phases switch a
   const beforeSubmit=await read();
   expect(beforeSubmit.whiteboard.notes.strokes).toHaveLength(0);
   const submitted=page.waitForResponse(response=>new URL(response.url()).pathname===path+'/actions'&&response.request().postDataJSON().action==='submit');
+  const graded=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/grading/reports')&&response.request().method()==='POST');
   await frame.getByRole('button',{name:'提交',exact:true}).click();
   const reply=await submitted;expect(reply.status()).toBe(200);
-  const value=await reply.json();expect(value.state.status).toBe('submitted');
+  const locked=await reply.json();expect(locked.state.status).toBe('submitted');
+  expect(locked.state.result.gradingStatus).toBe('awaiting_browser');
+  // 截图在判分上报后写入提交投影，先等待这一步完成。
+  const report=await graded;expect(report.status()).toBe(200);
+  const value=(await report.json()).items[0];
   expect(value.question.data._qfSubmission.screenshots).toHaveLength(1);
   const snapshot=value.question.data._qfSubmission.screenshots[0].assetId;
   const image=await page.request.get(`/api/resources/${snapshot}`);expect(image.status()).toBe(200);
