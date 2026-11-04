@@ -25,7 +25,7 @@ test('no old auth transport or removed feature entry survives',async()=>{
 test('all entry assets exist and have an absolute practice path',async()=>{
   const html=await readFile(resolve(root,'practice/index.html'),'utf8');
   for(const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
-    const path=match[1];if(path==='/')continue;
+    const path=match[1];if(path==='/'||path==='/library/')continue;
     assert.ok(path.startsWith('/practice/'),path);await access(resolve(root,path.slice(1)));
   }
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);assert.equal(new Set(ids).size,ids.length,'duplicate IDs');

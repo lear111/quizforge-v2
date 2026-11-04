@@ -18,13 +18,16 @@ public class ImportUploadController {
     private final ImportCatalogMapper metadata;
     private final ImportQueueMapper jobs;
     private final cloud.treenewbee.quizforge.content.application.ImportQueueJobs worker;
+    private final cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper overview;
 
     public ImportUploadController(ImportUploadService uploads, ImportCatalogMapper metadata, ImportQueueMapper jobs,
-            cloud.treenewbee.quizforge.content.application.ImportQueueJobs worker) {
+            cloud.treenewbee.quizforge.content.application.ImportQueueJobs worker,
+            cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper overview) {
         this.uploads = uploads;
         this.metadata = metadata;
         this.jobs = jobs;
         this.worker = worker;
+        this.overview = overview;
     }
 
     @PostMapping(value = "/api/library/uploads", consumes = "application/octet-stream")
@@ -54,7 +57,7 @@ public class ImportUploadController {
     public void delete(Principal user, @PathVariable String id) { uploads.delete(user.getName(), id); }
 
     @GetMapping("/api/admin/import-jobs")
-    public Map<String, Object> queue() { return Map.of("items", jobs.active()); }
+    public Map<String, Object> queue() { return Map.of("items", jobs.active(), "counts", overview.queue()); }
 
     @PostMapping("/api/admin/import-jobs/{id}/retry")
     @ResponseStatus(HttpStatus.NO_CONTENT)

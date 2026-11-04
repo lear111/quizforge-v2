@@ -90,3 +90,9 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - 宿主 `practice/listening/network-audio.js` 独立完成地址复核、匿名下载、64 MiB 流式计数与取消；不复用附带登录信息的 API request，也不把网络地址传给拓展 iframe。
 - `listening-player.js` 在完整下载后使用 Blob URL，切换/离开时取消并释放旧资源，历史查看提示网络内容可能变化。本地文件继续由 nginx 传输。
 - 合成音频 HTTPS 测试服务仅通过 `deploy/docker-compose.audio-test.yml` 启动；测试域名由 Chromium 映射到本机，测试证书不进入源码，正式页面不忽略证书错误。
+
+## 2026-11-03：我的题库资源与练习实例分离
+
+- 移除练习空间的上传按钮、文件选择器和 `library-transfer.js`，保留原目录管理对话框；新增“从‘我的题库’导入”的主页链接。
+- 主页 `/library/` 使用 Hub 风格展示原文件资源、提交记录与审核状态，独立创建练习实例。原题型页面、答题区和 SDK 无改动。
+- 浏览器验收从主页上传并导入；仍验证五种基础题型的真实渲染、手机目录管理和 Cookie 会话。

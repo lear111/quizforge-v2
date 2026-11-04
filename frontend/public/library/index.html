@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>我的题库 · QuizForge</title>
+  <link rel="icon" href="/quizforge-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/auth.css">
+  <link rel="stylesheet" href="./library.css">
+  <script type="module" src="./library.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><img src="/quizforge-icon.svg" width="40" height="40" alt=""><span><strong>QuizForge</strong><span class="brand-caption">让学习更有条理</span></span></a>
+    <nav aria-label="我的题库导航"><a href="/practice/">练习空间</a><a href="/publish/">发布到广场</a></nav>
+  </header>
+  <main class="library-main">
+    <div class="library-heading"><div><h1>我的题库</h1><p class="description">上传原文件，审核通过后选择题库导入练习空间。</p></div><button id="upload" class="primary" type="button">上传私人题库包</button></div>
+    <input id="upload-file" type="file" accept=".qbank" hidden>
+    <p id="feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
+    <p id="notice" class="notice" role="status" hidden></p>
+    <p id="upload-progress" role="status" hidden></p>
+    <section id="packages" aria-label="题库包列表"></section>
+    <button id="more" class="secondary" type="button" hidden>加载更多</button>
+    <section id="detail" class="library-detail" aria-label="题库包详情" hidden></section>
+  </main>
+  <footer>QuizForge · 资源与练习进度各自保留</footer>
+</body>
+</html>

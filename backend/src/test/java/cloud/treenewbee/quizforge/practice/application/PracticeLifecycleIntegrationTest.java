@@ -98,7 +98,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @MockitoSpyBean SubmitGrader grader;
     @MockitoSpyBean ReviewGrader reviewGrader;
     @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.PracticeLifecycleMapper lifecycleMapper;

@@ -97,7 +97,7 @@ class SubmitActionIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @MockitoSpyBean SubmitGrader grader;
     @Autowired SubmitActionService actions;
     @Value("${local.server.port}") int port;

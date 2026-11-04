@@ -1,8 +1,6 @@
 package cloud.treenewbee.quizforge.content.application;
 
 import cloud.treenewbee.quizforge.admin.application.ExtensionReviewService;
-import cloud.treenewbee.quizforge.practice.management.PracticeDirectoryService;
-import cloud.treenewbee.quizforge.quota.application.QuotaService;
 import cloud.treenewbee.quizforge.content.archive.ArchiveLimits;
 import cloud.treenewbee.quizforge.content.archive.QbankArchiveReader;
 import cloud.treenewbee.quizforge.content.domain.BankContentHash;
@@ -12,8 +10,6 @@ import cloud.treenewbee.quizforge.content.domain.QbankPackageParser.ParsedBank;
 import cloud.treenewbee.quizforge.content.domain.QbankPackageParser.ParsedExtension;
 import cloud.treenewbee.quizforge.content.domain.QuestionContentHash;
 import cloud.treenewbee.quizforge.content.infrastructure.*;
-import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionMapper;
-import cloud.treenewbee.quizforge.practice.infrastructure.PracticeCollectionRow;
 import cloud.treenewbee.quizforge.rules.RulePackage;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import java.io.IOException;
@@ -56,30 +52,24 @@ public class ImportService {
     private final BankMapper banks;
     private final QuestionMapper questions;
     private final BankAssetMapper assets;
-    private final PracticeCollectionMapper collections;
-    private final BankAvailability availability;
     private final TransactionTemplate transactions;
     private final JsonMapper json;
     private final Clock clock;
     private final Path temporaryDirectory;
-    private final QuotaService quotas;
     private final ExtensionReviewService reviews;
-    private final PracticeDirectoryService directory;
     private final QueuedImportValidation queuedValidation;
 
     public ImportService(BlobStore blobs, ImportRules rules, ExtensionPackageMapper packages, ExtensionFileMapper files,
-            BankMapper banks, QuestionMapper questions, BankAssetMapper assets, PracticeCollectionMapper collections,
-            BankAvailability availability, TransactionTemplate transactions, JsonMapper json, Clock clock,
+            BankMapper banks, QuestionMapper questions, BankAssetMapper assets,
+            TransactionTemplate transactions, JsonMapper json, Clock clock,
             @Value("${qf.import.temp-dir:${java.io.tmpdir}}") String temporaryDirectory,
-            QuotaService quotas, ExtensionReviewService reviews, PracticeDirectoryService directory,
+            ExtensionReviewService reviews,
             QueuedImportValidation queuedValidation) {
         this.blobs = blobs; this.rules = rules; this.packages = packages; this.files = files;
-        this.banks = banks; this.questions = questions; this.assets = assets; this.collections = collections;
-        this.availability = availability; this.transactions = transactions; this.json = json; this.clock = clock;
+        this.banks = banks; this.questions = questions; this.assets = assets;
+        this.transactions = transactions; this.json = json; this.clock = clock;
         this.temporaryDirectory = Path.of(temporaryDirectory);
-        this.quotas = quotas;
         this.reviews = reviews;
-        this.directory = directory;
         this.queuedValidation = queuedValidation;
     }
 
@@ -89,23 +79,11 @@ public class ImportService {
     /** 一次导入存储的结果；extensionDigests 为包内全部拓展的审核摘要（十六进制，排序）。 */
     public record Ingested(String group, List<StoredBank> banks, List<String> extensionDigests, Instant now) {}
 
-    public record ImportWarning(String code, String message, int count, List<String> questionIds) {}
-    public record ImportedCollection(String id, String bankId, String title, String groupName, boolean available,
-            List<ImportWarning> warnings) {}
     private record Extension(ParsedExtension parsed, RulePackage spec, boolean canOutline) {}
     private record Placement(int groupIndex, String groupName, Object outline) {}
     private record Question(Map<String, Object> author, Extension extension, Object outline, BigDecimal maxScore, String hash,
             int groupIndex, String groupName) {}
     private record Bank(ParsedBank parsed, String hash, Map<String, String> assetHashes, List<Question> questions, List<String> omittedIds, long logicalBytes) {}
-
-    /** Caller owns the input stream. Parsing and all HTTP calls finish before the business transaction starts. */
-    public List<ImportedCollection> importArchive(String userId, String filename, InputStream upload) {
-        Path temporary = spool(upload);
-        try {
-            return ingest(temporary, group -> directory.beginImport(userId, group),
-                    ingested -> createCollections(userId, filename, ingested));
-        } finally { delete(temporary); }
-    }
 
     /** 把上传写入临时文件（不超过 128 MiB）；调用方负责用 {@link #delete(Path)} 删除。 */
     public Path spool(InputStream upload) {
@@ -337,23 +315,6 @@ public class ImportService {
                 bank.logicalBytes(), bank.omittedIds())).toList();
         List<String> digests = extensions.values().stream().map(e -> e.parsed().digest()).distinct().sorted().toList();
         return new Ingested(group, stored, digests, now);
-    }
-
-    private List<ImportedCollection> createCollections(String userId, String filename, Ingested ingested) {
-        List<ImportedCollection> result = new ArrayList<>();
-        for (StoredBank bank : ingested.banks()) {
-            String id = Ids.uuidV7(), title = directory.importTitle(userId, bank.title(), ingested.group());
-            collections.insert(new PracticeCollectionRow(id, userId, bank.bankId(), title, ingested.group(),
-                    encode(Map.of("type", "upload", "filename", filename)), null, null, bank.bankUuid(), null, "current",
-                    ingested.now(), null));
-            quotas.setStorage(userId, "import", id, id, bank.logicalBytes());
-            List<ImportWarning> warnings = bank.omittedIds().isEmpty() ? List.of() : List.of(new ImportWarning(
-                    "QUESTIONS_NOT_IN_OUTLINE", bank.omittedIds().size() + " 道题未出现在大纲中，不会显示",
-                    bank.omittedIds().size(), bank.omittedIds()));
-            result.add(new ImportedCollection(id, bank.bankId(), title, ingested.group(),
-                    availability.isAvailable(bank.bankId()), warnings));
-        }
-        return List.copyOf(result);
     }
 
     private static String bankUuid(Map<String, Object> bank) {

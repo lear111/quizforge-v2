@@ -85,7 +85,7 @@
 
 ---
 
-### 原文件接收与后台校验（FR-11 v1.16，第一切片）
+### 原文件接收与后台校验（FR-11 v1.16）
 
 - `POST /api/library/uploads?filename=题库.qbank`：正文为 `application/octet-stream` 原始字节，成功立即返回 `202 {packId,revision}`。登录、次数及声明长度检查先于读取正文；实际流也逐块计数。可用 `packId` 在未通过的私人条目内提交新版本。
 - `GET /api/library/uploads/{id}/revisions/{revision}`：仅所有者可读，返回 `{packId,revision,status,reason}`。状态为 `pending / approved / rejected`；排队、校验中、基础设施重试及处理失败均对用户显示待审核。白名单撤销在下一个请求生效。
@@ -94,7 +94,23 @@
 - `GET /api/admin/import-jobs` 返回待处理、正在处理及处理失败的任务；`POST /api/admin/import-jobs/{id}/retry` 重试仍属于最新有效版本的失败任务。只允许未封禁管理员。
 - 后台规则调用携带低优先级并保留前台舱壁名额；本实例检测到前台规则调用时，及其结束后 250 ms 内，暂缓领取/推进导入。规则批次之间与业务落库前再次检查，让行不消耗基础设施重试次数。持续的前台负载可能延长排队时间。
 - 默认单包 128 MiB、每用户每日接收尝试 20 次；日期按北京时间计算。中断尝试计次数，不建立条目、不占配额；超过次数返回 `429 UPLOAD_LIMIT`，提示“请稍后再试”。私人包按原文件大小预留个人配额，公开包不计个人配额（作者确认，2026-11-02）；配额与版本、任务在同一短事务内写入，超额全部回滚。
-- 第一切片保留旧 `POST /api/library/import` 及练习空间上传入口以兼容已交付界面；下一切片接入主页“我的题库”，再将练习空间改为只创建实例。
+- 主页 `/library/` 为“我的题库”，练习空间删除上传入口，提示从资源库导入。旧 `POST /api/library/import` 暂留给既有测试/脚本兼容，由 practice 模块实现；新界面不调用它。
+
+### 我的题库与导入练习空间（第二切片）
+
+| 方法与路径 | 行为 |
+| --- | --- |
+| `GET /api/library/packs?after=<id>` | 当前用户未删除的私人包与公开发布；按 ID 倒序，每页 50 条，返回 `{items}`；不列出他人的私人包 |
+| `GET /api/library/packs/{id}` | 所有提交版本、每版审核结果/原因与题库目录；`originalAvailable=false` 显示“原文件不可用” |
+| `GET /api/library/packs/{id}/revisions/{revision}/archive` | 所有者下载原文件，Java 只授权，Nginx `X-Accel-Redirect` 传输；无原文件为 `409 ORIGINAL_UNAVAILABLE`；不重新打包、不计下载流量 |
+| `POST /api/library/packs/{id}/practice` | `{revision,banks:[bank_uuid…],group?}`；仅已审核通过的资源；每次都创建独立实例，返回 `{collections:[{id,title,bankId}]}`；同分组重名自动加后缀 |
+| `POST /api/library/packs/{id}/publish` | `{revision,rights,title,summary,description,category,tags}`；私人资源直接引用原文件并创建公开包入队；不再上传/解包；公开版本仍需审核（管理员通过校验可自动批准） |
+
+- 公开详情使用的 `POST /api/catalog/packs/{id}/practice` 同样改为每次独立创建，使用当前 `approved_revision`，不再返回已有实例。来源包、版本和 UUID 继续用于公开更新；私人资源实例不参与公开版本更新。
+- 创建实例只查询包版本、已存的题库目录和拓展白名单；不读题目、不读取文件、不调用 rule-runner。目录锁保证并发重名处理；整个创建过程在一个短事务中。
+- 私人版本的配额只保留一份：`quota_private_revision` 的资源标志和实例计数在用户 `quota_account` 锁内更新，资源或任一实例仍存在时继续计费；最后一个引用删除时释放。不同私人上传版本仍各自计费；公开包免费。
+- V24 对既有私人实例逐本补建资源条目，转移既有逻辑用量，保留作答；没有原始文件的版本使用 `source=legacy`、`blob_sha256=NULL`，不能下载或直接发布，但可从已存内容创建新实例。
+- 后台队列接口增加全量 `{counts:{queued,running,failed}}`，`items` 仍有 200 条上限；概况增加 `uploads:{today,topUsers:[{userId,name,uploads}]}`，以北京时间统计接收尝试（含中断），只向管理员开放。
 
 ## 2. 浏览器接口清单
 
@@ -206,7 +222,7 @@
 
 ### 练习空间目录管理（L1.7）
 
-依据 FR-11 v1.14 / 设计 04 §6.0，主页“我的题库”是资源库，练习空间只管理练习实例。练习空间不提供导出；资源下载应由“我的题库”返回上传的原始 `.qbank`，本切片不实现资源库与下载接口。现有练习空间上传入口及 `POST /api/library/import` 暂时保留，待资源库功能接入后移走。
+依据 FR-11 v1.14 / 设计 04 §6.0，主页“我的题库”是资源库，练习空间只管理练习实例。练习空间不提供导出；资源下载应由“我的题库”返回上传的原始 `.qbank`，资源库与原文件下载见上文“我的题库与导入练习空间”。练习空间已移除上传入口；旧同步接口仅保留脚本兼容。
 
 目录管理代码位于 `practice.management`；V20 仅新增 `practice_directory_revision` 与 `practice_group`，不保存供重新打包使用的作者文档。现有 `POST /api/library/manage` 路径为前端兼容保留，不代表新增 library 资源模块。
 

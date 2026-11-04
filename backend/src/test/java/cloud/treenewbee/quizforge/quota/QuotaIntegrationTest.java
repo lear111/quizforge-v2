@@ -42,10 +42,11 @@ class QuotaIntegrationTest extends MySqlTestBase {
         registry.add("qf.import.temp-dir", () -> ROOT.resolve("uploads").toString());
         registry.add("qf.security.allowed-origin", () -> ORIGIN);
     }
+    @Autowired cloud.treenewbee.quizforge.quota.infrastructure.PrivateRevisionMapper privateRevisions;
     @Autowired QuotaService quotas;
     @Autowired PrivateCollectionService deletion;
     @Autowired DraftService drafts;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @Autowired AuthService auth;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
@@ -225,7 +226,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         var user = user(false); var admin = user(true);
         quotas.adjust(admin.id(), user.id(), null, 100L);
         tx.executeWithoutResult(s -> quotas.consumeDownload(user.id(), 100));
-        var freshService = new QuotaService(quotaMapper,userMapper,clock,json,audit);
+        var freshService = new QuotaService(quotaMapper,userMapper,clock,json,audit,privateRevisions);
         assertThat(tx.execute(s -> freshService.usage(user.id())).dailyDownload().usedBytes()).isEqualTo(100);
         assertThat(quotas.usage(user.id()).day()).isEqualTo(LocalDate.parse("2026-11-01"));
         assertThat(quotas.usage(user.id()).resetsAt()).isEqualTo(Instant.parse("2026-11-01T16:00:00Z"));
@@ -328,7 +329,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank -> bank.put("id",Ids.uuidV7()));
         return new Archive(ImportArchives.zip(files), files.values().stream().mapToLong(a -> a.length).sum());
     }
-    ImportService.ImportedCollection importOne(User user,Archive archive) {
+    cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService.ImportedCollection importOne(User user,Archive archive) {
         return imports.importArchive(user.id(),"test.qbank",new ByteArrayInputStream(archive.bytes())).getFirst();
     }
     String attemptImport(User user,Archive archive) { try { importOne(user,archive); return "ok"; } catch(ApiException e) { return e.code(); } }

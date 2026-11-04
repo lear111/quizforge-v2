@@ -7,6 +7,8 @@ import org.apache.ibatis.annotations.*;
 
 @Mapper
 public interface QuotaMapper {
+    @Delete("DELETE FROM quota_storage_item WHERE user_id=#{user} AND category='private_pack' AND object_id=#{key}")
+    int deletePrivateItem(@Param("user") String user, @Param("key") String key);
     record Account(String userId, Long storageLimit, Long dailyDownloadLimit, long storageUsed,
                    LocalDate downloadDay, long downloadUsed) {}
     record Defaults(long storageBytes, long dailyDownloadBytes) {}

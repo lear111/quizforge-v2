@@ -50,7 +50,7 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
 
     @Autowired PracticeDirectoryService library;
     @Autowired PracticeDirectoryMapper mapper;
-    @Autowired ImportService imports;
+    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
     @Autowired PracticeReadService reads;
     @Autowired QuotaService quotas;
     @Autowired AuthService auth;
@@ -255,7 +255,7 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         return library.manage(owner, new PracticeDirectoryService.Change("bank", target, action, path, name, group, mapper.revision(owner)));
     }
     private void update(String owner, String id, String name, String group) { change(owner, "item", "update", id, name, group); }
-    private ImportService.ImportedCollection imported(String owner, String type) throws Exception {
+    private cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService.ImportedCollection imported(String owner, String type) throws Exception {
         return imports.importArchive(owner, "test.qbank", new ByteArrayInputStream(ImportArchives.zip(ImportArchives.files(List.of(type), "bank")))).getFirst();
     }
     private String user() { return auth.register(UUID.randomUUID() + "@example.test", "管理测试", "password123", "test").userId(); }

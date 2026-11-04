@@ -43,7 +43,8 @@ test('existing dialogs manage empty groups, names, moves, conflicts and irrevers
     return saved;
   };
   await showLibrary(page);
-  await expect(page.locator('#library-import')).toBeVisible();
+  await expect(page.locator('#library-import')).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'从“我的题库”导入'})).toBeVisible();
   await expect(page.locator('#library-manage-export')).toHaveCount(0);
   await page.locator('#library-new-group').click();
   await page.locator('#library-manage-name').fill('新文件夹');

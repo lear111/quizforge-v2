@@ -25,7 +25,6 @@ import {questionExtension,collectionHasExtension,extensionPageRoute,sameQuestion
 import {renderLibraryView} from './library/library-view.js';
 import {renderOutlineView} from './outline/outline-view.js';
 import {bindLibraryManagement} from './library/library-management.js';
-import {bindLibraryTransfer} from './library/library-transfer.js';
 import {bindLibraryResize} from './library/library-resize.js';
 import {bindSaveRecovery} from './practice/save-recovery.js';
 import {bindAppearanceSettings} from './shell/appearance.js';
@@ -655,13 +654,6 @@ async function applyLibraryChange(result,operation){
 const libraryManager=bindLibraryManagement({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,
   onConflict:()=>refreshCatalog(),
   onChanged:(result,operation)=>transitionTo(()=>applyLibraryChange(result,operation))});
-bindLibraryTransfer({request,getContext:()=>({kind:listMode,catalog}),beforeChange:prepareLibraryChange,
-  onImported:result=>transitionTo(async()=>{
-    await refreshCatalog();questionsCache.clear();pagesCache.clear();
-    if(!activeKey){const first=catalog.banks.find(row=>!row.error&&row.availability?.available!==false);if(first)await openCollection(first.kind||'bank',first.id);}
-    const warnings=(result.collections||[]).flatMap(bank=>(bank.warnings||[]).map(warning=>`${bank.title}：${warning.message}（${warning.questionIds.join('、')}）`));
-    notice(`已导入 ${result.collections?.length??result.importedBanks??0} 本题库。已有题库与进度保留。${warnings.join('；')}`);
-  })});
 $('#library-new-group').addEventListener('click',()=>libraryManager.open('group',null,'create'));
 bindSaveRecovery({document,active,transitionTo,loadQuestion,showQuestion,saveInk,notice,collectionFeature,renderOutline,loadHistory:async pane=>{const entry=await request(`${historyPath(pane)}/${encodeURIComponent(pane.historyEntry.id)}`);const historyView=createHistoryView(entry);await showHistoryQuestion(pane,pane.historyQuestionId,{historyEntry:entry,historyView});}});
 $('#draft-toggle').addEventListener('click',()=>transitionTo(()=>toggleDraftMode()));

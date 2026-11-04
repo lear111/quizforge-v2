@@ -34,20 +34,23 @@ public class AdminOverviewController {
     }
 
     /** online 只统计本实例（ActivityTracker 的单实例限制）。 */
-    public record Overview(Users users, long online, long storageUsedBytes, List<Day> trend, Object banks) {
+    public record Uploads(long today, List<cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper.Uploader> topUsers) {}
+    public record Overview(Users users, long online, long storageUsedBytes, List<Day> trend, Object banks, Uploads uploads) {
     }
 
     private final AccountAdminService accounts;
     private final ActivityTracker activity;
     private final QuotaService quotas;
     private final Clock clock;
+    private final cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper imports;
 
     public AdminOverviewController(AccountAdminService accounts, ActivityTracker activity, QuotaService quotas,
-                                   Clock clock) {
+                                   Clock clock, cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper imports) {
         this.accounts = accounts;
         this.activity = activity;
         this.quotas = quotas;
         this.clock = clock;
+        this.imports = imports;
     }
 
     @GetMapping("/api/admin/overview")
@@ -71,7 +74,7 @@ public class AdminOverviewController {
         }
         long newUsers = trend.stream().mapToLong(Day::registered).sum();
         var body = new Overview(new Users(accounts.userCount(), newUsers), activity.online(),
-                quotas.totalStorageUsed(), trend, null);
+                quotas.totalStorageUsed(), trend, null, new Uploads(imports.uploads(today), imports.top(today)));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }
 }
