@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,9 +27,6 @@ import cloud.treenewbee.quizforge.catalog.application.PackInfo;
 import cloud.treenewbee.quizforge.content.application.ImportService;
 import cloud.treenewbee.quizforge.identity.application.AccountAdminService;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 
 /**
  * 发布者的题库广场接口：从本地上传发布、上传整包新版本、删除整个包、我的发布、截图读取。
@@ -38,9 +34,6 @@ import jakarta.validation.constraints.Size;
  */
 @RestController
 public class CatalogController {
-
-    public record Join(@NotNull @Size(min = 1, max = 1000) List<String> banks) {
-    }
 
     private final CatalogPublishService publishing;
     private final ImportService imports;
@@ -100,17 +93,11 @@ public class CatalogController {
 
     @GetMapping("/api/catalog/files/{id}")
     public ResponseEntity<Void> file(Principal user, @PathVariable String id) {
-        var file = publishing.file(user.getName(), admins.isAdmin(user.getName()), id);
+        var file = publishing.file(user == null ? null : user.getName(), user != null && admins.isAdmin(user.getName()), id);
         String sha = HexFormat.of().formatHex(file.blobSha256());
         return ResponseEntity.ok().header("Content-Type", file.mime()).header("Cache-Control", "private, no-store")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("X-Accel-Redirect", "/_qf_blobs/" + sha.substring(0, 2) + "/" + sha.substring(2, 4) + "/" + sha).build();
-    }
-
-    /** 从当前已审核的公开版本创建独立练习实例。 */
-    @PostMapping("/api/catalog/packs/{id}/practice")
-    public CatalogPublishService.Joined join(Principal user, @PathVariable String id, @Valid @RequestBody Join body) {
-        return publishing.join(user.getName(), id, body.banks());
     }
 
     // ---------------------------------------------------------------- 内部

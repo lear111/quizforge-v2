@@ -56,21 +56,16 @@ public class CatalogPublishService {
                            Instant deletedAt, List<RevisionView> revisions) {
     }
 
-    public record Joined(List<String> collections) {
-    }
-
     private final CatalogMapper mapper;
     private final BlobStore blobs;
-    private final cloud.treenewbee.quizforge.practice.application.LibraryPracticeService practice;
     private final JsonMapper json;
     private final cloud.treenewbee.quizforge.content.application.ImportUploadService uploads;
 
     public CatalogPublishService(CatalogMapper mapper, BlobStore blobs,
-                                 cloud.treenewbee.quizforge.practice.application.LibraryPracticeService practice, JsonMapper json,
+                                 JsonMapper json,
                                  cloud.treenewbee.quizforge.content.application.ImportUploadService uploads) {
         this.mapper = mapper;
         this.blobs = blobs;
-        this.practice = practice;
         this.json = json;
         this.uploads = uploads;
     }
@@ -144,14 +139,6 @@ public class CatalogPublishService {
                     && uploads.isPublic(pack.id(), pack.ownerId(), file.revision());
         if (!visible) throw fileNotFound();
         return file;
-    }
-
-    // ---------------------------------------------------------------- 导入练习空间
-
-    /** 每次加入都创建独立实例；广场来源可由后续版本更新流程识别。 */
-    public Joined join(String userId, String packId, List<String> bankUuids) {
-        return new Joined(practice.create(userId, packId, null, bankUuids, null, false).stream()
-                .map(cloud.treenewbee.quizforge.practice.application.LibraryPracticeService.Created::id).toList());
     }
 
     // ---------------------------------------------------------------- 内部

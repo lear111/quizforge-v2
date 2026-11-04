@@ -106,7 +106,7 @@
 | `POST /api/library/packs/{id}/practice` | `{revision,banks:[bank_uuid…],group?}`；仅已审核通过的资源；每次都创建独立实例，返回 `{collections:[{id,title,bankId}]}`；同分组重名自动加后缀 |
 | `POST /api/library/packs/{id}/publish` | `{revision,rights,title,summary,description,category,tags}`；私人资源直接引用原文件并创建公开包入队；不再上传/解包；公开版本仍需审核（管理员通过校验可自动批准） |
 
-- 公开详情使用的 `POST /api/catalog/packs/{id}/practice` 同样改为每次独立创建，使用当前 `approved_revision`，不再返回已有实例。来源包、版本和 UUID 继续用于公开更新；私人资源实例不参与公开版本更新。
+- 公开详情使用的 `POST /api/plaza/packs/{id}/imports` 同样改为每次独立创建，使用当前 `approved_revision`，不再返回已有实例。来源包、版本和 UUID 继续用于公开更新；私人资源实例不参与公开版本更新。
 - 创建实例只查询包版本、已存的题库目录和拓展白名单；不读题目、不读取文件、不调用 rule-runner。目录锁保证并发重名处理；整个创建过程在一个短事务中。
 - 私人版本的配额只保留一份：`quota_private_revision` 的资源标志和实例计数在用户 `quota_account` 锁内更新，资源或任一实例仍存在时继续计费；最后一个引用删除时释放。不同私人上传版本仍各自计费；公开包免费。
 - V24 对既有私人实例逐本补建资源条目，转移既有逻辑用量，保留作答；没有原始文件的版本使用 `source=legacy`、`blob_sha256=NULL`，不能下载或直接发布，但可从已存内容创建新实例。
@@ -207,7 +207,7 @@
 | `POST /api/packs`、`PUT /api/packs/{id}`、`DELETE /api/packs/{id}` | 上传、编辑（带 `revision` 冲突检查）、删除 |
 | `GET /api/packs/{id}/download`、`POST /api/packs/{id}/download-selection`、`GET .../download-status` | 整包 / 部分下载、下载预检 |
 | `POST /api/packs/{id}/comments`、`DELETE /api/comments/{id}`、`POST /api/packs/{id}/report` | 评论与举报 |
-| `POST /api/packs/{id}/practice` | **新增**：把公开题库加入“我的题库” `{banks:[bank_key…]}`，可选其中一本或多本；不复制文件，只建实例（FR-10）；取代旧系统跨站跳转导入 |
+| `POST /api/plaza/packs/{id}/imports` | 从公开详情或收藏创建独立练习实例 `{banks:[bank_uuid…]}`，不产生他人资源条目 |
 
 ### 2.7 管理（admin，沿用旧 Java Hub 接口）
 
@@ -380,3 +380,14 @@ practice/
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
 | v0.2 | 2026-10-27 | 题库按本加入、版本更新相关接口 |
+
+### 题库广场浏览（广场 2/4）
+
+- `GET /api/plaza/packs?q=&sort=latest|downloads&cursor=`：公开且未删除的已审核版本；每页 20 条，返回 `{items,next}`，键集游标包含排序值与 ID。最新按包创建时间倒序；热门按下载次数倒序；同值按 ID 倒序。名称、简介、标签按字面子串搜索，不把 `%` / `_` 当通配符。
+- `GET /api/plaza/packs/{id}`：`{pack,description,releaseNotes,banks,screenshots,favorite}`；只返回当前已审核版本。
+- `GET /api/plaza/packs/{id}/archive`：原始文件，Java 授权后 Nginx 直接传输；授权成功的 GET 原子增加一次下载次数（包括客户端随后中止；失败授权不计）。不计个人下载配额。
+- `POST /api/plaza/packs/{id}/imports`：登录，`{banks:[uuid…],group?}`，使用当前已审核版本，复用快速创建实例，返回 `{collections:[{id,title,bankId}]}`；公开包免费、重复调用独立。
+- `PUT /api/plaza/packs/{id}/favorite` / `DELETE …/favorite`：会话用户收藏/取消，幂等。`GET /api/library/favorites?after=` 返回当前用户书签 `{items,next}`，删除包保留标题、状态 `deleted`，不再能下载/导入。
+- 匿名浏览、详情、公开截图及下载沿用旧 Hub `PublicHubController.list/detail/archive` 与 `FileDelivery.archive` 的可匿名行为；写操作仍需会话和 Origin。
+- 删除旧临时 `POST /api/catalog/packs/{id}/practice`，不保留别名。
+- 热门排序的计数会随下载变化，键集分页不提供跨请求数据库快照；不使用 OFFSET。

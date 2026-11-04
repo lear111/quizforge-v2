@@ -121,3 +121,7 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 ### L2 个人题库考试
 
 `practice/exam/exam-mode.js` 复用原入口、服务器时间校准、到期锁输入与轮询；`B/exams` 的创建/恢复/删除和 `E` 的概览、题目、页面、资源、听力、草稿/白板、交卷、汇总均已接通。交卷后台复用练习生命周期任务。考试完成后在原题库历史列表显示 `mode=exam`，历史详情的 `examId` 支持“核对考试评分”，允许人工改分并同步历史；AI 仍未开放。普通练习路由拒绝考试 ID，考试作答中禁止逐题提交、重做和评分。
+
+## 广场与收藏（广场 2/4）
+
+`public/plaza/plaza.js` 使用 `/api/plaza/packs` 列表/详情/原文件/收藏/`imports`；`public/library/library.js` 增加 `/api/library/favorites` 与取消收藏。广场到练习仅创建实例；旧 catalog `/practice` 接口已删除。版本自动切换、更新通知、评论和举报不在本切片。

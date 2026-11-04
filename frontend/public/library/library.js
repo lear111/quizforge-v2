@@ -210,3 +210,20 @@ async function poll() {
 load().catch(error => message(error.message,true));
 const poller = setInterval(poll, 3000);
 window.addEventListener('pagehide',() => clearInterval(poller));
+
+let favoriteAfter=null;
+async function loadFavorites(more=false) {
+  const data=await request('/api/library/favorites'+(more&&favoriteAfter?'?after='+encodeURIComponent(favoriteAfter):''));
+  if(!more)$('#favorites').replaceChildren();
+  for(const pack of data.items) {
+    const remove=el('button',{type:'button',text:'取消收藏'});
+    remove.onclick=()=>action(remove,async()=>{await request(`/api/plaza/packs/${encodeURIComponent(pack.id)}/favorite`,'DELETE');await loadFavorites();});
+    $('#favorites').append(el('article',{class:'library-card'},el('h3',{text:pack.title}),
+      pack.status==='deleted'?el('p',{text:'作者已删除'}):el('div',{class:'library-actions'},
+        el('a',{href:'/plaza/#'+pack.id,text:'查看详情 / 导入练习空间'}),el('a',{href:`/api/plaza/packs/${pack.id}/archive`,text:'下载到本地'})),remove));
+  }
+  if(!data.items.length&&!more)$('#favorites').append(el('p',{text:'还没有收藏，去题库广场看看吧。'}));
+  favoriteAfter=data.next;$('#favorites-more').hidden=!favoriteAfter;
+}
+$('#favorites-more').onclick=e=>action(e.currentTarget,()=>loadFavorites(true));
+loadFavorites().catch(error=>message(error.message,true));

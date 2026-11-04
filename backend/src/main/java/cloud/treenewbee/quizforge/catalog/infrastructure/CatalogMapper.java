@@ -175,13 +175,4 @@ public interface CatalogMapper {
             """)
     List<EventRow> events(@Param("packId") String packId);
 
-    // ---------------------------------------------------------------- 加入我的题库
-
-    /** 已加入的同一本题库（重复加入时打开已有的实例）。 */
-    @Select("""
-            SELECT id FROM practice_collection
-             WHERE user_id = #{userId} AND source_pack_id = #{packId} AND source_bank_uuid = #{bankUuid} AND deleted_at IS NULL
-             ORDER BY created_at LIMIT 1
-            """)
-    Optional<String> joined(@Param("userId") String userId, @Param("packId") String packId, @Param("bankUuid") String bankUuid);
 }

@@ -1,0 +1,15 @@
+#search {display:flex;gap:12px;align-items:end;flex-wrap:wrap} #search label{flex:1;min-width:140px} #search button{width:auto} #packs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin:24px 0} #detail{background:white;border:1px solid #ddd;border-radius:18px;padding:24px;margin-top:24px} #detail img{max-width:100%;max-height:350px;object-fit:contain} .plaza-card{padding:20px;border:1px solid #ddd;border-radius:18px;background:white;overflow-wrap:anywhere} .plaza-description{white-space:pre-wrap;overflow-wrap:anywhere} .plaza-bank{display:flex;align-items:center;gap:10px;margin:14px 0} .plaza-bank input{width:auto} #feedback{overflow-wrap:anywhere}/* 广场沿用 Hub 的紫色操作与卡片，表单在手机上纵向排列。 */
+.library-main { font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif; }
+.library-main h1 { text-align:left; margin-bottom:24px; }
+.library-main button { border:1px solid #6d48d3; border-radius:10px; padding:10px 16px; background:#704bd6; color:white; cursor:pointer; font:inherit; width:auto; }
+.library-main button:disabled { opacity:.55; cursor:wait; }
+.library-main a { color:#6241be; text-underline-offset:3px; }
+.plaza-card h2 { font-size:20px; margin:0 0 12px; }
+.plaza-card h2 a { text-decoration:none; }
+#search { background:#fff; border:1px solid #e2ddeb; border-radius:14px; padding:18px; }
+#search label { display:flex; flex-direction:column; gap:8px; font-size:14px; }
+#search input,#search select { box-sizing:border-box; width:100%; min-height:42px; padding:8px 12px; border:1px solid #cec6df; border-radius:9px; background:#fff; font:inherit; }
+#detail h2 { overflow-wrap:anywhere; font-size:24px; }
+#detail p { line-height:1.7; }
+#feedback { margin:20px 0; color:#4d377c; }
+@media(max-width:600px) { #search{flex-direction:column;align-items:stretch} #search label{width:100%;min-width:0} #search button{align-self:flex-start} #detail{padding:18px} .site-header nav{display:flex;flex-direction:column;gap:10px} }

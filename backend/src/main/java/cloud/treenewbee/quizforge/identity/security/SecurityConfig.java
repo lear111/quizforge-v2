@@ -58,6 +58,7 @@ public class SecurityConfig {
                 .csrf(c -> c.disable())
                 // 健康检查和认证入口允许匿名访问。
                 .authorizeHttpRequests(a -> a
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/plaza/packs", "/api/plaza/packs/*", "/api/plaza/packs/*/archive", "/api/catalog/files/*").permitAll()
                         .requestMatchers("/api/health", "/api/config",
                                 "/api/auth/register", "/api/auth/login", "/api/auth/logout",
                                 "/api/auth/email-code", "/api/auth/phone-code", "/api/auth/login-code",
