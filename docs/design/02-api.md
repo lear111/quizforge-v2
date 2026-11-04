@@ -184,19 +184,21 @@
 | `GET /api/extensions/{id}/{version}/page` | 拓展页面资源 `{apiVersion, html, script, style, dependencies}` | 由拓展包摘要定位文件；结果按摘要长期缓存 |
 | `GET /api/sdk/{id}/{version}` | SDK 与富文本组件 | 静态版本化资源，可由 Nginx 直接提供 |
 
-### 2.5 AI 辅导（ai，新增，FR-08）
+### 2.5 AI 辅导（ai，FR-08；详细设计 08 第 3 节，2026-11-03 修订）
 
 | 方法与路径 | 说明 |
 | --- | --- |
-| `POST /api/collections/{kind}/{id}/questions/{qid}/tutor` | 对当前题目提问 `{requestId, conversationId?, message}`；以流式响应（Server-Sent Events）返回模型回答 |
-| `GET /api/collections/{kind}/{id}/questions/{qid}/tutor/{conversationId}` | 读取当前题目的对话（第一阶段只保留短期记录） |
-| `GET /api/account/ai`、`POST /api/account/ai/redeem` | AI 余额与兑换（来自旧 Java Hub） |
+| `POST /api/ai/tutor/sessions` | 新建会话 `{title?}` → `{id, title, createdAt}` |
+| `GET /api/ai/tutor/sessions?cursor=` | 我的会话（按更新时间倒序，键集分页） |
+| `PATCH /api/ai/tutor/sessions/{id}` | 改名 `{title}` |
+| `DELETE /api/ai/tutor/sessions/{id}` | 删除会话（软删除） |
+| `GET /api/ai/tutor/sessions/{id}/messages?before=` | 历史消息（按 seq 倒序，键集分页；不返回 tool 消息的原文） |
+| `POST /api/ai/tutor/sessions/{id}/messages` | 发送 `{requestId, contextId?, questionId?, text}`，响应为 SSE |
+| `GET /api/account/ai`、`POST /api/account/ai/redeem` | AI 余额与兑换（L5.1） |
 
-要点（细节在 AI 模块详细设计中确定）：
+SSE 事件：`message`（`{userMessageId}`，请求已接受）→ 若干 `delta`（`{text}`）→ 可选 `tool`（`{name, status}`，只告诉前端“正在查询答案”等，不含工具结果）→ `done`（`{assistantMessageId, inputTokens, outputTokens, cost, balanceAfter}`）；出错时 `error`（`{code, message}`）后结束。客户端断开时服务器继续读完上游并计费（L5.2）。
 
-- 前端**只发送问题本身**，题目内容、作答状态、重做次数、评分结果都由服务端从数据库读取并组装上下文。前端提供的状态不可信，也不能借此套取答案。
-- 未提交时，组装的上下文中不包含标准答案（FR-08）。
-- 独立线程池、超时和每用户并发上限，与练习接口隔离。
+要点：前端**只发送问题文字与当前题目的标识**，题目内容、作答状态、评分结果都由服务端读取；未提交时上下文和工具都拿不到答案；同一 requestId 重放不重复调用模型。原待定项 API-1 已确定。
 
 ### 2.6 题库广场（catalog，沿用旧 Java Hub 接口）
 
@@ -336,7 +338,7 @@ practice/
 
 | 编号 | 事项 |
 | --- | --- |
-| API-1 | AI 辅导的流式协议（SSE 还是普通请求轮询）、对话保留时长与上下文组装规则 —— AI 模块详细设计 |
+| ~~API-1~~ | ~~AI 辅导的流式协议~~ **已确定**：SSE，见 2.5 与设计 08 第 3 节 |
 | API-2 | 旧练习站链接（`practice.treenewbee.cloud/cloud/practice/<id>/`）在切换后如何跳转到新地址 |
 | API-3 | 设备接口与管理接口的字段级定义（遗留契约 V-1） |
 | ~~API-4~~ | ~~拓展示例是否保留~~ **已决定**：示例文件保留在拓展包中（审核与导出需要），在线版不展示、不可练习；前端隐藏示例入口 |
