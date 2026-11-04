@@ -235,14 +235,16 @@ class BrowserGradingIntegrationTest extends MySqlTestBase {
     }
 
     @Test void examManualBatchDoesNotCallRunnerButClosedPageDeadlineDoes() throws Exception {
-        var sample=samples.get("单选题");
+        var sample=twoQuestionBank();
         var exam=exams.start(user,sample.collection(),"exam",1);String id=exam.path("id").asString();
         exams.write(user,id,()->drafts.save(user,id,sample.question().questionId(),"draft",0,answer("单选题"),null));
         clearInvocations(runner);exams.submit(user,id,"submit");
         var ticket=service.pending(user,id,null).path("items").get(0);
         service.report(user,id,ticket.path("questionId").asString(),ticket.path("generation").asString(),simpleOutcome());
         for(int n=0;n<5 && !exams.owned(user,id).status().equals("completed");n++) jobs.tick();
-        assertThat(exams.owned(user,id).status()).isEqualTo("completed");verify(runner,never()).execute(anyString(),any(),anyMap());
+        assertThat(exams.owned(user,id).status()).isEqualTo("completed");
+        // 未作答题归档允许安全 project 缓存未命中，浏览器在场的判分调用必须为零。
+        verify(runner,never()).execute(eq("submit"),any(),anyMap());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_question_state s JOIN practice_context c ON c.id=s.context_id WHERE c.user_id=? AND c.kind='practice'",Integer.class,user)).isZero();
         var expired=exams.start(user,sample.collection(),"closed",1);String closed=expired.path("id").asString();
         exams.write(user,closed,()->drafts.save(user,closed,sample.question().questionId(),"closed-draft",0,answer("单选题"),null));
@@ -282,6 +284,16 @@ class BrowserGradingIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT revision FROM practice_question_state WHERE user_id=?",Long.class,user)).isEqualTo(3);
     }
 
+    @Test void unavailableRunnerKeepsSingleQuestionFallbackQueuedUntilRecovery() throws Exception {
+        submit("单选题","lock",0,answer("单选题"));clock.now=clock.now.plusSeconds(121);
+        doThrow(new cloud.treenewbee.quizforge.rules.RuleRunnerException("本机故障夹具"))
+                .when(runner).execute(eq("submit"),any(),anyMap());
+        assertThat(jobs.tick()).isTrue();assertThat(jobs.tick()).isFalse();
+        assertThat(jdbc.queryForObject("SELECT grading_status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("awaiting_browser");
+        reset(runner);clock.now=clock.now.plusSeconds(5);assertThat(jobs.tick()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT grading_source FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("server");
+    }
+
     @Test void rejectsMalformedOversizedAndOverfullBatchesWithoutChangingSubmission() throws Exception {
         var sample=samples.get("单选题");var locked=submit("单选题","lock",0,answer("单选题"));
         error(post(base(sample)+"/grading/reports",JSON.createObjectNode()),400,"INVALID_GRADING_REPORT");
@@ -289,13 +301,13 @@ class BrowserGradingIntegrationTest extends MySqlTestBase {
         var many=JSON.createArrayNode();for(int n=0;n<21;n++)many.add(item);
         error(post(base(sample)+"/grading/reports",JSON.createObjectNode().set("items",many)),400,"INVALID_GRADING_REPORT");
         var oversized=JSON.writeValueAsString(JSON.createObjectNode().put("large","x".repeat(8*1024*1024)));
-        // 已知长度先检查请求头；Expect 避免客户端继续发送服务器已拒绝的大请求体。
+        // 同时覆盖已知长度与 chunked；两条路径都只能有界读取。
         var request=HttpRequest.newBuilder(URI.create("http://localhost:"+port+base(sample)+"/grading/reports"))
-                .expectContinue(true).header("Cookie",cookie).header("Origin","http://browser.example.test")
+                .timeout(Duration.ofSeconds(30)).header("Cookie",cookie).header("Origin","http://browser.example.test")
                 .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(oversized)).build();
         error(http.send(request,HttpResponse.BodyHandlers.ofString()),413,"GRADING_REPORT_TOO_LARGE");
         // 无 Content-Length 时仍按实际字节拒绝，而不是只依赖请求头。
-        var streamed=HttpRequest.newBuilder(request.uri()).header("Cookie",cookie).header("Origin","http://browser.example.test")
+        var streamed=HttpRequest.newBuilder(request.uri()).timeout(Duration.ofSeconds(30)).header("Cookie",cookie).header("Origin","http://browser.example.test")
                 .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofInputStream(
                         ()->new ByteArrayInputStream(oversized.getBytes(java.nio.charset.StandardCharsets.UTF_8)))).build();
         error(http.send(streamed,HttpResponse.BodyHandlers.ofString()),413,"GRADING_REPORT_TOO_LARGE");

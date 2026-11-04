@@ -266,6 +266,13 @@ public class PracticeLifecycleJobs {
             });
         } catch (RuleRunnerClient.BackgroundBusy busy) {
             jobs.yield(job.id(), owner, clock.instant());
+        } catch (RuleRunnerException unavailable) {
+            if (job.kind().equals("browser_grade")) {
+                // 单题没有“重试整卷”按钮；运行器暂时不可用时保留任务，延后重试。
+                jobs.yield(job.id(), owner, clock.instant().plusSeconds(5));
+            } else {
+                fail(job, unavailable);
+            }
         } catch (Exception error) {
             fail(job, error);
         }

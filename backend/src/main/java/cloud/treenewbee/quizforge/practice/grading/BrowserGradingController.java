@@ -45,9 +45,9 @@ public class BrowserGradingController {
     public ResponseEntity<?> report(Principal principal, @PathVariable String kind, @PathVariable String id,
             HttpServletRequest request) throws IOException {
         scope(principal.getName(), kind, id);
-        if (request.getContentLengthLong() > MAX_BATCH_BYTES) throw tooLarge();
         byte[] bytes = request.getInputStream().readNBytes(MAX_BATCH_BYTES + 1);
-        if (bytes.length > MAX_BATCH_BYTES) throw tooLarge();
+        // 有界读取也兼容 chunked；不在仍有大请求体发送时提前返回，避免响应被连接重置吞掉。
+        if (request.getContentLengthLong() > MAX_BATCH_BYTES || bytes.length > MAX_BATCH_BYTES) throw tooLarge();
         Batch batch;
         try { batch = json.readValue(bytes, Batch.class); }
         catch (RuntimeException error) { throw invalid(); }
