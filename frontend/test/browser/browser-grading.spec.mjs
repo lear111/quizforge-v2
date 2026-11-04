@@ -1,13 +1,12 @@
 import {test,expect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
-import {mkdir} from 'node:fs/promises';
 import {registerByApi} from './accounts.mjs';
 import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 
 test.beforeEach(()=>test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','需要独立的本机 Compose'));
 
-test('五种基础题型在真实浏览器与服务器中判分一致，先锁定再读取本题原文',async({page},info)=>{
+test('五种基础题型在真实浏览器与服务器中判分一致，先锁定再读取本题原文',async({page})=>{
   test.setTimeout(180000);
   const {origin}=await registerByApi(page,'browser-grade','本地判分');
   const {collections}=await uploadAndImportFromLibrary(page);
@@ -15,7 +14,6 @@ test('五种基础题型在真实浏览器与服务器中判分一致，先锁�
   const banks=JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',['-c',
     "import json,zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(json.dumps([dict(json.loads(z.read(n)),folder=n.split('/')[-2]) for n in z.namelist() if n.endswith('/bank.json')]))",
     resolve('../samples/basic-types.qbank')],{encoding:'utf8'}));
-  const screenshotDir=resolve('../.artifacts/local/browser-grading/screenshots');await mkdir(screenshotDir,{recursive:true});
   for(const collection of collections) {
     const bank=banks.find(b=>b.folder===collection.title),question=bank.questions[0],data=question.data;
     let answer;
