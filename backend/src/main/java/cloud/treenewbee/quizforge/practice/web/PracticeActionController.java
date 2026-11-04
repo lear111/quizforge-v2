@@ -21,6 +21,8 @@ public class PracticeActionController {
 
     @org.springframework.beans.factory.annotation.Autowired
     private cloud.treenewbee.quizforge.exam.ExamMapper exams;
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.practice.grading.BrowserGradingService browserGrading;
     private final DraftActionService drafts;
     private final SubmitActionService submits;
     private final PracticeLifecycleService lifecycle;
@@ -68,6 +70,9 @@ public class PracticeActionController {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "操作缺少 data.answer");
         }
         resources.validate(principal.getName(), body.data().get("answer"));
+        if ("submit".equals(body.action()) && browserGrading.enabled()) return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(browserGrading.submit(principal.getName(), id, qid, body.requestId(), body.revision().asLong(),
+                        body.data().get("answer"), body.contentVersion()));
         if ("submit".equals(body.action())) return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(submits.submit(principal.getName(), id, qid, body.requestId(), body.revision().asLong(),
                         body.data().get("answer"), body.contentVersion()));

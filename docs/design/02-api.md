@@ -391,3 +391,13 @@ practice/
 - 匿名浏览、详情、公开截图及下载沿用旧 Hub `PublicHubController.list/detail/archive` 与 `FileDelivery.archive` 的可匿名行为；写操作仍需会话和 Origin。
 - 删除旧临时 `POST /api/catalog/packs/{id}/practice`，不保留别名。
 - 热门排序的计数会随下载变化，键集分页不提供跨请求数据库快照；不使用 OFFSET。
+
+### 浏览器判分（ADR-011）
+
+默认 `qf.grading.mode=browser`；回退 `server` 保持原同步提交协议。普通练习 `action=submit` 保存并锁定后返回原读题结构（`state.status=submitted`、`state.result.gradingStatus=awaiting_browser`），另有 `browserGrading`：`{questionId,generation,data,answer,package,source}`。只发放当前用户已锁定的本题和已批准的规则，不提供任意原文查询。
+
+- `GET /api/collections/{bank|exam}/{id}/grading/pending?questionId=`：当前用户待浏览器判分的题，`{items:[…]}`，最多 20 道；单题查询必须已锁定且仍等待判分。
+- `POST /api/collections/{bank|exam}/{id}/grading/reports`：`{items:[{questionId,generation,outcome:{result,projected,score:{score,maxScore,gradingStatus,outlineStates?}}}]}`。每批 1～20 道、请求 8 MiB；每题输出 2 MiB。返回 `{items:[读题响应…]}`。单题短事务，部分成功后可重放。
+- `generation` 同时包含提交代次与评分代次。相同代次相同内容重放不增加 revision；不同内容、重做 / 再练 / 人工改分后的旧代次返回 409 `GRADING_GENERATION_CONFLICT`。无效格式 400 `INVALID_GRADING_REPORT`，批次超限 413 `GRADING_REPORT_TOO_LARGE`。
+- 只验证格式、非负数且得分不超过满分、DECIMAL 范围、小题 ID 白名单及大小；分数统一 HALF_UP 四位小数，不验证正确性。未评分保持 null。
+- `qf.grading.browser-timeout=PT2M` 后使用现有租约后台任务补判，评分来源分别为 `browser` / `server`。手动考试交卷等待浏览器；关闭页面后的到期扫描走服务器。未作答题归档允许 `project` 缓存未命中，判分计数不包含安全投影。

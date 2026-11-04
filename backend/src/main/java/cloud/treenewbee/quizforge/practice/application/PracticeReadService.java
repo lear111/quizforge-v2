@@ -213,7 +213,7 @@ public class PracticeReadService {
         ExtensionPackageRow extension = pages.extension(question.extensionDigest());
         if (submitted) {
             if (row.projection() == null) throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "已提交题目的投影缺失，请联系管理员");
-            projected = decode(row.projection());
+            projected = "awaiting_browser".equals(row.gradingStatus()) ? decode(question.data()) : decode(row.projection());
         } else {
             var key = new ProjectionKey(hex(question.contentSha256()), hex(question.extensionDigest()));
             projected = decode(projections.get(key, () -> project(extension, question.data())));
@@ -236,7 +236,7 @@ public class PracticeReadService {
                 whiteboard==null?null:whiteboard.draft(), new QuestionStamps.Stamp(stamp.revision(),stamp.contentVersion(),stamp.packageVersion(),completion),
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
                 features(collection), new Capabilities(!submitted && editable, !submitted && editable,
-                        submitted && editable && "in_progress".equals(roundStatus), submitted && reviewable && roundStatus != null && manualReview,
+                        submitted && editable && "in_progress".equals(roundStatus), submitted && !"awaiting_browser".equals(row.gradingStatus()) && reviewable && roundStatus != null && manualReview,
                         false, boardEnabled), null, whiteboard);
     }
 

@@ -98,6 +98,14 @@ test('history freezes the original network URL and warns that remote content may
   const actions=`${f.base}/questions/${encodeURIComponent(f.qid)}/actions`;
   const submitted=await page.request.post(actions,{headers:{Origin:f.origin},data:{action:'submit',requestId:crypto.randomUUID(),revision:0,data:{answer:f.answer}}});
   expect(submitted.status(),await submitted.text()).toBe(200);
+  const locked=await submitted.json();
+  if(locked.browserGrading) {
+    const outcome=await page.evaluate(async ticket=>(await import('/practice/grading/browser-rules.js')).executeBrowserGrade(ticket),locked.browserGrading);
+    const reported=await page.request.post(`${f.base}/grading/reports`,{headers:{Origin:f.origin},data:{items:[{
+      questionId:f.qid,generation:locked.browserGrading.generation,outcome
+    }]}});
+    expect(reported.status(),await reported.text()).toBe(200);
+  }
   const run=async kind=>{
     const summary=await (await page.request.get(`${f.base}/summary`)).json();
     const accepted=await page.request.post(`${f.base}/${kind}`,{headers:{Origin:f.origin},data:{requestId:crypto.randomUUID(),roundId:summary.roundId,summaryVersion:summary.summaryVersion}});

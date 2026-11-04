@@ -118,6 +118,20 @@ public interface LifecycleJobMapper {
             """)
     int yield(@Param("id") String id, @Param("owner") String owner, @Param("now") Instant now);
 
+    @Update("""
+            UPDATE practice_lifecycle_job SET updated_at=#{at},result=#{payload}
+            WHERE id=#{id} AND user_id=#{user} AND status='queued'
+            """)
+    int deferBrowser(@Param("id") String id, @Param("user") String user, @Param("at") Instant at,
+            @Param("payload") String payload);
+
+    @Update("""
+            UPDATE practice_lifecycle_job SET updated_at=#{now},completed=total
+            WHERE id=#{id} AND user_id=#{user} AND status='queued'
+              AND kind IN ('finish','exam_finish')
+            """)
+    int browserReady(@Param("id") String id, @Param("user") String user, @Param("now") Instant now);
+
     record QuestionCursor(String questionId, int position) {}
 
     @Select("""

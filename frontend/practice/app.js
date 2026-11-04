@@ -1,4 +1,5 @@
 import {waitLifecycleJob} from './practice/lifecycle-jobs.js';
+import {gradeTicket,gradePending} from './grading/browser-grading.js';
 import {loadLibraryIndex} from './shared/online.js';
 import {createListeningPlayer} from './listening/listening-player.js';
 import {createLibraryIndexClient} from './library/library-index-client.js';
@@ -61,16 +62,23 @@ const questionCacheKey=(pane,qid)=>`${pane.key}:${qid}`;
 async function loadQuestion(pane,qid,{fresh=false}={}){
   const key=questionCacheKey(pane,qid);if(fresh)questionsCache.delete(key);
   let cacheHit=false;
-  const payload=await questionsCache.load(key,async cached=>{
+  let payload=await questionsCache.load(key,async cached=>{
     if(cached?.stamp){const value=await request(questionPath(pane.kind,pane.id,qid),{headers:{'X-QuizForge-Question-Stamp':JSON.stringify({...cached.stamp,whiteboardRevision:cached.whiteboard?.revision||0})}});if(value.unchanged&&sameQuestionStamp(value.stamp,cached.stamp)){cacheHit=true;return cached;}return value;}
     return request(questionPath(pane.kind,pane.id,qid));
   },{revalidate:true});
+  if(payload.state?.result?.gradingStatus==='awaiting_browser') {
+    try {
+      const pending=await request(`${collectionPath(pane.kind,pane.id)}/grading/pending?questionId=${encodeURIComponent(qid)}`);
+      const graded=await gradeTicket(collectionPath(pane.kind,pane.id),pending.items[0],{request});
+      if(graded){payload=graded;questionsCache.set(key,graded);}else notice('本地判分未完成，服务器将稍后补判。');
+    }catch(error){if(error.status!==409)notice('判分结果尚未同步，服务器将稍后补判。');}
+  }
   pane.node.dataset.questionSource=cacheHit?'cache':'server';return payload;
 }
 
 function makeWriteQueue(pane){return createWriteQueue({
     makeRequestId,revisionFor:(qid,action)=>action==='whiteboard'?(pane.boardVersions?.get(qid)||0):stateFor(pane,qid).revision,
-    send:(qid,body)=>{if(pane.closed)throw new Error('题库页面已关闭');if(pane.view==='history'){if(body.action!=='whiteboard')throw new Error('历史作答不能修改');return request(`${historyPath(pane)}/${encodeURIComponent(pane.historyEntry.id)}/questions/${encodeURIComponent(qid)}/annotations`,{method:'POST',body:JSON.stringify({requestId:body.requestId,revision:body.revision,notes:body.data.draft})});}return request(`${questionPath(pane.kind,pane.id,qid)}/actions`,{method:'POST',body:JSON.stringify(body)});},
+    send:async(qid,body)=>{if(pane.closed)throw new Error('题库页面已关闭');if(pane.view==='history'){if(body.action!=='whiteboard')throw new Error('历史作答不能修改');return request(`${historyPath(pane)}/${encodeURIComponent(pane.historyEntry.id)}/questions/${encodeURIComponent(qid)}/annotations`,{method:'POST',body:JSON.stringify({requestId:body.requestId,revision:body.revision,notes:body.data.draft})});}const value=await request(`${questionPath(pane.kind,pane.id,qid)}/actions`,{method:'POST',body:JSON.stringify(body)});if(value.browserGrading){try{const graded=await gradeTicket(collectionPath(pane.kind,pane.id),value.browserGrading,{request});if(graded)return graded;}catch{/* 已锁定的作答不因上报中断而丢失，后台稍后补判。 */}notice('作答已提交，服务器将稍后补判。');}return value;},
     onBusy:busy=>{pendingWrites+=busy?1:-1;if(busy&&active()===pane)saveStatus(collectionFeature(pane,'history')?'保存中…':'当前会话','saving');},
     onSaved:(qid,action,value)=>{
       if(action==='whiteboard'){
@@ -319,6 +327,8 @@ pane.loading=true;updateChrome();
 }
 async function awaitLifecycle(pane,accepted){
   if(!accepted?.jobId)return accepted;
+  try{await gradePending(collectionPath(pane.kind,pane.id),{request,onProgress:count=>saveStatus(`本地判分 ${count} 道`,'saving')});}
+  catch{notice('部分本地判分尚未同步，服务器将稍后补判。');}
   return waitLifecycleJob(collectionPath(pane.kind,pane.id),accepted.jobId,{request,onProgress:job=>{
     pane.summaryCard?.update({...pane.scoreSummary,processing:true,jobProgress:`${job.completed} / ${job.total}`});
     if(active()===pane)saveStatus(`后台处理 ${job.completed} / ${job.total}`,'saving');

@@ -1,6 +1,10 @@
 // Opt-in measurement-chain check. Consumes drafts/submissions in fresh local fixtures.
 import http from 'k6/http';
 import {check, fail, sleep} from 'k6';
+import {Trend} from 'k6/metrics';
+import {gradeFixture} from '../browser-grading.js';
+
+const submitFlow=new Trend('qf_submit_flow',true);
 
 const users = JSON.parse(open(__ENV.USERS_FILE || '/work/users.json'));
 const base = __ENV.BASE_URL || 'http://nginx';
@@ -57,7 +61,15 @@ export default function (data) {
   payload.requestId = `profile-${__VU}-${__ITER}-submit`;
   payload.revision = draft.revision;
   payload.action = 'submit';
-  const submitted = requireOk(http.post(`${path}/questions/${qid}/actions`, JSON.stringify(payload), params('submit')), 'submit');
+  const started=Date.now();
+  let submitted = requireOk(http.post(`${path}/questions/${qid}/actions`, JSON.stringify(payload), params('submit')), 'submit');
+  if(submitted.browserGrading) {
+    const ticket=submitted.browserGrading;
+    submitted=requireOk(http.post(`${path}/grading/reports`,JSON.stringify({items:[{
+      questionId:qid,generation:ticket.generation,outcome:gradeFixture(ticket)
+    }]}),params('grading-report')),'grading-report').items[0];
+  }
+  submitFlow.add(Date.now()-started);
   check(submitted, {'objective full score': r => r.state.result.score === r.state.result.maxScore});
   sleep(0.2);
 }

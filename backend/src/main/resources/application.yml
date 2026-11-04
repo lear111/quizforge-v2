@@ -111,6 +111,9 @@ qf:
     token: ${QF_RULE_RUNNER_TOKEN:quizforge-local-rule-token}
     max-concurrency: ${QF_RULE_RUNNER_CONCURRENCY:8}
     default-deadline: 8s
+  grading:
+    mode: ${QF_GRADING_MODE:browser}
+    browser-timeout: ${QF_GRADING_BROWSER_TIMEOUT:PT2M}
 
 # Separate listener: loopback by default; Compose monitoring opts into its private network.
 management:

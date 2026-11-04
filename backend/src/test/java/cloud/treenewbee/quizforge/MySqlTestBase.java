@@ -22,6 +22,8 @@ import org.testcontainers.mysql.MySQLContainer;
         // 生命周期测试显式推进任务，真实调度由 Compose 浏览器验收覆盖。
         "qf.practice.jobs.enabled=false",
         "qf.import.jobs.enabled=false",
+        // 原服务器判分回归显式运行回退模式；浏览器判分测试单独覆盖默认模式。
+        "qf.grading.mode=server",
         // Cached test contexts share one MySQL; do not retain ten idle connections per context.
         "spring.datasource.hikari.minimum-idle=0",
         "spring.datasource.hikari.maximum-pool-size=4",

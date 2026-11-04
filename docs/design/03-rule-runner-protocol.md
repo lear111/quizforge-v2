@@ -141,6 +141,17 @@
 
 ### 5.3 正式提交
 
+ADR-011 默认浏览器模式：
+
+```text
+1. 短事务内保存答案、按 revision 锁定为 submitted / awaiting_browser，生成提交代次
+2. 向本人返回本题原文与已批准的规则脚本；浏览器隔离执行 grade、提交后 project、全新上下文 getScore
+3. 上报格式与边界校验通过后，按提交代次 + 评分代次条件写入 result / projection / score / outline_states
+4. 超过 qf.grading.browser-timeout（默认 PT2M）未上报，由原后台任务和低优先级名额兜底
+```
+
+`qf.grading.mode=server` 回退模式与服务器兜底仍使用下面的运行器流程，运行器协议不变：
+
 ```text
 1. （事务外）submit(data, answer, withScore = true)
        → result、projected、score
@@ -148,7 +159,7 @@
    创建 / 更新练习轮次，写入冻结快照（payload 使用 projected）
 ```
 
-rule-runner 调用在事务之外（数据库设计 5.2 节）。
+rule-runner 调用在事务之外（数据库设计 5.2 节）。页面在场的完成练习、考试交卷按最多 20 道题、8 MiB 一批上报；判分调用计数为 0。考试归档未作答题时允许安全投影 `project` 缓存未命中。页面关闭后的到期自动交卷仍由服务器执行。
 
 ### 5.4 导入题库
 

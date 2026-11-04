@@ -1,4 +1,5 @@
 import {examActive,collectionFeature} from '../practice/practice-context.js';
+import {gradePending} from '../grading/browser-grading.js';
 
 export function examTimeLabel(exam,now=Date.now()){
   const seconds=Math.max(0,(exam.deadline?Math.ceil:Math.floor)((exam.deadline?Date.parse(exam.deadline)-now:now-Date.parse(exam.startedAt))/1000));
@@ -83,12 +84,12 @@ export function bindExamMode({document,request,active,flush,open,refresh,onError
   }catch(e){if(dialog.open)setError(e.message);else onError(e);}finally{busy=false;sync();}});
   submit.addEventListener('click',async()=>{const pane=active();if(!pane?.exam||busy)return;if(examActive(pane)&&!globalThis.confirm('交卷后将锁定全部答案，确定交卷吗？'))return;busy=true;sync();try{
     if(examActive(pane))await flush(pane);
-    const value=await request(`${collectionPath('exam',pane.id)}/exam`,{method:'POST',body:JSON.stringify({requestId:makeRequestId()}),timeoutMs:135000});observe(value);await refresh(pane,value);
+    const value=await request(`${collectionPath('exam',pane.id)}/exam`,{method:'POST',body:JSON.stringify({requestId:makeRequestId()}),timeoutMs:135000});observe(value);try{await gradePending(collectionPath('exam',pane.id),{request});}catch{/* 后台补判保留上报中断的作答。 */}await refresh(pane,value);
   }catch(e){onError(e);}finally{busy=false;sync();}});
   review.addEventListener('click',()=>{const id=active()?.historyEntry?.examId;if(id)open('exam',id).catch(onError);});
   back.addEventListener('click',()=>{const exam=active()?.exam;if(exam)open(exam.bankKind,exam.bankId).catch(onError);});
   sync();
-  async function pollExam(){const expired=sync(),pane=active();if(!pane?.exam||pane.exam.status==='completed'||polling||busy||!expired&&now()-lastPoll<3000)return;polling=true;lastPoll=now();try{const value=await request(`${collectionPath('exam',pane.id)}/exam`);observe(value);await refresh(pane,value);}catch(e){status.textContent=expired?'时间已到，答案已锁定 · 正在重试交卷状态':'考试连接中断，正在重试';}finally{polling=false;}}
+  async function pollExam(){const expired=sync(),pane=active();if(!pane?.exam||pane.exam.status==='completed'||polling||busy||!expired&&now()-lastPoll<3000)return;polling=true;lastPoll=now();try{const value=await request(`${collectionPath('exam',pane.id)}/exam`,expired?{method:'POST',body:JSON.stringify({requestId:makeRequestId()})}:{});observe(value);if(value.status==='grading')try{await gradePending(collectionPath('exam',pane.id),{request});}catch{/* 下次打开补判或由后台兜底。 */}await refresh(pane,value);}catch(e){status.textContent=expired?'时间已到，答案已锁定 · 正在重试交卷状态':'考试连接中断，正在重试';}finally{polling=false;}}
   const timer=setInterval(pollExam,1000);
   return {sync,observe,destroy(){clearInterval(timer);clearTimeout(deadlineTimer);if(deleteDecision)decideDelete(false);dialog.remove();deleteDialog.remove();for(const node of [start,status,submit,back,review])node.remove();}};
 }
