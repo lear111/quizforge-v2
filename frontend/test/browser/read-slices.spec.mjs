@@ -94,10 +94,14 @@ test('real sample import, approval fixture, open and render all five types',asyn
   await page.screenshot({path:resolve(screenshots,`draft-${info.project.name}-restored.png`),fullPage:true});await other.close();
   // Submit the restored wrong answer through the extension, then reload the frozen result.
   const submittedResponse=page.waitForResponse(response=>action(response)&&response.request().postDataJSON().action==='submit');
+  const gradedResponse=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/grading/reports')&&response.request().method()==='POST');
   await restored.getByRole('button',{name:'提交',exact:true}).click();
   const submitted=await submittedResponse;expect(submitted.status()).toBe(200);
   const submittedBody=await submitted.json();expect(submittedBody.state.status).toBe('submitted');
-  expect(submittedBody.state.result.score).toBeLessThan(submittedBody.state.result.maxScore);
+  expect(submittedBody.state.result.gradingStatus).toBe('awaiting_browser');
+  const graded=await gradedResponse;expect(graded.status()).toBe(200);
+  const gradedBody=(await graded.json()).items[0];
+  expect(gradedBody.state.result.score).toBeLessThan(gradedBody.state.result.maxScore);
   await expect(page.locator('#outline-list .outline-item.incorrect')).toHaveCount(1);
   await expect(restored.locator('#result')).toBeVisible();
   await expect(restored.locator('label.choice.is-wrong')).toHaveCount(1);

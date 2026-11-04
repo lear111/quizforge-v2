@@ -193,3 +193,11 @@ docker compose @compose down
 ```
 
 CI 不运行压测或 seed；原有四个 job 继续运行。新增测试验证内部指标端口、HTTP 直方图、连接池/缓存导出、runner 计时/占用/拒绝/两类超时。这里的 k6 冒烟仅证明链路连通，不能报告吞吐量或容量上限。
+
+## 浏览器判分与服务器判分的对比
+
+`profiling/smoke.js` 同时支持 `QF_GRADING_MODE=browser` 和 `server`。每种模式使用全新的本机账号与 300 题夹具，切换模式后重建 app，并以相同数量的读题请求预热投影缓存。测量时不要同时运行浏览器测试或构建。
+
+脚本分别导出 `http_req_duration{name:submit}`（提交锁定请求）与 `qf_submit_flow`（从提交开始，到浏览器结果上报完成或服务器判分返回）。browser 模式多一次上报请求，比较时需同时报告这两个指标，不能把锁定请求当成完整判分耗时。k6 不提供生产浏览器的 Worker 环境，`browser-grading.js` 只在 k6 进程中运行仓库内的可信合成样例；它不能测量真实手机执行时间，也不能作为规则隔离的证据。真实 Worker 的隔离、五题型与服务器逐字段一致性由 `browser-grading.spec.mjs` 验证。
+
+可按前述 Docker k6 命令设置 `VUS=2`、`DURATION=30s` 做本机对照；两次运行之间必须重新造数据，避免复用已提交题目。CPU 可用本项目 app / rule-runner 容器中 `/sys/fs/cgroup/cpu.stat` 的 `usage_usec` 差值除以测量秒数计算平均占用核数。记录两次运行的 CPU 配额、JVM 堆、实际迭代数、错误率和缓存预热范围；短时间低并发对照不代表容量结论。

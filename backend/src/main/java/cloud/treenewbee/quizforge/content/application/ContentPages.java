@@ -50,6 +50,11 @@ public class ContentPages {
                 ref(extension.digest(), manifest, "answerSchema"));
     }
 
+    /** 调用者已按本题归属和审核状态授权；只交付不可变的已审核规则脚本。 */
+    public String browserRules(ExtensionPackageRow extension) throws IOException {
+        return text(extension.digest(), json.readTree(extension.manifest()), "rules");
+    }
+
     private RulePackage.FileRef ref(byte[] digest, JsonNode manifest, String field) {
         return new RulePackage.FileRef(hex(file(digest, manifest.path(field).asString()).blobSha256()));
     }

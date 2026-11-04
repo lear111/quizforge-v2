@@ -59,6 +59,8 @@ public class PracticeLifecycleJobs {
     private final String owner = UUID.randomUUID().toString();
     @org.springframework.beans.factory.annotation.Autowired
     private cloud.treenewbee.quizforge.exam.ExamMapper exams;
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.practice.grading.BrowserGradingService browserGrading;
     private Instant nextCleanup;
     LifecycleJobPoller poller;
 
@@ -129,6 +131,11 @@ public class PracticeLifecycleJobs {
         });
     }
 
+    @org.springframework.context.event.EventListener
+    public void browserGradingReady(cloud.treenewbee.quizforge.practice.grading.BrowserGradingService.Ready event) {
+        if (poller != null) poller.wake();
+    }
+
     public JsonNode begin(String user, String collection, String request, String roundId, String version, String kind) {
         var target = reads.resolveCollection(user, collection);
         byte[] hash = hash(kind + "\n" + collection + "\n" + roundId + "\n" + version);
@@ -162,6 +169,8 @@ public class PracticeLifecycleJobs {
                 }
                 int total = kind.equals("finish") ? summary.path("answeredUnsubmittedCount").asInt()
                         : summary.path("questionCount").asInt();
+                if (kind.equals("finish") && browserGrading.enabled())
+                    total = browserGrading.lockBatch(user, context.id(), target.bankId());
                 String id = Ids.uuidV7();
                 if (kind.equals("archive")) {
                     // 每次接受的再练请求只计算一次；此时尚未重置当前作答。
@@ -174,6 +183,7 @@ public class PracticeLifecycleJobs {
                     histories.copyAssets(actualRound, target.bankId());
                 }
                 changed(jobs.insert(id, user, collection, context.id(), actualRound, kind, total, now));
+                if (kind.equals("finish") && browserGrading.enabled() && total > 0) browserGrading.deferBatch(id, user);
                 changed(contexts.phase(context.id(), user, kind.equals("finish") ? "finishing" : "archiving", id, now));
                 var response = json.createObjectNode().put("jobId", id).put("status", "queued")
                         .put("total", total).put("completed", 0);
@@ -193,6 +203,10 @@ public class PracticeLifecycleJobs {
 
     /** 调用者已锁 context 和考试；任务与交卷状态在同一事务提交。 */
     public String beginExam(cloud.treenewbee.quizforge.exam.ExamRow exam) {
+        return beginExam(exam, false);
+    }
+
+    public String beginExam(cloud.treenewbee.quizforge.exam.ExamRow exam, boolean browserPresent) {
         var context = contexts.lockForUpdate(exam.contextId(), exam.userId()).orElseThrow();
         Instant now = clock.instant();
         String round = context.currentRoundId();
@@ -204,7 +218,10 @@ public class PracticeLifecycleJobs {
         }
         String id = Ids.uuidV7();
         int total = summaries.current(exam.userId(), exam.bankId(), context).path("answeredUnsubmittedCount").asInt();
+        if (browserPresent && browserGrading.enabled())
+            total = browserGrading.lockBatch(exam.userId(), context.id(), exam.bankId());
         changed(jobs.insert(id, exam.userId(), exam.collectionId(), context.id(), round, "exam_finish", total, now));
+        if (browserPresent && browserGrading.enabled() && total > 0) browserGrading.deferBatch(id, exam.userId());
         changed(contexts.phase(context.id(), exam.userId(), "finishing", id, now));
         changed(exams.submit(exam.id(), exam.userId(), exam.version(), round, now));
         wakeAfterCommit();
@@ -217,6 +234,8 @@ public class PracticeLifecycleJobs {
                 .orElseThrow(cloud.treenewbee.quizforge.content.application.ContentPages::notFound);
         var value = json.createObjectNode().put("jobId", id).put("kind", job.kind()).put("status", job.status())
                 .put("total", job.total()).put("completed", job.completed());
+        if (job.kind().equals("finish") || job.kind().equals("exam_finish"))
+            value.put("completed", Math.max(job.completed(), job.total() - browserGrading.unfinished(user, job.contextId())));
         if (job.result() != null) {
             value.set("result", json.readTree(job.result()));
         }
@@ -247,6 +266,13 @@ public class PracticeLifecycleJobs {
             });
         } catch (RuleRunnerClient.BackgroundBusy busy) {
             jobs.yield(job.id(), owner, clock.instant());
+        } catch (RuleRunnerException unavailable) {
+            if (job.kind().equals("browser_grade")) {
+                // 单题没有“重试整卷”按钮；运行器暂时不可用时保留任务，延后重试。
+                jobs.yield(job.id(), owner, clock.instant().plusSeconds(5));
+            } else {
+                fail(job, unavailable);
+            }
         } catch (Exception error) {
             fail(job, error);
         }
@@ -269,6 +295,14 @@ public class PracticeLifecycleJobs {
     }
 
     private void step(LifecycleJobMapper.Job job) {
+        if (job.kind().equals("browser_grade")) {
+            browserGrading.fallback(job, job.collectionId(), () -> {
+                if (jobs.progress(job.id(), owner, job.completed(), clock.instant().plusSeconds(120), clock.instant()) != 1)
+                    throw conflict("JOB_LEASE_LOST", "后台任务已由另一工作进程接管");
+            });
+            tx.executeWithoutResult(status -> finish(job, json.createObjectNode().put("graded", true)));
+            return;
+        }
         boolean examJob = job.kind().startsWith("exam_");
         var exam = examJob ? exams.context(job.userId(), job.contextId()).orElseThrow() : null;
         if (examJob && !"grading".equals(exam.status())) {
@@ -277,6 +311,11 @@ public class PracticeLifecycleJobs {
         String scope = examJob ? exam.id() : job.collectionId();
         var target = reads.resolveCollection(job.userId(), scope);
         if (job.kind().equals("finish") || job.kind().equals("exam_finish")) {
+            if (browserGrading.fallback(job, scope, () -> check(job))) {
+                progress(job, job.total() - browserGrading.remaining(job.userId(), job.contextId()));
+                jobs.yield(job.id(), owner, clock.instant());
+                return;
+            }
             var work = jobs.nextAnswer(target.bankId(), job.contextId(), job.userId()).orElse(null);
             if (work != null) {
                 var outcome = grader.grade(job.userId(), scope, work.questionId(), json.readTree(work.answer()));
@@ -287,6 +326,7 @@ public class PracticeLifecycleJobs {
                             clock.instant(), job.contextId(), work.questionId(), job.userId(), work.revision()) != 1) {
                         throw conflict("REVISION_CONFLICT", "批量判分期间作答已变化");
                     }
+                    browserGrading.serverSource(job.userId(), job.contextId(), work.questionId(), work.revision() + 1);
                     changed(contexts.bumpProgressVersion(job.contextId(), job.userId(), clock.instant()));
                     progress(job, job.completed() + 1);
                 });

@@ -25,7 +25,7 @@ public interface PracticeLifecycleMapper {
     @Select("""
             SELECT COUNT(*) AS question_count,
                    COALESCE(SUM(COALESCE(s.status = 'submitted', 0)), 0) AS submitted_count,
-                   COALESCE(SUM(COALESCE(s.grading_status = 'pending', 0)), 0) AS pending_count,
+                   COALESCE(SUM(COALESCE(s.grading_status IN ('pending','awaiting_browser'), 0)), 0) AS pending_count,
                    COALESCE(SUM(CASE WHEN s.grading_status = 'graded' THEN s.score ELSE 0 END), 0) AS score,
                    COALESCE(SUM(COALESCE(s.max_score, q.max_score)), 0) AS max_score
             FROM content_question q LEFT JOIN practice_question_state s

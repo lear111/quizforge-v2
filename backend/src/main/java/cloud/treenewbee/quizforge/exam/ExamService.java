@@ -123,7 +123,7 @@ public class ExamService {
                 var context = contexts.lockForUpdate(row.contextId(), user).orElseThrow();
                 var job = context.lifecycleJobId() == null ? null:jobs.find(context.lifecycleJobId(), user, row.collectionId()).orElse(null);
                 boolean retry = row.status().equals("grading") && (job == null || job.status().equals("failed"));
-                if (row.status().equals("in_progress") || retry) worker.beginExam(row);
+                if (row.status().equals("in_progress") || retry) worker.beginExam(row, request != null);
                 var response = metadata(exams.find(user, id).orElseThrow());
                 if (request != null) receipts.insert(user, request, hash, json.writeValueAsString(response));
                 return response;
