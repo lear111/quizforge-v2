@@ -288,7 +288,17 @@ class BrowserGradingIntegrationTest extends MySqlTestBase {
         var item=batch(sample,generation(locked),simpleOutcome()).path("items").get(0);
         var many=JSON.createArrayNode();for(int n=0;n<21;n++)many.add(item);
         error(post(base(sample)+"/grading/reports",JSON.createObjectNode().set("items",many)),400,"INVALID_GRADING_REPORT");
-        error(post(base(sample)+"/grading/reports",JSON.createObjectNode().put("large","x".repeat(8*1024*1024))),413,"GRADING_REPORT_TOO_LARGE");
+        var oversized=JSON.writeValueAsString(JSON.createObjectNode().put("large","x".repeat(8*1024*1024)));
+        // 已知长度先检查请求头；Expect 避免客户端继续发送服务器已拒绝的大请求体。
+        var request=HttpRequest.newBuilder(URI.create("http://localhost:"+port+base(sample)+"/grading/reports"))
+                .expectContinue(true).header("Cookie",cookie).header("Origin","http://browser.example.test")
+                .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(oversized)).build();
+        error(http.send(request,HttpResponse.BodyHandlers.ofString()),413,"GRADING_REPORT_TOO_LARGE");
+        // 无 Content-Length 时仍按实际字节拒绝，而不是只依赖请求头。
+        var streamed=HttpRequest.newBuilder(request.uri()).header("Cookie",cookie).header("Origin","http://browser.example.test")
+                .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofInputStream(
+                        ()->new ByteArrayInputStream(oversized.getBytes(java.nio.charset.StandardCharsets.UTF_8)))).build();
+        error(http.send(streamed,HttpResponse.BodyHandlers.ofString()),413,"GRADING_REPORT_TOO_LARGE");
         assertThat(jdbc.queryForObject("SELECT grading_status FROM practice_question_state WHERE user_id=?",String.class,user)).isEqualTo("awaiting_browser");
         verify(runner,never()).execute(anyString(),any(),anyMap());
     }
