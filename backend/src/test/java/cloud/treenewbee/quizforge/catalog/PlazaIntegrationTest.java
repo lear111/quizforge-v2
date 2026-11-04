@@ -63,6 +63,9 @@ class PlazaIntegrationTest extends MySqlTestBase {
         catalog.insertFile(new CatalogMapper.FileRow(Ids.uuidV7(),id,2,"screenshot",0,"机密截图","image/png",1,new byte[32]));
         String file=catalog.files(id,2).getFirst().id();
         assertThat(request(null,"/api/plaza/packs/"+id,"GET",null).body()).contains("已审核标题").doesNotContain("机密","秘密");
+        assertThat(plaza.list("机密待审标题","latest",null).items()).isEmpty();
+        catalog.insertFile(new CatalogMapper.FileRow(Ids.uuidV7(),id,1,"screenshot",0,"公开截图","image/png",1,new byte[32]));
+        assertThat(request(null,"/api/catalog/files/"+catalog.files(id,1).getFirst().id(),"GET",null).statusCode()).isEqualTo(200);
         assertThat(request(null,"/api/catalog/files/"+file,"GET",null).statusCode()).isEqualTo(404);
         for(String hidden:List.of(pack("私人","private","active",0),pack("已删除","public","deleted",0))) {
             assertThat(request(null,"/api/plaza/packs/"+hidden,"GET",null).statusCode()).isEqualTo(404);
@@ -125,5 +128,22 @@ class PlazaIntegrationTest extends MySqlTestBase {
         assertThat(sql.queryForObject("SELECT COUNT(*) FROM practice_collection WHERE user_id=? AND source_pack_id=? AND source_bank_uuid=? AND source_revision=1",Integer.class,learner.id(),id,uuid)).isEqualTo(2);
         assertThat(quotas.usage(learner.id()).storage().usedBytes()).isZero();verifyNoInteractions(runner);
         assertThat(request(learner,"/api/catalog/packs/"+id+"/practice","POST",Map.of("banks",List.of(uuid))).statusCode()).isEqualTo(404);
+    }
+
+    @Test void favoritesPaginateAndShowTheNewApprovedVersionWithoutCopyingPendingMetadata() throws Exception {
+        var learner=user();
+        for(int i=0;i<22;i++)plaza.favorite(learner.id(),pack("分页收藏"+i,"public","active",0));
+        var first=plaza.favorites(learner.id(),null);
+        var second=plaza.favorites(learner.id(),first.next());
+        assertThat(first.items()).hasSize(20);
+        assertThat(second.items()).hasSize(2);
+        assertThat(first.items().stream().map(PlazaMapper.Entry::id)).doesNotContainAnyElementsOf(second.items().stream().map(PlazaMapper.Entry::id).toList());
+        String id=first.items().getFirst().id();
+        catalog.insertRevision(new CatalogMapper.RevisionRow(id,2,"新审核版本","新简介","新内容","其他","[]","新更新","upload","原文件.qbank",new byte[32],1,"[]","pending",null,null,null,null,owner,Instant.now()));
+        sql.update("UPDATE catalog_pack SET latest_revision=2 WHERE id=?",id);
+        assertThat(plaza.favorites(learner.id(),null).items().getFirst().revision()).isEqualTo(1);
+        sql.update("UPDATE catalog_pack_revision SET review_status='approved' WHERE pack_id=? AND revision=2",id);
+        sql.update("UPDATE catalog_pack SET approved_revision=2 WHERE id=?",id);
+        assertThat(plaza.favorites(learner.id(),null).items().getFirst().title()).isEqualTo("新审核版本");
     }
 }
