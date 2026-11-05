@@ -58,6 +58,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Autowired cloud.treenewbee.quizforge.identity.infrastructure.UserMapper userMapper;
     @Value("${local.server.port}") int port;
     @MockitoBean RuleRunnerClient runner;
+    @Autowired LedgerReadGate ledgerGate;
     final List<String> users = new ArrayList<>();
     final HttpClient http = HttpClient.newHttpClient();
     record User(String id, String cookie) {}
@@ -66,6 +67,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @BeforeEach void setup() {
         clock.now.set(Instant.parse("2026-11-01T15:59:59Z"));
         reset(runner);
+        ledgerGate.clear();
         when(runner.background(any())).thenAnswer(call -> ((java.util.function.Supplier<?>) call.getArgument(0)).get());
         when(runner.execute(anyString(), any(), anyMap())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -82,6 +84,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
     }
 
     @AfterEach void cleanup() {
+        ledgerGate.clear();
 
         for (String user : users) {
             for (String id : jdbc.queryForList("SELECT id FROM practice_collection WHERE user_id=? AND deleted_at IS NULL", String.class, user)) deletion.delete(user, id);
@@ -94,6 +97,31 @@ class QuotaIntegrationTest extends MySqlTestBase {
             jdbc.update("DELETE FROM auth_session WHERE user_id=?", user);
             jdbc.update("DELETE FROM account_user WHERE id=?", user);
         }
+    }
+
+    @Test void firstLedgerItemsForDifferentUsersDoNotGapLockEachOther() throws Exception {
+        var first = user(false);
+        var second = user(false);
+        quotas.usage(first.id());
+        quotas.usage(second.id());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id BETWEEN ? AND ?",
+                Integer.class, first.id(), second.id())).isZero();
+        var scenario = ledgerGate.arm();
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var a = workers.submit(() -> tx.executeWithoutResult(status -> quotas.setStorage(first.id(), "private_pack", "first", null, 17)));
+            var b = workers.submit(() -> tx.executeWithoutResult(status -> quotas.setStorage(second.id(), "private_pack", "second", null, 23)));
+            try {
+                assertThat(scenario.ready.await(15, TimeUnit.SECONDS)).isTrue();
+            } finally {
+                scenario.release.countDown();
+            }
+            a.get(15, TimeUnit.SECONDS);
+            b.get(15, TimeUnit.SECONDS);
+        } finally {
+            ledgerGate.clear();
+        }
+        assertThat(quotas.usage(first.id()).storage().usedBytes()).isEqualTo(17);
+        assertThat(quotas.usage(second.id()).storage().usedBytes()).isEqualTo(23);
     }
 
     @Test void defaultsOverridesNullAndLoweringDoNotDeleteOrResetUsage() {
@@ -272,6 +300,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @Test void deletionRemovesHistoricalSnapshotsWhiteboardsAndReleasesAllOwnedItems() throws Exception {
         var user = user(false); var other = user(false); var collection = importOne(user, archive());
+        uploads.delete(user.id(), pack(collection.id()));
         var context = context(user.id(), collection.id()); var round = Ids.uuidV7();
         jdbc.update("INSERT INTO practice_whiteboard (context_id,question_id,user_id,draft,size_bytes,updated_at) VALUES (?, 'q1', ?, '{}', 2, NOW(3))", context, user.id());
         jdbc.update("INSERT INTO practice_round (id,user_id,collection_id,context_id,mode,status,collection_snapshot,created_at,updated_at) VALUES (?,?,?,?,'practice','completed','{}',NOW(3),NOW(3))", round,user.id(),collection.id(),context);
@@ -294,7 +323,7 @@ class QuotaIntegrationTest extends MySqlTestBase {
         assertThat(drafts.saveDraft(user.id(),context,"q1",0,"\"中文\"",new byte[32])).isEqualTo(1);
         assertThat(drafts.saveDraft(user.id(),context,"q1",1,"\"longer answer\"",new byte[32])).isEqualTo(2);
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(used);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category NOT IN ('import','private_pack')",Long.class,user.id())).isZero();
     }
 
     @Test void quotaHttpIsPrivateAdminOnlyAndNormalReadsNeverConsumeTraffic() throws Exception {
@@ -370,7 +399,35 @@ class QuotaIntegrationTest extends MySqlTestBase {
     static Path temporary() { try { return Files.createTempDirectory("quota-test-"); } catch(Exception e) { throw new ExceptionInInitializerError(e); } }
     @TestConfiguration static class Configuration {
         @Bean @Primary MutableClock quotaClock() { return new MutableClock(); }
+        @Bean LedgerReadGate ledgerReadGate() { return new LedgerReadGate(); }
     }
+    /** 两个事务都读完明细后才允许更新，稳定覆盖不存在明细的间隙锁回归。 */
+    @org.apache.ibatis.plugin.Intercepts(@org.apache.ibatis.plugin.Signature(type = org.apache.ibatis.executor.Executor.class,
+            method = "query", args = {org.apache.ibatis.mapping.MappedStatement.class, Object.class,
+            org.apache.ibatis.session.RowBounds.class, org.apache.ibatis.session.ResultHandler.class}))
+    static class LedgerReadGate implements org.apache.ibatis.plugin.Interceptor {
+        static class Scenario {
+            final CountDownLatch ready = new CountDownLatch(2), release = new CountDownLatch(1);
+        }
+        volatile Scenario current;
+        Scenario arm() { return current = new Scenario(); }
+        void clear() {
+            var old = current;
+            current = null;
+            if (old != null) old.release.countDown();
+        }
+        @Override public Object intercept(org.apache.ibatis.plugin.Invocation call) throws Throwable {
+            Object result = call.proceed();
+            var scenario = current;
+            if (scenario != null && ((org.apache.ibatis.mapping.MappedStatement) call.getArgs()[0]).getId().endsWith(".QuotaMapper.item")) {
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+                scenario.ready.countDown();
+                assertThat(scenario.release.await(15, TimeUnit.SECONDS)).isTrue();
+            }
+            return result;
+        }
+    }
+
     static class MutableClock extends Clock {
         final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-01T15:59:59Z"));
         @Override public ZoneId getZone() { return ZoneOffset.UTC; }

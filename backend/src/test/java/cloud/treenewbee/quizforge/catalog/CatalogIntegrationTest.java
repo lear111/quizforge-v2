@@ -386,14 +386,16 @@ class CatalogIntegrationTest extends MySqlTestBase {
         var bankIds = jdbc.queryForList("SELECT bank_uuid FROM catalog_pack_bank WHERE pack_id=?", String.class, privatePack);
         assertThat(post(owner, "/api/library/packs/" + privatePack + "/practice", JSON.writeValueAsString(Map.of("banks", bankIds))).statusCode()).isEqualTo(200);
 
-        // 撤销前显示影响：私人题库数量与广场题库包。
+        // 新流程同时保留私人题库包；影响列表覆盖该资源包、练习实例和广场包。
         String pack = json(publish(owner, archive(List.of("单选题"), null), info("合集"), List.of())).path("packId").asString();
         approveEverything(pack, 1);
         JsonNode impact = json(get(admin, "/api/admin/extensions/" + digest + "/impact")).path("impact");
         assertThat(impact.path("privateCollections").asLong()).isEqualTo(1);
-        assertThat(impact.path("packs")).hasSize(1);
-        assertThat(impact.path("packs").get(0).path("packId").asString()).isEqualTo(pack);
-        assertThat(impact.path("packs").get(0).path("current").asBoolean()).isTrue();
+        assertThat(impact.path("packs")).hasSize(2);
+        assertThat(impact.path("packs")).anySatisfy(item -> {
+            assertThat(item.path("packId").asString()).isEqualTo(pack);
+            assertThat(item.path("current").asBoolean()).isTrue();
+        }).anySatisfy(item -> assertThat(item.path("packId").asString()).isEqualTo(privatePack));
 
         assertThat(post(admin, "/api/admin/extensions/" + digest + "/revoke", "{\"reason\":\"发现内存炸弹\"}").statusCode()).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT status FROM admin_extension_review", String.class)).isEqualTo("revoked");
@@ -517,7 +519,7 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     private static JsonNode json(HttpResponse<String> response) {
-        assertThat(response.statusCode()).as(response.body()).isBetween(200, 201);
+        assertThat(response.statusCode()).as(response.body()).isBetween(200, 202);
         return JSON.readTree(response.body());
     }
 

@@ -165,7 +165,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         for (Map<String, Object> question : questions) {
             Map<String, Object> data = (Map<String, Object>) question.get("data");
             List<Map<String, Object>> nodes = new ArrayList<>();
-            for (int n=0; n<14; n++) nodes.add(new LinkedHashMap<>(Map.of("type", "text", "text", "x".repeat(99000))));
+            for (int n=0; n<14; n++) nodes.add(new LinkedHashMap<>(Map.of("type", "text", "text", question.get("id") + "x".repeat(98990))));
             data.put("stem", Map.of("type", "doc", "content", List.of(Map.of("type", "paragraph", "content", nodes))));
         }
         byte[] bankBytes = JSON.writeValueAsBytes(bank);
@@ -311,29 +311,29 @@ class ImportIntegrationTest extends MySqlTestBase {
 
     static Stream<Arguments> invalidPackages() {
         return Stream.of(
-                Arguments.of("old format", "UNSUPPORTED_LIBRARY_ARCHIVE", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, "quizforge-package.json", m -> m.put("formatVersion", 3))),
-                Arguments.of("layout", "INVALID_LIBRARY_ARCHIVE", 422, (Consumer<Map<String, byte[]>>) f -> f.put("README.txt", new byte[1])),
-                Arguments.of("resource", "UNSUPPORTED_RESOURCE_TYPE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/test.exe", new byte[8])),
-                Arguments.of("bank structure", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("questions", List.of()))),
-                Arguments.of("missing bank UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.remove("id"))),
-                Arguments.of("invalid bank UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("id", "examples"))),
-                Arguments.of("missing example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.remove("id"))),
-                Arguments.of("invalid example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", "60000000-0000-4000-8000-00000000000A"))),
-                Arguments.of("duplicate bank and example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", ImportArchives.BANK_IDS.get("单选题")))),
-                Arguments.of("manifest", "INVALID_EXTENSION", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/manifest.json", m -> m.remove("rules"))),
-                Arguments.of("entry limit", "LIBRARY_ARCHIVE_LIMIT", 413, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/big.png", new byte[33*1024*1024])),
-                Arguments.of("rule rejection", "RULE_REJECTED", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){return false}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("rule timeout", "RULE_TIMEOUT", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){while(true){}}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("invalid outline", "INVALID_OUTLINE_ITEMS", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{maxScore:1}},grade(){},getOutlineItems(){return[{id:'x',label:'a'},{id:'x',label:'b'}]}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("invalid outline state", "INVALID_OUTLINE_STATES", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){throw Object.assign(Error('invalid'),{code:'INVALID_OUTLINE_STATES'})}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("score range", "SCORE_UNAVAILABLE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:100000000}}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("score precision", "SCORE_UNAVAILABLE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:1.23456}}})".getBytes(StandardCharsets.UTF_8)))
+                Arguments.of("old format", "UNSUPPORTED_LIBRARY_ARCHIVE", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, "quizforge-package.json", m -> m.put("formatVersion", 3))),
+                Arguments.of("layout", "INVALID_LIBRARY_ARCHIVE", (Consumer<Map<String, byte[]>>) f -> f.put("README.txt", new byte[1])),
+                Arguments.of("resource", "UNSUPPORTED_RESOURCE_TYPE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/test.exe", new byte[8])),
+                Arguments.of("bank structure", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("questions", List.of()))),
+                Arguments.of("missing bank UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.remove("id"))),
+                Arguments.of("invalid bank UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("id", "examples"))),
+                Arguments.of("missing example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.remove("id"))),
+                Arguments.of("invalid example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", "60000000-0000-4000-8000-00000000000A"))),
+                Arguments.of("duplicate bank and example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", ImportArchives.BANK_IDS.get("单选题")))),
+                Arguments.of("manifest", "INVALID_EXTENSION", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/manifest.json", m -> m.remove("rules"))),
+                Arguments.of("entry limit", "LIBRARY_ARCHIVE_LIMIT", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/big.png", new byte[33*1024*1024])),
+                Arguments.of("rule rejection", "RULE_REJECTED", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){return false}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("rule timeout", "RULE_TIMEOUT", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){while(true){}}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("invalid outline", "INVALID_OUTLINE_ITEMS", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{maxScore:1}},grade(){},getOutlineItems(){return[{id:'x',label:'a'},{id:'x',label:'b'}]}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("invalid outline state", "INVALID_OUTLINE_STATES", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){throw Object.assign(Error('invalid'),{code:'INVALID_OUTLINE_STATES'})}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("score range", "SCORE_UNAVAILABLE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:100000000}}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("score precision", "SCORE_UNAVAILABLE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:1.23456}}})".getBytes(StandardCharsets.UTF_8)))
         );
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidPackages")
-    void everyFailureHasCorrectQueueCodeAndNoBusinessResidue(String name, String code, int status, Consumer<Map<String, byte[]>> mutate) throws Exception {
+    void everyFailureHasCorrectQueueCodeAndNoBusinessResidue(String name, String code, Consumer<Map<String, byte[]>> mutate) throws Exception {
         var files = ImportArchives.files(List.of("单选题"), "bank"); mutate.accept(files);
         var accepted = rawUpload(cookie(), ImportArchives.zip(files));
         assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(202);
@@ -353,7 +353,7 @@ class ImportIntegrationTest extends MySqlTestBase {
 
     @Test
     void databaseFailureRollsBackAllBanksExtensionsQuestionsAssetsAndInstances() throws Exception {
-        jdbc.execute("ALTER TABLE content_bank ADD CONSTRAINT import_test_failure CHECK (title <> '单选题')");
+        jdbc.execute("ALTER TABLE content_bank ADD CONSTRAINT import_test_failure CHECK (source_title <> '单选题')");
         try { assertBackgroundFailure(rawUpload(cookie(), archive(ImportArchives.TYPES, "group")), "PROCESSING_FAILED"); }
         finally { jdbc.execute("ALTER TABLE content_bank DROP CHECK import_test_failure"); }
         assertNoBusinessData();
