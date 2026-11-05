@@ -164,6 +164,53 @@ public class AiGateway {
         }
     }
 
+    /** 异步任务先持久化模型输出，再在采用结果的短事务中结算。普通 chat/stream 不受影响。 */
+    public record Returned(String text, long inputTokens, long outputTokens, boolean usageReported,
+            long cost, String keyId, String ref) {}
+
+    public interface TaskCheckpoint {
+        /** 每次真实上游尝试都计数，换 Key 与输出修复共用任务的三次预算。 */
+        void beforeCall();
+        void returned(Returned value);
+    }
+
+    public Returned chat(String userId, ChatRequest request, String ref, TaskCheckpoint checkpoint) {
+        ChatRequest prepared = prepare(request, ref);
+        requireBalance(userId);
+        try (Permit ignored = limiter.acquire(userId)) {
+            List<Failure> failures = new ArrayList<>();
+            for (UpstreamKey key : requireKeys()) {
+                checkpoint.beforeCall();
+                ChatResponse response;
+                try { response = client.chat(key, prepared); }
+                catch (RuntimeException error) {
+                    Failure failure = classify(error);
+                    failures.add(failure); note(key, failure);
+                    if (failure.kind() == Kind.REQUEST) break;
+                    continue;
+                }
+                TokenUsage usage = response.tokenUsage();
+                long input = count(usage == null ? null : usage.inputTokenCount());
+                long output = count(usage == null ? null : usage.outputTokenCount());
+                boolean reported = usage != null && (usage.inputTokenCount() != null || usage.outputTokenCount() != null);
+                var value = new Returned(response.aiMessage().text(), input, output, reported,
+                        cost(input, output, key.inputPrice(), key.outputPrice()), key.id(), ref);
+                checkpoint.returned(value);
+                return value;
+            }
+            throw failed(failures);
+        }
+    }
+
+    /** 与任务结果一起提交；没有模型调用，也不会再次检查余额是否为正。 */
+    public void settleReturned(String userId, Returned value) {
+        if (balances.chargeOnce(userId, value.cost(), value.ref()) != null)
+            keys.recordUsage(value.keyId(), value.inputTokens(), value.outputTokens(), value.cost());
+    }
+
+    /** 复用已有的虚拟线程执行器，评分任务不再创建线程池。 */
+    public void runBackgroundTask(Runnable task) { settlements.execute(task); }
+
     private AiReply call(String userId, ChatRequest prepared, String ref, List<UpstreamKey> candidates, String mode) {
         long started = System.nanoTime();
         List<Failure> failures = new ArrayList<>();

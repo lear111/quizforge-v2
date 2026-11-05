@@ -23,6 +23,9 @@ import tools.jackson.databind.node.ObjectNode;
 /** 考试阶段转换先锁 context；规则执行统一交给已有的持久化后台任务。 */
 @Service
 public class ExamService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher gradingEvents;
+
     private final ExamMapper exams;
     private final PracticeContextMapper contexts;
     private final PracticeReadMapper reads;
@@ -171,6 +174,7 @@ public class ExamService {
             if (row.status().equals("completed")) throw conflict("EXAM_COMPLETED", "考试已完成，请从历史记录中删除");
             if (!row.status().equals("deleted")) {
                 changed(exams.delete(id, user, row.version()));
+                if (gradingEvents != null) gradingEvents.publishEvent(new cloud.treenewbee.quizforge.practice.application.GradingEvents.Invalidated(user, row.contextId(), null));
                 changed(contexts.phase(row.contextId(), user, "completed", null, clock.instant()));
                 changed(contexts.setCurrentRound(row.contextId(), user, null, clock.instant()));
                 exams.purgeStates(row.contextId(), user);

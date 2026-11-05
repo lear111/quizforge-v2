@@ -200,9 +200,11 @@ public class BrowserGradingService {
 
     private int apply(String context, String user, String qid, BrowserGradingMapper.Locked row,
             GradeOutcome outcome, String source, byte[] hash) {
-        return mapper.apply(context, user, qid, row.submissionGeneration(), row.gradingGeneration(),
+        int changed = mapper.apply(context, user, qid, row.submissionGeneration(), row.gradingGeneration(),
                 outcome.resultJson(), outcome.projectedJson(), scale(outcome.score()), scale(outcome.maxScore()),
                 outcome.gradingStatus(), outcome.outlineStatesJson(), source, hash, clock.instant());
+        if (changed == 1) events.publishEvent(new GradingEvents.Submitted(user, context, qid));
+        return changed;
     }
 
     private static java.math.BigDecimal scale(java.math.BigDecimal value) {
