@@ -25,6 +25,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -100,6 +101,13 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
     /** 两个版本中各题库的共享内容：UUID → content_bank.id，以及“判断题”的 UUID。 */
     final Map<String, String> v1 = new LinkedHashMap<>(), v2 = new LinkedHashMap<>(), titles = new LinkedHashMap<>();
     String author, admin, judge, single;
+    final List<String> learners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** 其他测试类会对整张作答表加 CHECK 约束（如 DraftActionIntegrationTest），这里不留下作答行。 */
+    @AfterAll
+    void removeAnswers() {
+        for (String learner : learners) jdbc.update("DELETE FROM practice_question_state WHERE user_id = ?", learner);
+    }
 
     @BeforeAll
     void importBothVersions() throws Exception {
@@ -524,6 +532,7 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
 
     private User user() {
         var registered = auth.register(Ids.uuidV7() + "@example.test", "学习者", "password-123", null);
+        learners.add(registered.userId());
         return new User(registered.userId(), "__Host-qf_session=" + registered.token());
     }
 
