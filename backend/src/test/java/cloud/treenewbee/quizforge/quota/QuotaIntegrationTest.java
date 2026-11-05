@@ -271,8 +271,11 @@ class QuotaIntegrationTest extends MySqlTestBase {
         var user = user(false); var admin = user(true); var collection = importOne(user, archive());
         String context = context(user.id(), collection.id()); long used = quotas.usage(user.id()).storage().usedBytes();
         quotas.adjust(admin.id(),user.id(),used,null);
-        assertThat(drafts.saveDraft(user.id(),context,"q1",0,"\"中文\"",new byte[32])).isEqualTo(1);
-        assertThat(drafts.saveDraft(user.id(),context,"q1",1,"\"longer answer\"",new byte[32])).isEqualTo(2);
+        // 草稿必须对应题库实例当前版本的题目内容（广场题库切换版本后旧版本的保存会被拒绝）。
+        byte[] content = jdbc.queryForObject("SELECT q.content_sha256 FROM content_question q JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id=? AND q.question_id='q1'",
+                byte[].class, collection.id());
+        assertThat(drafts.saveDraft(user.id(),context,"q1",0,"\"中文\"",content)).isEqualTo(1);
+        assertThat(drafts.saveDraft(user.id(),context,"q1",1,"\"longer answer\"",content)).isEqualTo(2);
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(used);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM quota_storage_item WHERE user_id=? AND category<>'import'",Long.class,user.id())).isZero();
     }

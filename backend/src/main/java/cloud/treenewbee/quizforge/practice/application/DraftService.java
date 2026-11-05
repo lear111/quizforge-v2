@@ -52,7 +52,7 @@ public class DraftService {
         }
 
         // 之后的保存：乐观锁更新
-        if (states.updateDraft(contextId, questionId, userId, clientRevision, answerJson, now) == 1) {
+        if (states.updateDraft(contextId, questionId, userId, clientRevision, answerJson, now, contentSha256) == 1) {
             return clientRevision + 1;
         }
         throw revisionConflict();           // 版本号已过期，或这道题已提交

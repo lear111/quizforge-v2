@@ -187,30 +187,38 @@ class NotificationIntegrationTest extends MySqlTestBase {
                 theirs)).isZero();
     }
 
-    // ------------------------------------------------------------------ 题库通知（供题库广场调用）
+    // ------------------------------------------------------------------ 题库更新通知（题库广场新版本审核通过时由系统发送）
 
     @Test
-    void bankNotificationsReachOnlyCurrentOwners() throws Exception {
+    void bankUpdateNotificationsReachOnlyCurrentOwnersOfThatPack() throws Exception {
         Session owner = register();
         Session former = register();
         Session stranger = register();
-        String bankKey = UUID.randomUUID().toString();
-        collection(owner.id(), bankKey, false);
-        collection(former.id(), bankKey, true);
-        // 私人导入了同一 UUID 的题库：不是从题库广场加入的，不接收题库通知。
+        String pack = UUID.randomUUID().toString();
+        String bankUuid = UUID.randomUUID().toString();
+        collection(owner.id(), pack, bankUuid, false);
+        collection(former.id(), pack, bankUuid, true);
+        // 另一个题库包里有相同 UUID 的题库：按包判断，不接收（不同包之间 UUID 可能相同）。
+        Session otherPack = register();
+        collection(otherPack.id(), UUID.randomUUID().toString(), bankUuid, false);
+        // 私人导入了同一 UUID 的题库：不是从题库广场导入的，不接收题库通知。
         Session importer = register();
         jdbc.update("""
                 INSERT INTO practice_collection (id, user_id, bank_id, title, source, source_bank_uuid, created_at)
                 VALUES (?, ?, ?, '题库', '{"type":"upload"}', ?, NOW(3))
-                """, UUID.randomUUID().toString(), importer.id(), UUID.randomUUID().toString(), bankKey);
+                """, UUID.randomUUID().toString(), importer.id(), UUID.randomUUID().toString(), bankUuid);
 
-        String id = notifications.publishToBankOwners(bankKey, "题库升级到 1.1", "新增 10 道题", owner.id());
+        String id = notifications.publishBankUpdate(pack, "题库「英语」已更新到第 2 版", "新增 10 道题");
         assertThat(count("notification")).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT source FROM notification WHERE id = ?", String.class, id)).isEqualTo("publisher");
+        // 题库更新通知由系统发送（需求 FR-12），只存一份。
+        assertThat(jdbc.queryForMap("SELECT source, audience, target_id, created_by FROM notification WHERE id = ?", id))
+                .containsEntry("source", "system").containsEntry("audience", "bank").containsEntry("target_id", pack)
+                .containsEntry("created_by", null);
 
         assertThat(unseen(owner)).isTrue();
         assertThat(unseen(former)).isFalse();
         assertThat(unseen(stranger)).isFalse();
+        assertThat(unseen(otherPack)).isFalse();
         assertThat(unseen(importer)).isFalse();
         assertThat(json(send("GET", "/api/notifications", null, owner.cookie())).path("items").get(0).path("id").asString())
                 .isEqualTo(id);
@@ -224,7 +232,7 @@ class NotificationIntegrationTest extends MySqlTestBase {
     void bellQueryUsesTheAudienceIndexInsteadOfScanning() throws Exception {
         Session user = register();
         String bankKey = UUID.randomUUID().toString();
-        collection(user.id(), bankKey, false);
+        collection(user.id(), bankKey, UUID.randomUUID().toString(), false);
         // 足够多的通知，让优化器在索引与全表扫描之间真正做出选择。
         jdbc.update("""
                 INSERT INTO notification (id, audience, target_id, source, title, body, pinned, created_by, created_at)
@@ -289,12 +297,12 @@ class NotificationIntegrationTest extends MySqlTestBase {
         return json(send("GET", "/api/notifications/status", null, user.cookie())).path("unseen").asBoolean();
     }
 
-    private void collection(String userId, String bankKey, boolean deleted) {
+    private void collection(String userId, String packId, String bankUuid, boolean deleted) {
         jdbc.update("""
                 INSERT INTO practice_collection (id, user_id, bank_id, title, source, source_pack_id, source_bank_uuid,
                                                  created_at, deleted_at)
                 VALUES (?, ?, ?, '题库', '{}', ?, ?, NOW(3), ?)
-                """, UUID.randomUUID().toString(), userId, UUID.randomUUID().toString(), UUID.randomUUID().toString(), bankKey,
+                """, UUID.randomUUID().toString(), userId, UUID.randomUUID().toString(), packId, bankUuid,
                 deleted ? java.sql.Timestamp.valueOf("2026-11-01 00:00:00") : null);
     }
 

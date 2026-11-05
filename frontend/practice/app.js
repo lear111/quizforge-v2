@@ -17,6 +17,7 @@ import {navigateOutlineTarget} from './outline/outline-navigation.js';
 import {syncQuestionLayout,rememberDraftView,rememberDraftScroll} from './practice/question-layout.js';
 import {createHistoryView,historyProgress} from './history/history-view.js';
 import {mountPracticeSummary} from './practice/practice-summary.js';
+import {updateNotice} from './library/update-labels.js';
 import {bindExamMode} from './exam/exam-mode.js';
 import {createAiClient} from './ai/ai-client.js';
 import {createDraftFullscreen} from './draft/draft-fullscreen.js';
@@ -583,11 +584,14 @@ function updateChrome(){
   $('#history-choose').hidden=!collectionFeature(pane,'history')||!['history','history-deleted'].includes(view);$('#return-practice').hidden=!['history','history-deleted'].includes(view);
   $('#mode-label').textContent=view==='history'?`只读历史 · ${pane.historyEntry.mode==='exam'?'考试 · ':''}${historyProgress(pane.historyEntry)} · ${historyTime(pane.historyEntry.createdAt)}`:view==='history-deleted'?'记录已删除，请选择其他记录或返回作答。':'';
 
+  $('#collection-update').hidden=true;
   if(!pane){$('#document-title').textContent='选择一本题库';$('#progress-text').textContent='';$('#previous').disabled=true;$('#next').disabled=true;saveStatus('');return;}
   const rows=visibleQuestions(pane),index=navigationIndex(pane),count=rows.length;
   const libraryRow=(['extension','development'].includes(pane.kind)?catalog.extensions:catalog.banks).find(row=>row.id===pane.id&&(row.kind||(['extension','development'].includes(pane.kind)?'extension':'bank'))===pane.kind);
   $('#document-group').textContent=libraryRow?.group||'';$('#document-group').hidden=!libraryRow?.group;
   $('#document-title').textContent=view==='history'?pane.historyEntry.collectionTitle:libraryRow?.displayName||pane.collection.title;
+  // 广场题库的版本提示（设计 04 第 3 节）：有新版本、作者已移除、作者已删除；只读历史不显示。
+  const notice=['history','history-deleted'].includes(view)?null:updateNotice(pane.collection.update);$('#collection-update').textContent=notice||'';$('#collection-update').hidden=!notice;
   $('#progress-text').textContent=pane.summaryShown?'分值汇总':view==='history-deleted'?'历史记录已删除':index<0?'正在加载题目…':`第 ${index+1} 题 / 共 ${count} 题`;
   $('#previous').disabled=pane.loading||index<=0;$('#next').disabled=pane.loading||!count||index>=(hasScoreSummary(pane)?count:count-1);
   for(const [id,label]of [['previous',pane.summaryShown?'返回最后一题':'上一题'],['next',index===count-1&&hasScoreSummary(pane)?'查看分值汇总':'下一题']]){$(`#${id}`).title=label;$(`#${id}`).setAttribute('aria-label',label);}

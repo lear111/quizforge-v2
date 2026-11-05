@@ -102,15 +102,15 @@ public class NotificationService {
     }
 
     /**
-     * 发给拥有某题库的用户（题库广场发布新版本时由发布者填写升级说明）。读取时按用户是否拥有该题库筛选，
-     * 不为每个用户复制。publisherId 为发布者，可为空。
+     * 题库更新通知（需求 FR-12、设计 04 第 3.3 节）：广场题库包的新版本审核通过时由系统发送，正文为作者填写的更新说明。
+     * 只存一份（audience = bank，target_id = 题库包 ID）；读取时按用户是否拥有该包的实例筛选，不为每个用户复制。
      */
     @Transactional
-    public String publishToBankOwners(String bankKey, String title, String body, String publisherId) {
-        if (bankKey == null || bankKey.isBlank() || bankKey.length() > 255) {
+    public String publishBankUpdate(String packId, String title, String body) {
+        if (packId == null || packId.isBlank() || packId.length() > 255) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "请求内容不符合要求");
         }
-        return insert(Audience.BANK, bankKey, "publisher", title, body, false, publisherId);
+        return insert(Audience.BANK, packId, "system", title, body, false, null);
     }
 
     /** 系统通知（例如审核结果），发给单个用户。 */
@@ -154,12 +154,12 @@ public class NotificationService {
     /** 铃铛红点：是否有比上次打开通知界面更新的可见通知。每次打开页面都会调用，只做索引上的“是否存在”判断。 */
     public boolean hasUnseen(String userId) {
         Instant since = mapper.seenAt(userId).orElse(Instant.EPOCH);
-        return mapper.hasNewer(userId, banks.ownedBankUuids(userId, MAX_BANKS), since);
+        return mapper.hasNewer(userId, banks.ownedPackIds(userId, MAX_BANKS), since);
     }
 
     /** 通知列表（不改变任何状态；打开界面时另调 {@link #markSeen}）。 */
     public UserList list(String userId) {
-        List<String> keys = banks.ownedBankUuids(userId, MAX_BANKS);
+        List<String> keys = banks.ownedPackIds(userId, MAX_BANKS);
         var items = mapper.userList(userId, keys, USER_LIST_LIMIT).stream()
                 .map(row -> new UserItem(row.id(), row.source(), row.title(), row.pinned(), row.createdAt(), row.read()))
                 .toList();
@@ -168,7 +168,7 @@ public class NotificationService {
     }
 
     public Detail detail(String userId, String id) {
-        NotificationRow row = mapper.findVisible(id, userId, banks.ownedBankUuids(userId, MAX_BANKS))
+        NotificationRow row = mapper.findVisible(id, userId, banks.ownedPackIds(userId, MAX_BANKS))
                 .orElseThrow(NotificationService::notFound);
         return new Detail(row.id(), row.source(), row.title(), row.body(), row.pinned(), row.createdAt());
     }
@@ -180,7 +180,7 @@ public class NotificationService {
 
     /** 点开一条通知：记录已查看；不可见的通知返回 404。 */
     public void markRead(String userId, String id) {
-        List<String> keys = banks.ownedBankUuids(userId, MAX_BANKS);
+        List<String> keys = banks.ownedPackIds(userId, MAX_BANKS);
         if (mapper.findVisible(id, userId, keys).isEmpty()) throw notFound();
         mapper.markRead(id, userId, keys, clock.instant());
     }

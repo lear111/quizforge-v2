@@ -61,6 +61,9 @@ public class CatalogReviewService {
     private final JsonMapper json;
     private final Clock clock;
     private final cloud.treenewbee.quizforge.content.infrastructure.ImportCatalogMapper validation;
+    /** 新版本审核通过时的题库更新通知（设计 04 第 3.3 节）。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    private PackUpdateNotices updateNotices;
 
     public CatalogReviewService(CatalogMapper mapper, CatalogPublishService publishing, ExtensionReviewService extensions,
                                 NotificationService notifications, AdminAuditService audit, JsonMapper json, Clock clock,
@@ -156,6 +159,7 @@ public class CatalogReviewService {
         if (mapper.decide(packId, revision, "approved", actorId, null, now) != 1) throw changed("该版本已经审核过或已被新版本代替");
         mapper.approve(packId, revision, now);
         record(actorId, pack, row, "approved", null, now);
+        updateNotices.approved(packId, revision);
         notifications.publishSystem(pack.ownerId(), "题库「" + row.title() + "」第 " + revision + " 版审核通过",
                 "你发布的题库包「" + row.title() + "」第 " + revision + " 版已通过审核，现在在题库广场公开。");
     }
