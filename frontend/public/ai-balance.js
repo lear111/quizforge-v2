@@ -24,6 +24,19 @@ export function bindAiBalance(request) {
   const more = byId('ai-ledger-more');
   const status = byId('ai-status');
   const form = byId('redeem-form');
+  const auto = byId('ai-auto-grade');
+  const settingsStatus = byId('ai-settings-status');
+  auto?.addEventListener('change', async () => {
+    auto.disabled = true;
+    try {
+      const saved = await request('/api/account/ai/settings', 'PUT', {autoGrade:auto.checked});
+      auto.checked = saved.autoGrade;
+      settingsStatus.textContent = '自动评分设置已保存';
+    } catch (error) {
+      auto.checked = !auto.checked;
+      settingsStatus.textContent = error.message || '设置保存失败，请重试';
+    } finally { auto.disabled = false; }
+  });
   let before = null;
   let generation = 0;
 
@@ -31,6 +44,10 @@ export function bindAiBalance(request) {
     const balance = await request('/api/account/ai');
     byId('ai-balance').textContent = formatMoney(balance.balance);
     byId('ai-overdrawn').hidden = !balance.overdrawn;
+    if (auto) {
+      const setting = await request('/api/account/ai/settings');
+      auto.checked = setting.autoGrade;
+    }
   }
 
   async function loadLedger(reset) {

@@ -19,7 +19,7 @@ import {createHistoryView,historyProgress} from './history/history-view.js';
 import {mountPracticeSummary} from './practice/practice-summary.js';
 import {updateNotice} from './library/update-labels.js';
 import {bindExamMode} from './exam/exam-mode.js';
-import {createAiClient} from './ai/ai-client.js';
+import {createAiClient,aiTaskMessage} from './ai/ai-client.js';
 import {createDraftFullscreen} from './draft/draft-fullscreen.js';
 import {visibleQuestions,visibleQuestionId,hasScoreSummary,navigationIndex,stateFor,contextFor,collectionFeature,practiceSaveLabel,canViewDraft,draftViewActive,examActive} from './practice/practice-context.js';
 import {createExtensionRouter} from './bridge/extension-requests.js';
@@ -176,6 +176,7 @@ const pageRequest=createExtensionRouter({
 function requestAi(pane,method,args){
     const qid=pane.questionId;
     const client=createAiClient({request,path:questionPath(pane.kind,pane.id,qid),makeRequestId,confirmations:pane.aiConfirmations??=new Map(),
+      onTask:task=>{if(active()===pane&&!pane.closed)notice(aiTaskMessage(task));},
       shouldRefreshTask:task=>{const result=stateFor(pane,qid).result,assessment=task.targetId===undefined?result?.aiAssessment:result?.aiAssessments?.[task.targetId];return result?.gradingStatus==='pending'||assessment?.taskId!==task.taskId;},
       settled:async()=>{await pane.writes.settled();if(pane.writes.hasFailures)throw new Error('请先完成保存后再评分');},
       onConfirmed:value=>{if(value.state.revision<(pane.collection.states[qid]?.revision??0))return;questionsCache.set(questionCacheKey(pane,qid),value);pane.collection.states[qid]=value.state;

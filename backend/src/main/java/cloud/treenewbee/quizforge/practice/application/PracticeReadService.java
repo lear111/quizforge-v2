@@ -237,15 +237,17 @@ public class PracticeReadService {
         boolean boardEnabled=features(collection).path("whiteboard").asBoolean(false);
         var whiteboard=boardEnabled?whiteboards.read(context,qid,userId,roundStatus,submitted):null;
         boolean manualReview = false;
+        boolean aiGrade = false;
         for (var capability : json.readTree(extension.manifest()).path("requiresApi").path("capabilities")) {
             if ("manual-review".equals(capability.asString())) manualReview = true;
+            if ("ai-grading".equals(capability.asString())) aiGrade = true;
         }
         return new QuestionResponse(new Question(qid, question.title(), projected, question.outlineGroupIndex(), question.outlineGroupName()), state,
                 whiteboard==null?null:whiteboard.draft(), new QuestionStamps.Stamp(stamp.revision(),stamp.contentVersion(),stamp.packageVersion(),completion),
                 new Extension(extension.extensionId(), extension.version(), extension.name(), hex(extension.digest())),
                 features(collection), new Capabilities(!submitted && editable, !submitted && editable,
                         submitted && editable && "in_progress".equals(roundStatus), submitted && !"awaiting_browser".equals(row.gradingStatus()) && reviewable && roundStatus != null && manualReview,
-                        false, boardEnabled), null, whiteboard);
+                        submitted && !"awaiting_browser".equals(row.gradingStatus()) && reviewable && roundStatus != null && aiGrade, boardEnabled), null, whiteboard);
     }
 
     private String project(ExtensionPackageRow extension, String data) {

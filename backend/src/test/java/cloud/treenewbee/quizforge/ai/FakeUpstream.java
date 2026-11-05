@@ -38,6 +38,9 @@ final class FakeUpstream implements AutoCloseable {
     volatile CountDownLatch holdRelease = new CountDownLatch(1);
     /** slowstream 模式：每个片段之间等待测试放行（用于在流式中途断开）。 */
     final Semaphore slowChunks = new Semaphore(0);
+    volatile String gradingText = "{\"score\":2,\"feedback\":\"本机假模型反馈\"}";
+    volatile int malformedReplies;
+    volatile boolean holdGrading;
 
     FakeUpstream() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -60,6 +63,9 @@ final class FakeUpstream implements AutoCloseable {
         holdArrived.drainPermits();
         holdRelease = new CountDownLatch(1);
         slowChunks.drainPermits();
+        gradingText = "{\"score\":2,\"feedback\":\"本机假模型反馈\"}";
+        malformedReplies = 0;
+        holdGrading = false;
     }
 
     @Override
@@ -75,6 +81,15 @@ final class FakeUpstream implements AutoCloseable {
         String mode = key.split("-")[2];
         try {
             switch (mode) {
+                case "grading" -> {
+                    if (holdGrading) {
+                        holdArrived.release();
+                        holdRelease.await(30, TimeUnit.SECONDS);
+                    }
+                    String text = malformedReplies-- > 0 ? "不是 JSON" : gradingText;
+                    String escaped = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(text);
+                    json(exchange, 200, completion("\"content\":" + escaped, "stop", true));
+                }
                 case "ok" -> json(exchange, 200, completion("\"content\":\"OK\"", "stop", true));
                 case "nousage" -> json(exchange, 200, completion("\"content\":\"OK\"", "stop", false));
                 case "tool" -> json(exchange, 200, body.matches("(?s).*\"role\"\\s*:\\s*\"tool\".*")

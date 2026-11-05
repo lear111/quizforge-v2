@@ -1,5 +1,12 @@
 // Extensions trigger grading; the host owns inputs, persistence and revisions.
-export function createAiClient({request,path,makeRequestId,settled,onConfirmed,confirmations=new Map(),shouldRefreshTask=()=>false}) {
+export function aiTaskMessage(task) {
+  const states={queued:'AI 评分排队中',running:'AI 评分中',model_returned:'AI 评分结果处理中',succeeded:'AI 候选评分未采用，可重试',confirmed:'AI 评分已采用',failed:'AI 评分失败，可重试',superseded:'作答或评分已变化，本次 AI 结果未采用'};
+  if(!task)return '';
+  const cost=Number.isSafeInteger(task.cost)&&task.cost>0?` · 花费 ¥${(task.cost/10000).toFixed(4)}`:'';
+  return `${task.error?.message||states[task.status]||'AI 任务处理中'}${cost}`;
+}
+
+export function createAiClient({request,path,makeRequestId,settled,onConfirmed,onTask=()=>{},confirmations=new Map(),shouldRefreshTask=()=>false}) {
   const taskPath=id=>{
     if(typeof id!=='string'||! /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(id))throw new Error('评分任务编号无效');
     return `${path}/ai/tasks/${encodeURIComponent(id)}`;
@@ -32,6 +39,7 @@ export function createAiClient({request,path,makeRequestId,settled,onConfirmed,c
       const task=method==='ai-task'&&!args.taskId?data.task:data;
       if(task?.status==='confirmed'&&shouldRefreshTask(task))onConfirmed(await request(path));
     }
+    onTask(method==='ai-task'&&!args.taskId?data.task:data);
     return {ok:true,data};
   };
 }

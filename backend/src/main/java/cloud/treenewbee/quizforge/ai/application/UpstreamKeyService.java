@@ -82,6 +82,11 @@ public class UpstreamKeyService {
         mapper.recordUsage(key.id(), inputTokens, outputTokens, cost);
     }
 
+    /** 恢复模型检查点时不需要重新读取或解密 Key。已删除的 Key 不影响结算。 */
+    public void recordUsage(String keyId, long inputTokens, long outputTokens, long cost) {
+        mapper.recordUsage(keyId, inputTokens, outputTokens, cost);
+    }
+
     public void markOk(UpstreamKey key) {
         mapper.markOk(key.id());
     }

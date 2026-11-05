@@ -63,6 +63,10 @@ public class PracticeLifecycleJobs {
     private cloud.treenewbee.quizforge.practice.grading.BrowserGradingService browserGrading;
     @org.springframework.beans.factory.annotation.Autowired
     private PracticeUpdates updates;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher gradingEvents;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<cloud.treenewbee.quizforge.ai.grading.AiGradingJobs> aiJobs;
     private Instant nextCleanup;
     LifecycleJobPoller poller;
 
@@ -110,7 +114,7 @@ public class PracticeLifecycleJobs {
                 thread.setDaemon(true);
                 return thread;
             });
-            poller = new LifecycleJobPoller(worker, this::tick, interval);
+            poller = new LifecycleJobPoller(worker, this::poll, interval);
             poller.start();
         }
     }
@@ -149,6 +153,8 @@ public class PracticeLifecycleJobs {
                     return replay;
                 }
                 PracticeWrites.requireStable(context);
+                if (kind.equals("archive") && gradingEvents != null)
+                    gradingEvents.publishEvent(new GradingEvents.Invalidated(user, context.id(), null));
                 if (kind.equals("archive") && !"completed".equals(context.completionStatus())) {
                     throw conflict("PRACTICE_NOT_FINISHED", "请先完成练习，再练一次");
                 }
@@ -247,7 +253,18 @@ public class PracticeLifecycleJobs {
         return value;
     }
 
-    /** 测试可门控推进；生产环境只由唯一后台工作线程调用。返回本次是否领到了任务。 */
+    /** 轮询只派发 AI 任务，模型调用不占用生命周期工作线程。 */
+    private boolean poll() {
+        boolean ai = aiJobs != null && aiJobs.getObject().tick();
+        return tick() || ai;
+    }
+
+    @org.springframework.transaction.event.TransactionalEventListener(phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void aiReady(cloud.treenewbee.quizforge.ai.grading.AiGradingService.Ready event) {
+        if (poller != null) poller.wake();
+    }
+
+    /** 测试可门控推进；返回本次是否领到了生命周期任务。 */
     public synchronized boolean tick() {
         cleanupIfDue();
         var job = tx.execute(status -> {
@@ -329,6 +346,7 @@ public class PracticeLifecycleJobs {
                         throw conflict("REVISION_CONFLICT", "批量判分期间作答已变化");
                     }
                     browserGrading.serverSource(job.userId(), job.contextId(), work.questionId(), work.revision() + 1);
+                    if (gradingEvents != null) gradingEvents.publishEvent(new GradingEvents.Submitted(job.userId(), job.contextId(), work.questionId()));
                     changed(contexts.bumpProgressVersion(job.contextId(), job.userId(), clock.instant()));
                     progress(job, job.completed() + 1);
                 });
