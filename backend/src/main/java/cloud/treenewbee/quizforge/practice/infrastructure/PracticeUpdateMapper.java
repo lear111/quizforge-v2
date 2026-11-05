@@ -62,18 +62,20 @@ public interface PracticeUpdateMapper {
             """)
     boolean examInProgress(@Param("collectionId") String collectionId, @Param("userId") String userId);
 
-    /** 切换到新版本：只改实例指向的内容与版本，标题与分组保留；条件中再次确认版本未变。 */
+    /**
+     * 切换到新版本：只改实例指向的内容与版本，标题与分组保留；条件中再次确认版本未变。
+     * 之前标记为“作者已移除”、之后的版本又恢复了这本题库时，同样切换并恢复为 current。
+     */
     @Update("""
             UPDATE practice_collection
                SET bank_id = #{bankId}, source_revision = #{revision}, update_status = 'current',
                    source = JSON_SET(source, '$.revision', #{revision})
              WHERE id = #{id} AND user_id = #{userId} AND deleted_at IS NULL AND source_revision = #{expected}
-               AND update_status <> 'removed'
             """)
     int switchTo(@Param("id") String id, @Param("userId") String userId, @Param("bankId") String bankId,
                  @Param("revision") int revision, @Param("expected") int expected);
 
-    /** 新版本中没有这本题库：停在当前版本，此后不再更新。 */
+    /** 当前已审核版本中没有这本题库：停在当前版本；已是 removed 时影响 0 行。之后的版本恢复这本题库时由 switchTo 恢复。 */
     @Update("""
             UPDATE practice_collection SET update_status = 'removed'
              WHERE id = #{id} AND user_id = #{userId} AND deleted_at IS NULL AND source_revision = #{expected}

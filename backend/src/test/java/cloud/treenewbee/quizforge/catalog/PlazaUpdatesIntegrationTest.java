@@ -97,9 +97,12 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
 
     /** 第 2 版判断题中改了标题的题目 ID。 */
     static String changed;
+    /** 第 3 版恢复的单选题中改了标题的题目 ID。 */
+    static String restored;
 
     /** 两个版本中各题库的共享内容：UUID → content_bank.id，以及“判断题”的 UUID。 */
-    final Map<String, String> v1 = new LinkedHashMap<>(), v2 = new LinkedHashMap<>(), titles = new LinkedHashMap<>();
+    final Map<String, String> v1 = new LinkedHashMap<>(), v2 = new LinkedHashMap<>(), v3 = new LinkedHashMap<>(),
+            titles = new LinkedHashMap<>();
     String author, admin, judge, single;
     final List<String> learners = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -132,6 +135,11 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
         }
         assertThat(v2).containsKey(judge).doesNotContainKey(single);
         assertThat(v2.get(judge)).isNotEqualTo(v1.get(judge));
+        for (var row : imports.importArchive(author, "v3.qbank", new ByteArrayInputStream(thirdVersion(original)))) {
+            v3.put(uuid(row.id()), row.bankId());
+        }
+        assertThat(v3).containsKey(single);
+        assertThat(v3.get(single)).isNotEqualTo(v1.get(single));
         jdbc.update("UPDATE admin_extension_review SET status = 'approved'");
     }
 
@@ -251,6 +259,59 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
     }
 
     // ------------------------------------------------------------------ 并发
+
+    /** “作者已移除”不是粘性的（作者决定，2026-11-05）：之后的版本恢复同一 UUID 时按第 3.1 节切换。 */
+    @Test
+    void removedBanksResumeUpdatingWhenALaterVersionRestoresThem() throws Exception {
+        String pack = pack();
+        User learner = user(), idle = user();
+        String answered = importBank(learner, pack, single);
+        String untouched = importBank(idle, pack, single);
+        String qid = restored;
+        String correct = JSON.readTree(jdbc.queryForObject("SELECT data FROM content_question WHERE bank_id = ? AND question_id = ?",
+                String.class, v1.get(single), qid)).path("correctOptionId").asString();
+        String oldTitle = title(json(get(learner, "/api/collections/bank/" + answered)), qid);
+        ok(action(learner, answered, qid, "submit", 0, Map.of("selectedOptionId", correct), null));
+        ok(post(learner, "/api/collections/bank/" + answered + "/finish", lifecycleBody(summary(learner, answered))));
+
+        // 第 2 版去掉单选题：两人都显示“作者已移除”，停在第 1 版；已完成的作答与本轮汇总不变。
+        approveSecond(pack);
+        assertThat(json(get(learner, "/api/collections/bank/" + answered)).path("update").path("status").asString()).isEqualTo("removed");
+        assertThat(json(get(idle, "/api/collections/bank/" + untouched)).path("update").path("status").asString()).isEqualTo("removed");
+        assertThat(bankOf(answered)).isEqualTo(v1.get(single));
+        assertThat(bankOf(untouched)).isEqualTo(v1.get(single));
+        assertThat(jdbc.queryForObject("SELECT s.status FROM practice_question_state s JOIN practice_context x ON x.id = s.context_id "
+                + "WHERE x.collection_id = ? AND s.question_id = ?", String.class, answered, qid)).isEqualTo("submitted");
+        assertThat(summary(learner, answered).path("canRestart").asBoolean()).isTrue();
+
+        // 第 3 版恢复单选题：没有作答的用户打开即切换；有作答（已完成未再练一次）的用户看到“有新版本”。
+        approveThird(pack);
+        assertThat(listUpdate(idle, untouched)).isEqualTo("pending");
+        JsonNode switched = json(get(idle, "/api/collections/bank/" + untouched));
+        assertThat(switched.path("update").path("status").asString()).isEqualTo("current");
+        assertThat(bankOf(untouched)).isEqualTo(v3.get(single));
+        assertThat(title(switched, qid)).endsWith("（第三版）");
+        assertThat(jdbc.queryForMap("SELECT source_revision, update_status FROM practice_collection WHERE id = ?", untouched))
+                .containsEntry("source_revision", 3).containsEntry("update_status", "current");
+
+        JsonNode pending = json(get(learner, "/api/collections/bank/" + answered));
+        assertThat(pending.path("update").path("status").asString()).isEqualTo("pending");
+        assertThat(pending.path("update").path("revision").asInt()).isEqualTo(3);
+        assertThat(listUpdate(learner, answered)).isEqualTo("pending");
+        assertThat(bankOf(answered)).isEqualTo(v1.get(single));
+        assertThat(title(pending, qid)).isEqualTo(oldTitle);
+
+        // 再练一次：切换到恢复后的第 3 版；冻结的历史仍是第 1 版的题目。
+        JsonNode restarted = ok(post(learner, "/api/collections/bank/" + answered + "/restart", lifecycleBody(summary(learner, answered))));
+        assertThat(restarted.path("restarted").asBoolean()).isTrue();
+        assertThat(bankOf(answered)).isEqualTo(v3.get(single));
+        JsonNode now = json(get(learner, "/api/collections/bank/" + answered));
+        assertThat(now.path("update").path("status").asString()).isEqualTo("current");
+        assertThat(title(now, qid)).endsWith("（第三版）");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_round_question q JOIN practice_round r ON r.id = q.round_id "
+                + "WHERE r.collection_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(q.payload, '$.question.title')) = ?", Integer.class,
+                answered, oldTitle)).isEqualTo(1);
+    }
 
     @Test
     void savesWithTheOldQuestionAfterASwitchAreRejectedAndConcurrentOpensSwitchOnce() throws Exception {
@@ -423,6 +484,17 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
         reviews.approve(admin, pack, 2);
     }
 
+    /** 第 3 版（恢复单选题）经管理员审核通过。 */
+    private void approveThird(String pack) {
+        catalog.insertRevision(new CatalogMapper.RevisionRow(pack, 3, "基础题型", "简介", "说明", "其他", "[]",
+                "恢复单选题", "upload", "v3.qbank", HexFormat.of().parseHex("22".repeat(32)), 1, "[]",
+                "pending", null, null, null, null, author, Instant.now()));
+        catalog.insertBanks(pack, 3, banks(v3));
+        jdbc.update("UPDATE catalog_pack SET latest_revision = 3 WHERE id = ?", pack);
+        jdbc.update("UPDATE catalog_pack_revision SET validation_status = 'validated' WHERE pack_id = ? AND revision = 3", pack);
+        reviews.approve(admin, pack, 3);
+    }
+
     private static List<CatalogMapper.PackBankRow> banks(Map<String, String> version) {
         List<CatalogMapper.PackBankRow> rows = new ArrayList<>();
         int position = 0;
@@ -537,6 +609,28 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
     }
 
     /** 第 2 版：判断题第 1 题改标题（UUID 不变、内容不同），去掉单选题。 */
+    /** 第 3 版：保留第 2 版的判断题改动，并恢复单选题（第 1 题标题加“（第三版）”）。 */
+    private static byte[] thirdVersion(byte[] original) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (var in = new ZipInputStream(new ByteArrayInputStream(original)); var out = new ZipOutputStream(bytes)) {
+            for (ZipEntry entry; (entry = in.getNextEntry()) != null; ) {
+                byte[] content = in.readAllBytes();
+                if (entry.getName().endsWith("/判断题/bank.json") || entry.getName().endsWith("/单选题/bank.json")) {
+                    boolean judgeBank = entry.getName().endsWith("/判断题/bank.json");
+                    ObjectNode bank = (ObjectNode) JSON.readTree(content);
+                    ObjectNode question = (ObjectNode) bank.path("questions").get(0);
+                    if (!judgeBank) restored = question.path("id").asString();
+                    question.put("title", question.path("title").asString() + (judgeBank ? "（第二版）" : "（第三版）"));
+                    content = JSON.writeValueAsBytes(bank);
+                }
+                out.putNextEntry(new ZipEntry(entry.getName()));
+                out.write(content);
+                out.closeEntry();
+            }
+        }
+        return bytes.toByteArray();
+    }
+
     private static byte[] secondVersion(byte[] original) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (var in = new ZipInputStream(new ByteArrayInputStream(original)); var out = new ZipOutputStream(bytes)) {

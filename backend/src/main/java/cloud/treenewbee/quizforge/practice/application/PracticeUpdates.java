@@ -23,7 +23,8 @@ import cloud.treenewbee.quizforge.practice.infrastructure.PracticeUpdateMapper.S
  *   <li>打开题库概览时，比较实例的 source_revision 与该包当前已审核版本，按 source_bank_uuid 找到新版本中的题库；</li>
  *   <li>没有进行中的作答 → 本次请求中切换（bank_id、source_revision，progress_version + 1）；</li>
  *   <li>有进行中的作答 → 不切换，返回 {@code update:{status:"pending", revision}}；“再练一次”在清空作答的同一事务中切换；</li>
- *   <li>新版本中没有这本题库 → 标记“作者已移除”，停在当前版本；整个包被删除 → “作者已删除”。练习照常可用。</li>
+ *   <li>新版本中没有这本题库 → 标记“作者已移除”，停在当前版本；之后的版本恢复了这本题库 → 按上面的规则切换；
+ *       整个包被删除 → “作者已删除”。练习照常可用。</li>
  * </ul>
  * 切换只修改实例指向的内容，不调用 rule-runner，不碰冻结的历史、标题与分组。加锁顺序 context → collection（与其他写操作一致，见 PracticeUpdates.open）。
  */
@@ -145,14 +146,19 @@ public class PracticeUpdates {
                 source.sourceBankUuid() == null ? Set.of() : Set.of(source.sourceBankUuid())).get(source.sourcePackId());
     }
 
-    /** 只看已审核版本；包删除、作者移除优先于版本比较。 */
+    /**
+     * 只看已审核版本；包删除优先于版本比较。“作者已移除”不是粘性的（作者决定，2026-11-05）：每次检查都在当前已审核版本中
+     * 按 source_bank_uuid 重新查找，找不到 → 停在当前版本；之后的版本恢复了这个 UUID → 按第 3.1 节的规则切换。
+     */
     private static Decision decide(Source source, Latest latest) {
-        if ("removed".equals(source.updateStatus())) return new Decision(Plan.NONE, Update.REMOVED, null, null);
-        if (latest == null || latest.deleted()) return new Decision(Plan.NONE, Update.DELETED, null, null);
+        boolean removed = "removed".equals(source.updateStatus());
+        // 已标记移除的题库在整包删除后仍显示“作者已移除”（与之前一致）：包已删除，不会再有恢复它的版本。
+        if (latest == null || latest.deleted()) return new Decision(Plan.NONE, removed ? Update.REMOVED : Update.DELETED, null, null);
         if (source.sourceRevision() == null) return new Decision(Plan.NONE, Update.CURRENT, null, null);
         Integer approved = latest.approvedRevision();
         int current = source.sourceRevision();
-        if (approved == null || approved <= current) return new Decision(Plan.NONE, Update.CURRENT, null, null);
+        Update unchanged = removed ? Update.REMOVED : Update.CURRENT;
+        if (approved == null || approved <= current) return new Decision(Plan.NONE, unchanged, null, null);
         String bankId = source.sourceBankUuid() == null ? null : latest.banks().get(source.sourceBankUuid());
         if (bankId == null) return new Decision(Plan.REMOVE, Update.REMOVED, approved, null);
         return new Decision(Plan.SWITCH, new Update("pending", approved), approved, bankId);
