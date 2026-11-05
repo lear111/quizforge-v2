@@ -61,10 +61,28 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   await expect(page.locator('#exam-review')).toBeVisible();
   await page.locator('#exam-review').click();
   await expect(page.locator('#exam-status')).toContainText('考试已完成');
-  await page.locator('#exam-return').click();
-  // 题库页保留刚才的历史视图，先切回作答再开始下一场。
-  await page.locator('#return-practice').click();
+});
+
+test('考试设置回填最近时长并记住不限时选择',async({page})=>{
+  test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','需要独立的本机 Compose');
+  test.setTimeout(180000);
+  const {origin}=await registerByApi(page,'exam-defaults','考试设置验收');
+  const {collections}=await uploadAndImportFromLibrary(page);
+  const bank=collections.find(row=>row.title==='单选题');
+  // 已删除的考试也属于最近使用的设置，且不会占用作答中的名额。
+  const previous=await page.request.post(`/api/collections/bank/${bank.id}/exams`,{
+    headers:{Origin:origin},data:{requestId:'previous-duration',durationMinutes:17}
+  });
+  expect(previous.status()).toBe(200);
+  const previousExam=await previous.json();
+  expect((await page.request.delete(`/api/collections/exam/${previousExam.id}/exam`,{headers:{Origin:origin}})).status()).toBe(200);
+  await page.goto('/practice/');
+  await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+  await expect(page.locator('#collection-loading')).toBeHidden();
+  if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
+  await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
   await page.locator('#exam-start').click();
+  await expect(page.locator('#exam-duration')).toHaveValue('17');
   await page.getByLabel('不限时',{exact:true}).check();
   const unlimitedCreated=page.waitForResponse(response=>response.url().endsWith('/exams')&&response.request().method()==='POST');
   await page.locator('.exam-dialog button[type=submit]').click();
