@@ -69,7 +69,7 @@ test('multipart lets fetch generate its boundary; 204 logout succeeds',async()=>
   let headers;
   const api=await client(async(_path,options)=>{headers=options.headers;return new Response(null,{status:204});});
   const body=new FormData();body.append('file',new Blob(['qbank']),'one.qbank');
-  assert.equal(await api.request('/api/library/uploads?filename=test.qbank',{method:'POST',body}),null);
+  assert.equal(await api.request('/api/catalog/packs',{method:'POST',body}),null);
   assert.equal(headers['Content-Type'],undefined);
 });
 

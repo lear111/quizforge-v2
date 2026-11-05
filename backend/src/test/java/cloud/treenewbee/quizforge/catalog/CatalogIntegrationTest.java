@@ -395,7 +395,10 @@ class CatalogIntegrationTest extends MySqlTestBase {
         assertThat(impact.path("packs")).anySatisfy(item -> {
             assertThat(item.path("packId").asString()).isEqualTo(pack);
             assertThat(item.path("current").asBoolean()).isTrue();
-        }).anySatisfy(item -> assertThat(item.path("packId").asString()).isEqualTo(privatePack));
+        }).anySatisfy(item -> {
+            assertThat(item.path("packId").asString()).isEqualTo(privatePack);
+            assertThat(item.path("current").asBoolean()).isFalse();
+        });
 
         assertThat(post(admin, "/api/admin/extensions/" + digest + "/revoke", "{\"reason\":\"发现内存炸弹\"}").statusCode()).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT status FROM admin_extension_review", String.class)).isEqualTo("revoked");
