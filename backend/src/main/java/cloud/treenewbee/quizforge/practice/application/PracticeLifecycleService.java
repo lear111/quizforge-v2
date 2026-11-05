@@ -21,6 +21,9 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class PracticeLifecycleService {
     @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher gradingEvents;
+
+    @org.springframework.beans.factory.annotation.Autowired
     private cloud.treenewbee.quizforge.exam.ExamHistoryUpdates examHistory;
     private final PracticeReadService reads;
     private final PracticeReadMapper readMapper;
@@ -63,6 +66,7 @@ public class PracticeLifecycleService {
                 requireRetryable(round);
                 if (mapper.retry(context.id(), qid, userId, revision, clock.instant()) != 1) throw revisionConflict();
                 changed(context, userId);
+                if (gradingEvents != null) gradingEvents.publishEvent(new GradingEvents.Invalidated(userId, context.id(), qid));
                 // No round-question write: retry must leave the existing history payload intact.
                 return response(prepared.template(), prepared, null, null, revision + 1, "unanswered");
             });
@@ -97,6 +101,7 @@ public class PracticeLifecycleService {
                         outcome.maxScore().setScale(4, RoundingMode.HALF_UP), outcome.gradingStatus(), outcome.outlineStatesJson());
                 if (mapper.review(context.id(), qid, userId, revision, stored.resultJson(), stored.score(), stored.maxScore(),
                         stored.gradingStatus(), stored.outlineStatesJson(), stored.projectedJson(), clock.instant()) != 1) throw revisionConflict();
+                if (gradingEvents != null) gradingEvents.publishEvent(new GradingEvents.Invalidated(userId, context.id(), qid));
                 var response = response(template, prepared, answer, stored, revision + 1, "submitted");
                 changed(context, userId);
                 examHistory.reviewed(context.id(), userId, qid);

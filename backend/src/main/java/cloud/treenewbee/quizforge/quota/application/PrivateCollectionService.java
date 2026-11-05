@@ -9,6 +9,9 @@ import cloud.treenewbee.quizforge.shared.web.ApiException;
 
 @Service
 public class PrivateCollectionService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher gradingEvents;
+
     private final CollectionDeletionMapper mapper;
     private final QuotaService quotas;
     private final Clock clock;
@@ -18,7 +21,10 @@ public class PrivateCollectionService {
     @Transactional
     public void delete(String userId, String collectionId) {
         mapper.lock(userId, collectionId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "题库不存在"));
-        for (String context : mapper.contexts(userId, collectionId)) mapper.states(userId, context);
+        for (String context : mapper.contexts(userId, collectionId)) {
+            mapper.states(userId, context);
+            if (gradingEvents != null) gradingEvents.publishEvent(new cloud.treenewbee.quizforge.practice.application.GradingEvents.Invalidated(userId, context, null));
+        }
         mapper.annotations(userId,collectionId);mapper.historyAssets(userId,collectionId);mapper.jobs(userId,collectionId);
         mapper.snapshots(userId, collectionId); mapper.rounds(userId, collectionId);
         mapper.whiteboards(userId, collectionId); mapper.statesInCollection(userId, collectionId);

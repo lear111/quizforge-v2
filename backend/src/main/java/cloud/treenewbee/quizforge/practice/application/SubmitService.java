@@ -26,6 +26,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class SubmitService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher gradingEvents;
+
 
     private final PracticeReadService reads;
     private final DraftService drafts;
@@ -114,6 +117,8 @@ public class SubmitService {
                 if (contexts.bumpProgressVersion(contextId, userId, now) != 1) {
                     throw new IllegalStateException("更新汇总版本失败");
                 }
+
+                if (gradingEvents != null) gradingEvents.publishEvent(new GradingEvents.Submitted(userId, contextId, questionId));
 
                 // Freeze the HTTP response with the submission. A later review/retry/restart
                 // must not change what replaying this request returns. This read uses the

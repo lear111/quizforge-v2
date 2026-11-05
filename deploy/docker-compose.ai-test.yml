@@ -1,0 +1,24 @@
+# 仅本机 / CI：假上游复用 app 网络命名空间，只绑定回环地址，不发布端口。
+services:
+  app:
+    environment:
+      QF_AI_BASE_URL: http://127.0.0.1:9105/v1
+      QF_AI_MODEL: qwen-fake-grading
+  ai-test:
+    image: node:22-alpine
+    user: node
+    network_mode: service:app
+    command: [node, /fixtures/server.mjs]
+    volumes:
+      - ../frontend/test/ai-upstream:/fixtures:ro
+    depends_on:
+      app:
+        condition: service_started
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:9105/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

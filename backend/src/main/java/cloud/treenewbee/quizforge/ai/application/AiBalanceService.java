@@ -121,6 +121,15 @@ public class AiBalanceService {
         return change(userId, -amount, Kind.AI_CALL, ref, null, null);
     }
 
+    /** 检查点恢复在调用方短事务中结算；重复 ref 不抛异常，避免污染调用方事务。 */
+    @Transactional
+    public Entry chargeOnce(String userId, long amount, String ref) {
+        if (amount <= 0) throw new IllegalArgumentException("扣费必须为正数");
+        mapper.lock(userId).orElseThrow(() -> new IllegalStateException("AI 余额行不存在"));
+        if (mapper.ledgerExists(Kind.AI_CALL.value(), ref)) return null;
+        return change(userId, -amount, Kind.AI_CALL, ref, null, null);
+    }
+
     /** L5.2：调用前的普通读检查（不加锁），余额 > 0 才允许发起调用。 */
     public boolean hasPositiveBalance(String userId) {
         return mapper.find(userId).map(account -> account.balance() > 0).orElse(false);
