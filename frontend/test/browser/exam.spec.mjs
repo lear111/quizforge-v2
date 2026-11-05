@@ -81,7 +81,11 @@ test('考试设置回填最近时长并记住不限时选择',async({page})=>{
   await expect(page.locator('#collection-loading')).toBeHidden();
   if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
   await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
+  await expect(page.locator('#document-title')).toHaveText(bank.title);
+  await expect(page.locator('#collection-loading')).toBeHidden();
+  const settingsLoaded=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/collections/bank/${bank.id}/exams`&&response.request().method()==='GET');
   await page.locator('#exam-start').click();
+  expect((await (await settingsLoaded).json()).defaultDurationMinutes).toBe(17);
   await expect(page.locator('#exam-duration')).toHaveValue('17');
   await page.getByLabel('不限时',{exact:true}).check();
   const unlimitedCreated=page.waitForResponse(response=>response.url().endsWith('/exams')&&response.request().method()==='POST');
