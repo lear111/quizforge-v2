@@ -98,7 +98,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
     @MockitoSpyBean SubmitGrader grader;
     @MockitoSpyBean ReviewGrader reviewGrader;
     @MockitoSpyBean cloud.treenewbee.quizforge.practice.infrastructure.PracticeLifecycleMapper lifecycleMapper;
@@ -123,7 +123,7 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     record Sample(String collection, QuestionRow question) {}
     final Map<String, Sample> samples = new HashMap<>();
 
-    @BeforeAll void importImmutableSamples() throws Exception {
+    void importImmutableSamples() throws Exception {
         user = auth.register(Ids.uuidV7() + "@example.test", "提交判分测试", "password-123", "grader-test").userId();
         var imported = imports.importArchive(user, "basic-types.qbank", new ByteArrayInputStream(Files.readAllBytes(
                 Path.of(System.getProperty("basedir", ".")).resolve("../samples/basic-types.qbank"))));
@@ -139,7 +139,13 @@ class PracticeLifecycleIntegrationTest extends MySqlTestBase {
     }
 
 
-    @BeforeEach void viewer() {
+    @BeforeAll void inheritStrictRegistrationPolicy() {
+        // 模拟前一个测试类留下验证码策略，夹具必须等基类恢复策略后再注册。
+        jdbc.update("UPDATE auth_policy SET registration_code=TRUE,registration_captcha=TRUE,invitation_required=TRUE WHERE id=1");
+    }
+
+    @BeforeEach void viewer() throws Exception {
+        if (seeds.isEmpty()) importImmutableSamples();
         reset(runner, grader, reviewGrader, lifecycleMapper, contextMapper, receiptMapper);
         var registered = auth.register(Ids.uuidV7()+"@example.test", "提交接口", "password-123", "test");
         user = registered.userId(); cookie = "__Host-qf_session=" + registered.token();

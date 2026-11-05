@@ -44,9 +44,10 @@ class QuotaIntegrationTest extends MySqlTestBase {
     }
     @Autowired cloud.treenewbee.quizforge.quota.infrastructure.PrivateRevisionMapper privateRevisions;
     @Autowired QuotaService quotas;
+    @Autowired cloud.treenewbee.quizforge.content.application.ImportUploadService uploads;
     @Autowired PrivateCollectionService deletion;
     @Autowired DraftService drafts;
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
     @Autowired AuthService auth;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
@@ -57,7 +58,6 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Autowired cloud.treenewbee.quizforge.identity.infrastructure.UserMapper userMapper;
     @Value("${local.server.port}") int port;
     @MockitoBean RuleRunnerClient runner;
-    @Autowired SqlGate gate;
     final List<String> users = new ArrayList<>();
     final HttpClient http = HttpClient.newHttpClient();
     record User(String id, String cookie) {}
@@ -65,7 +65,8 @@ class QuotaIntegrationTest extends MySqlTestBase {
 
     @BeforeEach void setup() {
         clock.now.set(Instant.parse("2026-11-01T15:59:59Z"));
-        reset(runner); gate.clear();
+        reset(runner);
+        when(runner.background(any())).thenAnswer(call -> ((java.util.function.Supplier<?>) call.getArgument(0)).get());
         when(runner.execute(anyString(), any(), anyMap())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             String op = call.getArgument(0);
@@ -81,9 +82,10 @@ class QuotaIntegrationTest extends MySqlTestBase {
     }
 
     @AfterEach void cleanup() {
-        gate.clear();
+
         for (String user : users) {
             for (String id : jdbc.queryForList("SELECT id FROM practice_collection WHERE user_id=? AND deleted_at IS NULL", String.class, user)) deletion.delete(user, id);
+            for (String pack : jdbc.queryForList("SELECT id FROM catalog_pack WHERE owner_id=? AND status='active'", String.class, user)) uploads.delete(user, pack);
             jdbc.update("DELETE FROM quota_storage_item WHERE user_id=?", user);
             jdbc.update("DELETE FROM quota_adjustment WHERE user_id=? OR actor_id=?", user, user);
             jdbc.update("DELETE FROM quota_account WHERE user_id=?", user);
@@ -121,14 +123,17 @@ class QuotaIntegrationTest extends MySqlTestBase {
         } finally { jdbc.update("UPDATE quota_defaults SET storage_bytes=268435456,daily_download_bytes=268435456 WHERE id=1"); }
     }
 
-    @Test void importChargesExactExpandedBytesAndDeletingReleasesOnlyThatInstance() throws Exception {
+    @Test void rawUploadsChargeOriginalBytesAndReleaseAfterBothResourceAndInstanceAreDeleted() throws Exception {
         var user = user(false); var archive = archive();
         var first = importOne(user, archive); var second = importOne(user, archive);
         assertThat(first.bankId()).isEqualTo(second.bankId());
         assertThat(first.id()).isNotEqualTo(second.id());
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(archive.size() * 2);
+        String firstPack = pack(first.id()), secondPack = pack(second.id());
+        uploads.delete(user.id(), firstPack);
         deletion.delete(user.id(), first.id());
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(archive.size());
+        uploads.delete(user.id(), secondPack);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_bank WHERE id=?", Integer.class, first.bankId())).isEqualTo(1);
         deletion.delete(user.id(), second.id());
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isZero();
@@ -144,16 +149,15 @@ class QuotaIntegrationTest extends MySqlTestBase {
         assertThat(quotas.usage(b.id()).storage().usedBytes()).isEqualTo(archive.size());
     }
 
-    @Test void groupWithSharedExtensionChargesAnExpandedCopyForEachBank() throws Exception {
+    @Test void groupWithSharedExtensionChargesOneOriginalAndRetainsAllInstanceReferences() throws Exception {
         var user = user(false); var files = ImportArchives.files(List.of("单选题"),"group");
         String original = ImportArchives.bank("单选题")+"/bank.json";
         String second = ImportArchives.bank("第二本")+"/bank.json";
         files.put(second,files.get(original));
         ImportArchives.edit(files,second,bank -> bank.put("id",Ids.uuidV7()));
-        long common = files.entrySet().stream().filter(e -> e.getKey().startsWith("extensions/") || e.getKey().equals("quizforge-package.json")).mapToLong(e -> e.getValue().length).sum();
-        long bankBytes = files.entrySet().stream().filter(e -> e.getKey().startsWith("question-banks/")).mapToLong(e -> e.getValue().length).sum();
-        long expected = common*2 + bankBytes;
-        var result = imports.importArchive(user.id(),"group.qbank",new ByteArrayInputStream(ImportArchives.zip(files)));
+        byte[] archive = ImportArchives.zip(files);
+        long expected = archive.length;
+        var result = imports.importArchive(user.id(),"group.qbank",new ByteArrayInputStream(archive));
         assertThat(result).hasSize(2);
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(expected);
     }
@@ -174,15 +178,31 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Test void concurrentImportsCannotExceedSingleInstanceLimit() throws Exception {
         var user = user(false); var admin = user(true); var archive = archive();
         quotas.adjust(admin.id(), user.id(), archive.size(), null);
-        var scenario = gate.arm(); var ready = scenario.ready; var release = scenario.release;
+        var ready = new CountDownLatch(2);
+        var release = new CountDownLatch(1);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
-            var a = workers.submit(() -> attemptImport(user, archive)); var b = workers.submit(() -> attemptImport(user, archive));
-            try { assertThat(ready.await(15, TimeUnit.SECONDS)).isTrue(); } finally { release.countDown(); }
-            var results = List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
-            assertThat(results.stream().filter(v -> v.equals("ok")).count()).isEqualTo(1);
-            assertThat(results.stream().filter(v -> v.equals("STORAGE_QUOTA_EXCEEDED")).count()).isEqualTo(1);
-        } finally { release.countDown(); gate.clear(); }
-        assertThat(scenario.connections).hasSize(2);
+            java.util.concurrent.Callable<String> upload = () -> {
+                var input = new java.io.FilterInputStream(new ByteArrayInputStream(archive.bytes())) {
+                    boolean entered;
+                    @Override public int read(byte[] bytes, int offset, int length) throws java.io.IOException {
+                        if (!entered) {
+                            entered = true;
+                            ready.countDown();
+                            try { assertThat(release.await(15, TimeUnit.SECONDS)).isTrue(); }
+                            catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new java.io.IOException(e); }
+                        }
+                        return super.read(bytes, offset, length);
+                    }
+                };
+                try { imports.importArchive(user.id(), "concurrent.qbank", input); return "ok"; }
+                catch (ApiException error) { return error.code(); }
+            };
+            var a = workers.submit(upload); var b = workers.submit(upload);
+            try { assertThat(ready.await(15, TimeUnit.SECONDS)).isTrue(); }
+            finally { release.countDown(); }
+            assertThat(List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder("ok", "STORAGE_QUOTA_EXCEEDED");
+        } finally { release.countDown(); }
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isEqualTo(archive.size());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_collection WHERE user_id=?", Long.class, user.id())).isEqualTo(1);
     }
@@ -305,15 +325,15 @@ class QuotaIntegrationTest extends MySqlTestBase {
     @Test void importHttpReturnsQuotaErrorAndDeleteHttpIsOwnerScoped() throws Exception {
         var user = user(false); var other = user(false); var admin = user(true); var archive = archive();
         quotas.adjust(admin.id(),user.id(),archive.size()-1,null);
-        String boundary="quota-boundary";
-        byte[] begin=("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.qbank\"\r\nContent-Type: application/zip\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        var body=HttpRequest.BodyPublishers.concat(HttpRequest.BodyPublishers.ofByteArray(begin),HttpRequest.BodyPublishers.ofByteArray(archive.bytes()),HttpRequest.BodyPublishers.ofString("\r\n--"+boundary+"--\r\n"));
-        var response=http.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/library/import")).header("Origin",ORIGIN).header("Cookie",user.cookie()).header("Content-Type","multipart/form-data; boundary="+boundary).POST(body).build(),HttpResponse.BodyHandlers.ofString());
+        var response=http.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/library/uploads?filename=test.qbank"))
+                .header("Origin",ORIGIN).header("Cookie",user.cookie()).header("Content-Type","application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(archive.bytes())).build(),HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(413);
         assertThat(json.readTree(response.body()).path("error").path("code").asString()).isEqualTo("STORAGE_QUOTA_EXCEEDED");
         quotas.adjust(admin.id(),user.id(),archive.size(),null);
         var collection=importOne(user,archive);
         assertThat(request("DELETE","/api/collections/bank/"+collection.id(),other.cookie(),null).statusCode()).isEqualTo(404);
+        uploads.delete(user.id(), pack(collection.id()));
         assertThat(request("DELETE","/api/collections/bank/"+collection.id(),user.cookie(),null).statusCode()).isEqualTo(204);
         assertThat(quotas.usage(user.id()).storage().usedBytes()).isZero();
         assertThat(request("DELETE","/api/collections/bank/"+collection.id(),user.cookie(),null).statusCode()).isEqualTo(404);
@@ -327,10 +347,14 @@ class QuotaIntegrationTest extends MySqlTestBase {
     Archive archive() throws Exception {
         var files = ImportArchives.files(List.of("单选题"),"bank");
         ImportArchives.edit(files,ImportArchives.bank("单选题")+"/bank.json",bank -> bank.put("id",Ids.uuidV7()));
-        return new Archive(ImportArchives.zip(files), files.values().stream().mapToLong(a -> a.length).sum());
+        byte[] bytes = ImportArchives.zip(files);
+        return new Archive(bytes, bytes.length);
     }
-    cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService.ImportedCollection importOne(User user,Archive archive) {
+    cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports.ImportedCollection importOne(User user,Archive archive) {
         return imports.importArchive(user.id(),"test.qbank",new ByteArrayInputStream(archive.bytes())).getFirst();
+    }
+    String pack(String collection) {
+        return jdbc.queryForObject("SELECT library_pack_id FROM practice_collection WHERE id=?", String.class, collection);
     }
     String attemptImport(User user,Archive archive) { try { importOne(user,archive); return "ok"; } catch(ApiException e) { return e.code(); } }
     String context(String user,String collection) {
@@ -346,30 +370,6 @@ class QuotaIntegrationTest extends MySqlTestBase {
     static Path temporary() { try { return Files.createTempDirectory("quota-test-"); } catch(Exception e) { throw new ExceptionInInitializerError(e); } }
     @TestConfiguration static class Configuration {
         @Bean @Primary MutableClock quotaClock() { return new MutableClock(); }
-        @Bean SqlGate quotaSqlGate() { return new SqlGate(); }
-    }
-    @org.apache.ibatis.plugin.Intercepts(@org.apache.ibatis.plugin.Signature(type = org.apache.ibatis.executor.Executor.class,
-            method = "update", args = {org.apache.ibatis.mapping.MappedStatement.class,Object.class}))
-    static class SqlGate implements org.apache.ibatis.plugin.Interceptor {
-        static class Scenario {
-            final CountDownLatch ready = new CountDownLatch(2), release = new CountDownLatch(1);
-            final Set<Long> connections = ConcurrentHashMap.newKeySet();
-        }
-        volatile Scenario scenario;
-        Scenario arm() { return scenario = new Scenario(); }
-        void clear() { var old = scenario; scenario = null; if(old != null)old.release.countDown(); }
-        @Override public Object intercept(org.apache.ibatis.plugin.Invocation call) throws Throwable {
-            var current = scenario;
-            if (current != null && ((org.apache.ibatis.mapping.MappedStatement)call.getArgs()[0]).getId().endsWith(".PracticeDirectoryMapper.initialize")) {
-                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-                var connection = ((org.apache.ibatis.executor.Executor)call.getTarget()).getTransaction().getConnection();
-                try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT CONNECTION_ID()")) {
-                    rows.next(); current.connections.add(rows.getLong(1));
-                }
-                current.ready.countDown(); assertThat(current.release.await(15,TimeUnit.SECONDS)).isTrue();
-            }
-            return call.proceed();
-        }
     }
     static class MutableClock extends Clock {
         final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-01T15:59:59Z"));

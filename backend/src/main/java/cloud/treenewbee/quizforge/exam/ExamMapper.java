@@ -26,6 +26,16 @@ public interface ExamMapper {
     @Select("SELECT " + FIELDS + OWNED + " AND e.collection_id=#{collectionId} AND e.status IN ('in_progress','grading') ORDER BY e.started_at DESC,e.id")
     List<ExamRow> list(@Param("userId") String userId, @Param("collectionId") String collectionId);
 
+    // 只锁已存在且属于本人的题库实例，串行化同一本题库的开考请求。
+    @Select("SELECT id FROM practice_collection WHERE id=#{collectionId} AND user_id=#{userId} AND deleted_at IS NULL FOR UPDATE")
+    Optional<String> lockCollection(@Param("userId") String userId, @Param("collectionId") String collectionId);
+
+    @Select("SELECT COUNT(*) FROM exam_exam WHERE user_id=#{userId} AND collection_id=#{collectionId} AND status='in_progress'")
+    int inProgress(@Param("userId") String userId, @Param("collectionId") String collectionId);
+
+    @Select("SELECT " + FIELDS + OWNED + " AND e.collection_id=#{collectionId} ORDER BY e.started_at DESC,e.id DESC LIMIT 1")
+    Optional<ExamRow> latest(@Param("userId") String userId, @Param("collectionId") String collectionId);
+
     @Insert("""
         INSERT INTO practice_context(id,user_id,collection_id,kind,scope_key,created_at,updated_at)
         SELECT #{contextId},user_id,id,'exam',#{id},#{now},#{now} FROM practice_collection

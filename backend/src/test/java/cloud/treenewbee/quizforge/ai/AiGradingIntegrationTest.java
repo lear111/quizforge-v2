@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.ai;
 
+import cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports;
 import cloud.treenewbee.quizforge.practice.grading.*;
 import cloud.treenewbee.quizforge.ai.grading.*;
 import cloud.treenewbee.quizforge.ai.application.*;
@@ -79,7 +80,7 @@ class AiGradingIntegrationTest extends MySqlTestBase {
         r.add("qf.rule-runner.default-deadline", () -> "60s");
     }
     @Autowired AuthService auth;
-    @Autowired LegacyPracticeImportService imports;
+    @Autowired QueuedPracticeImports imports;
     @Autowired JdbcTemplate jdbc;
     @Autowired QuestionMapper questions;
     @Autowired BankMapper banks;

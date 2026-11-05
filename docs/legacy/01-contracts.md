@@ -243,7 +243,7 @@
 | 方法与路径 | 用途 | V2 处理 |
 | --- | --- | --- |
 | `GET /api/library/index` | 个人题库列表 | 保留 |
-| `POST /api/library/import` | 导入 `.qbank` | 保留，并接入 Hub 导入流程 |
+| `POST /api/library/import` | 旧同步导入 `.qbank` | V2 已退役；改用上传、后台队列、审核后创建实例（见设计 02） |
 | `POST /api/library/manage` | 改名、移动、删除 | 保留 |
 | `POST /api/library/export` | 导出 `.qbank` | 保留（旧云端版计流量） |
 | 编辑器：`.../editor`、`.../edit`、`/api/editor-drafts/...` | 在线编辑题目 | **不提供**（2026-10-27 决定，需求第 5 节） |

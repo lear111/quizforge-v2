@@ -92,7 +92,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base-url', default='http://localhost:8188')
     parser.add_argument('--project', default='qf-import-queue')
-    parser.add_argument('--mode', choices=['fixture', 'baseline', 'queued', 'cache', 'foreground', 'upload'], default='fixture')
+    parser.add_argument('--mode', choices=['fixture', 'queued', 'cache', 'foreground', 'upload'], default='fixture')
     parser.add_argument('--repeats', type=int, default=3)
     args = parser.parse_args()
     url = urllib.parse.urlsplit(args.base_url)
@@ -168,15 +168,22 @@ def main():
         foreground, fg_headers, _ = request('/api/auth/register', {'email': f'foreground-{uuid.uuid4()}@example.test',
             'name': '前台对照用户', 'password': 'local-benchmark-password'})
         foreground_cookie = fg_headers['Set-Cookie'].split(';', 1)[0]
-        boundary = 'qf-benchmark-' + str(uuid.uuid4())
         original = (ROOT / 'samples/loadtest-300.qbank').read_bytes()
-        body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="loadtest-300.qbank"\r\nContent-Type: application/zip\r\n\r\n'.encode()
-                + original + f'\r\n--{boundary}--\r\n'.encode())
-        imported, _, _ = request('/api/library/import', body, 'multipart/form-data; boundary=' + boundary, foreground_cookie)
+        accepted, _, _ = request('/api/library/uploads?filename=loadtest-300.qbank', original, 'application/octet-stream', foreground_cookie)
+        pack = str(uuid.UUID(accepted['packId']))
+        deadline = time.monotonic() + 180
+        while True:
+            detail, _, _ = request('/api/library/packs/' + pack, token=foreground_cookie)
+            version = detail['revisions'][0]
+            if version['banks']:
+                break
+            if version['status'] == 'rejected' or time.monotonic() > deadline:
+                raise RuntimeError('前台样例后台校验失败')
+            time.sleep(.1)
+        sql("UPDATE admin_extension_review e JOIN catalog_pack_revision r ON r.pack_id='" + pack + "' SET e.status='approved' WHERE JSON_CONTAINS(r.extension_digests,JSON_QUOTE(LOWER(HEX(e.digest))));")
+        imported, _, _ = request('/api/library/packs/' + pack + '/practice',
+            {'revision': 1, 'banks': [row['bankUuid'] for row in version['banks']]}, token=foreground_cookie)
         bank = imported['collections'][0]
-        if not re.fullmatch(r'[a-f0-9-]{36}', bank['bankId']):
-            raise RuntimeError('题库标识格式错误')
-        sql(f"UPDATE admin_extension_review r JOIN content_question q ON q.extension_digest=r.digest SET r.status='approved' WHERE q.bank_id='{bank['bankId']}';")
         import runpy
         answers = runpy.run_path(str(ROOT / 'loadtest/seed/answers.py'))['sample_banks'](ROOT / 'samples/loadtest-300.qbank')['loadtest-300']['answers']
         identifiers = list(answers)
@@ -242,28 +249,21 @@ def main():
         if args.mode != 'cache':
             sql('DELETE FROM content_validation_cache;')
         before = metrics()
-        if args.mode == 'baseline':
-            boundary = 'qf-benchmark-' + str(uuid.uuid4())
-            body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.qbank"\r\nContent-Type: application/zip\r\n\r\n'.encode()
-                    + data + f'\r\n--{boundary}--\r\n'.encode())
-            _, _, elapsed = request('/api/library/import', body, 'multipart/form-data; boundary=' + boundary)
-            upload = None
-        else:
-            accepted, _, upload = request('/api/library/uploads?filename=synthetic.qbank', data, 'application/octet-stream')
-            pack = accepted['packId']
-            deadline = time.monotonic()+180
-            while True:
-                status = sql(f"SELECT status FROM content_import_job WHERE pack_id='{pack}';")
-                if status == 'completed':
-                    break
-                if status == 'failed' or time.monotonic() > deadline:
-                    raise RuntimeError('后台任务未成功完成：' + status)
-                # 仅测量脚本按状态轮询；单元与并发测试使用门控，不靠固定等待判断。
-                time.sleep(.1)
-            elapsed = float(sql(f"SELECT TIMESTAMPDIFF(MICROSECOND,started_at,updated_at)/1000 FROM content_import_job WHERE pack_id='{pack}';"))
-            review = sql(f"SELECT review_status FROM catalog_pack_revision WHERE pack_id='{pack}';")
-            if review != 'approved':
-                raise RuntimeError('合成样例未通过：' + sql(f"SELECT IFNULL(validation_reason,'') FROM catalog_pack_revision WHERE pack_id='{pack}';"))
+        accepted, _, upload = request('/api/library/uploads?filename=synthetic.qbank', data, 'application/octet-stream')
+        pack = accepted['packId']
+        deadline = time.monotonic()+180
+        while True:
+            status = sql(f"SELECT status FROM content_import_job WHERE pack_id='{pack}';")
+            if status == 'completed':
+                break
+            if status == 'failed' or time.monotonic() > deadline:
+                raise RuntimeError('后台任务未成功完成：' + status)
+            # 仅测量脚本按状态轮询；单元与并发测试使用门控，不靠固定等待判断。
+            time.sleep(.1)
+        elapsed = float(sql(f"SELECT TIMESTAMPDIFF(MICROSECOND,started_at,updated_at)/1000 FROM content_import_job WHERE pack_id='{pack}';"))
+        review = sql(f"SELECT review_status FROM catalog_pack_revision WHERE pack_id='{pack}';")
+        if review != 'approved':
+            raise RuntimeError('合成样例未通过：' + sql(f"SELECT IFNULL(validation_reason,'') FROM catalog_pack_revision WHERE pack_id='{pack}';"))
         results.append(dict(processingMs=elapsed, uploadMs=upload, lruStops=metrics()-before))
     result = dict(mode=args.mode, archiveBytes=len(data), banks=12, questions=1152, extensions=8, results=results)
     (LOCAL / f'benchmark-{args.mode}.json').write_text(json.dumps(result, indent=2), encoding='utf-8')

@@ -23,13 +23,8 @@
 | 富文本答题编辑依赖 | GET /api/sdk/{id}/{version}/editor | 已实现（仅组件读取） | 4 | app.js:pageRequest；这是**答题富文本编辑**，不等于已删除的题目作者编辑器 |
 | 显示图片 / Bridge resource-get | GET /api/resources/{sha256} | 已实现 | 3 | shared/api.js:readResource；经统一 Cookie request，再把图片交给 iframe |
 | 听力材料 | HEAD / GET C/listening/{materialId} | 已实现 | 3 | 本地 file：HEAD 鉴权，audio.src 同源 GET / Range；网络 url：宿主匿名完整下载为 Blob，64 MiB 上限，不经过后端 |
-<<<<<<< HEAD
 | 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 / L1.6 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；可带 data.answerState；不调用规则或投影；白名单进度与草稿、回执同事务写入；返回状态/版本增量并保留已加载投影；非声明拓展小题未知；保留失败输入与 409 恢复 |
-| 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为所选层；由 features.whiteboard 控制 |
-=======
-| 答案草稿 | POST Q/actions，action=draft | 已接入 | 4 | app.js:mutate、shared/write-queue.js；requestId/revision/action/data.answer；保留失败输入与 409 恢复 |
 | 白板墨迹 | POST Q/actions，action=whiteboard | 已实现 | L1.5 | 独立白板 revision；data.layer=draft/notes，data.draft 为当前阶段；提交前 draft、提交后 notes 自动切换，notes 可编辑擦除，draft 冻结；由 features.whiteboard 控制 |
->>>>>>> origin/main
 | 上传答题资源 / 截图 | POST /api/resources | 已实现 | L1.5 | PNG/JPEG/WebP，4 MiB；同用户同内容幂等；兼容 transient 标记但持久化；GET 按归属鉴权后由 Nginx 传输 |
 | 提交 | POST Q/actions，action=submit | 已接入 | 5 | app.js / Bridge；requestId/revision/data.answer；返回提交后投影与状态，重放不重新判分 |
 | 人工评分 / 重做本题 | POST Q/actions，action=review / retry | 已接入 | L1.1 | review 使用 data.review（score / targetId / feedback）；retry 使用 data:{}；均带 requestId / revision / contentVersion |
@@ -41,7 +36,7 @@
 | 删除历史 | DELETE C/history/{historyId} | 已实现 | L1.4 | app.js:renderHistoryList；删除后从列表移除 |
 | 题库实例管理 / 分组 | POST /api/library/manage | 已实现（L1.7） | 其余 | practice.management；显示名称、空分组、移动、分组改名/删除、managementRevision 过期返回 409 |
 | 练习空间导出 | — | 已移除（FR-11 v1.14） | — | 上传、下载最终归主页“我的题库”；下载返回原始文件，不重新打包 |
-| 考试列表 / 开始 | GET / POST C/exams | 未实现 | 其余 | exam/exam-mode.js |
+| 考试列表 / 开始 | GET / POST C/exams | 已实现 | L2 | exam/exam-mode.js；defaultDurationMinutes 回填最近时长，null 为不限时；同实例并发开考 409 EXAM_IN_PROGRESS |
 | 考试状态 / 交卷 / 删除 | GET / POST / DELETE /api/collections/exam/{id}/exam | 未实现 | 其余 | exam-mode.js；状态轮询沿用上游 |
 | 考试题卡页面 | GET /api/collections/exam/{id}/questions/{qid}/page | 未实现 | 其余 | app.js:showQuestion / prefetchAdjacent |
 | 考试资源 | GET / POST /api/collections/exam/{id}/resources[/{sha256}] | 未实现 | 其余 | app.js:pageRequest |
@@ -125,3 +120,7 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 ## 广场与收藏（广场 2/4）
 
 `public/plaza/plaza.js` 使用 `/api/plaza/packs` 列表/详情/原文件/收藏/`imports`；`public/library/library.js` 增加 `/api/library/favorites` 与取消收藏。广场到练习仅创建实例；旧 catalog `/practice` 接口已删除。版本自动切换、更新通知、评论和举报不在本切片。
+
+### 旧同步导入入口退役
+
+`POST /api/library/import` 已删除，练习空间继续没有上传入口。浏览器夹具与压测造数统一使用 `POST /api/library/uploads?filename=...`（原文件，202），等待 `GET /api/library/packs/{id}` 的后台校验结果、完成审核后，调用 `POST /api/library/packs/{id}/practice` 选择题库创建实例。校验失败保留资源条目的拒绝原因，不能再按旧同步接口期待 422；上传本身仍即时返回体积、配额、权限等错误。

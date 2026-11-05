@@ -73,9 +73,21 @@ export function bindExamMode({document,request,active,flush,open,refresh,onError
       item.append(button,remove);list.append(item);
     }
   }
-  async function loadRecords(bank){const generation=++listGeneration;const value=await request(`${collectionPath(bank.kind,bank.id)}/exams`);if(source!==bank||generation!==listGeneration||!dialog.open)return;records=value.records||[];renderRecords();}
+  async function loadRecords(bank,applyDefaults=false){
+    const generation=++listGeneration;
+    const value=await request(`${collectionPath(bank.kind,bank.id)}/exams`);
+    if(source!==bank||generation!==listGeneration||!dialog.open)return;
+    if(applyDefaults){
+      const minutes=value.defaultDurationMinutes===undefined?60:value.defaultDurationMinutes;
+      unlimited.checked=minutes===null;
+      duration.value=String(minutes??60);
+      unlimited.dispatchEvent(new document.defaultView.Event('change'));
+    }
+    records=value.records||[];
+    renderRecords();
+  }
   start.addEventListener('click',async()=>{try{
-    if(busy)return;source=active();if(!canStartExam(source))return;busy=true;sync();await flush(source);command=null;setError();records=[];renderRecords();dialog.showModal();await loadRecords(source);
+    if(busy)return;source=active();if(!canStartExam(source))return;busy=true;sync();await flush(source);command=null;setError();records=[];renderRecords();dialog.showModal();await loadRecords(source,true);
   }catch(e){if(dialog.open)setError(e.message);else onError(e);}finally{busy=false;sync();}});
   form.addEventListener('submit',async event=>{event.preventDefault();if(busy||!source)return;busy=true;sync();setError();try{
     const minutes=unlimited.checked?null:Number(duration.value);if(minutes!==null&&(!Number.isInteger(minutes)||minutes<1||minutes>1440))throw new Error('请输入 1–1440 分钟，或选择不限时');

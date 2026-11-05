@@ -1,5 +1,6 @@
 package cloud.treenewbee.quizforge.practice.grading;
 
+import cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -69,7 +70,7 @@ class BrowserGradingIntegrationTest extends MySqlTestBase {
         r.add("qf.rule-runner.default-deadline", () -> "60s");
     }
     @Autowired AuthService auth;
-    @Autowired LegacyPracticeImportService imports;
+    @Autowired QueuedPracticeImports imports;
     @Autowired JdbcTemplate jdbc;
     @Autowired QuestionMapper questions;
     @Autowired BankMapper banks;

@@ -50,9 +50,10 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
 
     @Autowired PracticeDirectoryService library;
     @Autowired PracticeDirectoryMapper mapper;
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
     @Autowired PracticeReadService reads;
     @Autowired QuotaService quotas;
+    @Autowired cloud.treenewbee.quizforge.content.application.ImportUploadService uploads;
     @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper json;
@@ -112,7 +113,7 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         var files = ImportArchives.files(List.of("单选题"), "bank");
         imported(user, "单选题");
         ImportArchives.edit(files, ImportArchives.bank("单选题") + "/bank.json", bank -> bank.put("id", UUID.randomUUID().toString()));
-        var result = imports.importArchive(user, "another.qbank", new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        var result = imports.importArchive(user, "another.qbank", new ByteArrayInputStream(ImportArchives.zip(files)), ImportArchives.GROUP).getFirst();
         assertThat(result.title()).isEqualTo("单选题（2）");
     }
 
@@ -134,7 +135,7 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         var first = imported(user, "单选题");
         var files = ImportArchives.files(List.of("单选题"), "bank");
         ImportArchives.edit(files, ImportArchives.bank("单选题") + "/bank.json", bank -> bank.put("description", "作者的新版本"));
-        var second = imports.importArchive(user, "new.qbank", new ByteArrayInputStream(ImportArchives.zip(files))).getFirst();
+        var second = imports.importArchive(user, "new.qbank", new ByteArrayInputStream(ImportArchives.zip(files)), ImportArchives.GROUP).getFirst();
         assertThat(second.bankId()).isNotEqualTo(first.bankId());
         assertThat(second.title()).isEqualTo("单选题（2）");
         assertThat(mapper.items(user)).hasSize(2);
@@ -221,6 +222,8 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         imported(user, "多选题");
         var members = mapper.items(user);
         doThrow(new IllegalStateException("模拟第二本删除失败")).when(deletion).delete(user, members.get(1).id());
+        for (String pack : jdbc.queryForList("SELECT id FROM catalog_pack WHERE owner_id=? AND status='active'", String.class, user))
+            uploads.delete(user, pack);
         long before = quotas.usage(user).storage().usedBytes();
         var first = change(user, "group", "delete", ImportArchives.GROUP, null, null);
         assertThat(first.partial()).isTrue();
@@ -244,6 +247,7 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         jdbc.update("INSERT INTO practice_round_question (round_id,question_id,user_id,payload,extension_digest,updated_at) VALUES (?,'q1',?,'{}',UNHEX(REPEAT('11',32)),CURRENT_TIMESTAMP(3))", round, user);
         jdbc.update("INSERT INTO practice_history_annotation (history_id,question_id,user_id,notes,revision,created_at,updated_at) VALUES (?,'q1',?,'{}',1,CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3))", round, user);
         jdbc.update("INSERT INTO practice_lifecycle_job (id,user_id,collection_id,context_id,round_id,kind,status,total,created_at,updated_at) VALUES (?,?,?,?,?,'finish','running',1,CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3))", Ids.uuidV7(), user, bank.id(), context, round);
+        uploads.delete(user, jdbc.queryForObject("SELECT library_pack_id FROM practice_collection WHERE id=?", String.class, bank.id()));
         change(user, "group", "delete", bank.groupName(), null, null);
         for (String table : List.of("practice_context", "practice_question_state", "practice_round", "practice_round_question", "practice_history_annotation", "practice_lifecycle_job")) {
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE user_id = ?", Integer.class, user)).isZero();
@@ -255,9 +259,11 @@ class PracticeDirectoryIntegrationTest extends MySqlTestBase {
         return library.manage(owner, new PracticeDirectoryService.Change("bank", target, action, path, name, group, mapper.revision(owner)));
     }
     private void update(String owner, String id, String name, String group) { change(owner, "item", "update", id, name, group); }
-    private cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService.ImportedCollection imported(String owner, String type) throws Exception {
-        return imports.importArchive(owner, "test.qbank", new ByteArrayInputStream(ImportArchives.zip(ImportArchives.files(List.of(type), "bank")))).getFirst();
+    private cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports.ImportedCollection imported(String owner, String type) throws Exception {
+        return imports.importArchive(owner, "test.qbank", new ByteArrayInputStream(ImportArchives.zip(
+                ImportArchives.files(List.of(type), "bank"))), ImportArchives.GROUP).getFirst();
     }
+
     private String user() { return auth.register(UUID.randomUUID() + "@example.test", "管理测试", "password123", "test").userId(); }
     private static Path temporary() {
         try {
