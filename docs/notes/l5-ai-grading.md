@@ -4,7 +4,7 @@
 
 沿用旧 `API.md` 的 `/api/collections/{kind}/{id}/questions/{qid}/ai` 路径：`POST grade`、`GET current`、`GET tasks/{taskId}`、`POST tasks/{taskId}/retry`、`POST tasks/{taskId}/confirm`。`kind` 为 `bank` 或 `exam`。写请求包含 `requestId`，请求体上限 8 KiB；用户身份只来自会话。考试交卷前拒绝 AI 评分。
 
-`current` 返回 `{task}`，其余任务接口返回任务视图；确认接口另返回 `payload`。视图只含任务编号、状态、目标、候选、错误与费用，不包含题目原文、评分材料、图片 data URL、模型检查点或 Key 标识。`cost` 沿用余额单位（0.0001 元）。内部 `model_returned` 对旧页面显示为 `running`，保持原有轮询工作。
+`current` 返回 `{task}`，其余任务接口返回任务视图；确认接口另返回 `payload`。视图只含任务编号、状态、目标、候选、错误与费用，不包含题目原文、评分材料、图片 data URL、模型检查点或 Key 标识。`cost` 沿用余额单位（0.0001 元）。内部 `model_returned` 对旧页面显示为 `running`，保持原有轮询工作。确认接口保留原候选与实际采用的 `reviewScore`；已经采用后再传不同分数返回 409 `AI_CANDIDATE_CONFLICT`，调整分数应走人工评分。
 
 作者于 2026-11-04 确认：模型输出只检查有限数与非空反馈（最多 18000 字符）；分值范围、精度与步长由拓展 `review` 决定，宿主不裁剪候选。最后保存拓展返回的分数时仍统一 HALF_UP 四位小数。普通简答题与答题区题目的初始规则判分语义保持不变。
 
@@ -64,7 +64,7 @@ docker compose -p qf-ai-grading -f deploy/docker-compose.yml -f deploy/docker-co
 | 优先级与 SKIP LOCKED、并发重复点击 | `queuePrefersManualBeforeAutomaticAndSkipsLockedRow`、`concurrentClicksReuseOneTaskAndOneModelCall` |
 | 自动评分与 targets、与提交同事务登记、兄弟小题不覆盖 | `automaticPlanRegistersWithSubmissionAndSupportsAllTargets`、`automaticRegistrationRollsBackTogetherWithSubmission`、`siblingTargetsFinishingTogetherDoNotOverwriteEachOther` |
 | 浏览器判分、完成练习、考试交卷登记与历史采用 | `browserReportRegistersAutomaticTaskWithoutCallingAiOrPreparingInsideTransaction`、`finishingAndExamHandinScheduleAutomaticAiAndUpdateCompletedHistory` |
-| 拓展拒绝保留原结果、重试、宿主不裁剪模型分数 | `retryCreatesNewTaskAndCandidateRejectionPreservesOriginalResult`、`extensionReviewOwnsRangeAndStepAndHostStoresItsResult` |
+| 拓展拒绝保留原结果、重试、宿主不裁剪模型分数 | `retryCreatesNewTaskAndCandidateRejectionPreservesOriginalResult`、`confirmingRejectedCandidateKeepsSuggestionAndFreezesChosenScore`、`extensionReviewOwnsRangeAndStepAndHostStoresItsResult` |
 | 身份隔离、提交前拒绝、请求大小限制 | `requestIdReuseAndIdorDoNotExposePrivateMaterials`、`oversizedHttpRequestIsRejectedBeforeCreatingTask` |
 | 材料白名单、候选格式、JavaScript 空白规则、target 规则 | `GradingProtocolTest` |
 | 删除题库 / 考试、内容指纹变化使旧任务失效 | `deletingCollectionCancelsQueuedAiWithoutCallingModel`、`deletingGradingExamCancelsItsAiTask`、`changedQuestionContentInvalidatesTaskBeforePreparingMaterials` |

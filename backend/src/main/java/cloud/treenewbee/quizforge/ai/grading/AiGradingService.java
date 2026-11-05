@@ -81,20 +81,26 @@ public class AiGradingService {
         if (replay != null) return replay;
         var view = practice.view(user, kind, id, qid);
         if (!matches(saved, view) || !bound(saved)) throw stale();
-        if (version != null && !version.equals(saved.candidateVersion())) throw stale();
-        if (saved.candidate() == null) throw stale();
+        if (version != null && !version.equals(saved.candidateVersion())) throw candidateConflict();
+        if (saved.candidate() == null || !Set.of("succeeded", "confirmed").contains(saved.status()))
+            throw new ApiException(HttpStatus.CONFLICT, "AI_CANDIDATE_UNAVAILABLE", "这份 AI 建议已失效，不能确认");
         var candidate = (ObjectNode) json.readTree(saved.candidate());
         candidate.remove("version");
-        if (score != null) candidate.put("score", score);
-        var outcome = saved.status().equals("confirmed") ? null : practice.review(view, saved.targetId(), candidate);
+        double reviewScore = score == null ? candidate.path("score").asDouble() : score;
+        var review = candidate.deepCopy();
+        review.put("score", reviewScore);
+        if (saved.status().equals("confirmed")) requireConfirmedScore(saved, view, reviewScore);
+        var outcome = saved.status().equals("confirmed") ? null : practice.review(view, saved.targetId(), review);
         return write(user, kind, id, qid, request, "confirm\n" + taskId + "\n" + version + "\n" + score, () -> {
             var latest = owned(user, kind, id, qid, taskId);
             var current = practice.view(user, kind, id, qid);
             if (!matches(latest, current) || !bound(latest)) throw stale();
             if (!latest.status().equals("confirmed")) {
-                if (outcome == null || current.target().revision() != view.target().revision() || !practice.apply(current, outcome, assessment(latest, candidate))) throw stale();
+                var assessment = (ObjectNode) assessment(latest, candidate);
+                assessment.put("reviewScore", reviewScore);
+                if (outcome == null || current.target().revision() != view.target().revision() || !practice.apply(current, outcome, assessment)) throw stale();
                 if (tasks.confirm(user, taskId, latest.candidateVersion(), clock.instant()) != 1) throw stale();
-            }
+            } else requireConfirmedScore(latest, current, reviewScore);
             var result = (ObjectNode) dto(tasks.find(user, taskId).orElseThrow());
             result.set("payload", practice.payload(current));
             return result;
@@ -142,6 +148,7 @@ public class AiGradingService {
     JsonNode assessment(AiGradingTask task, JsonNode candidate) {
         var assessment = (ObjectNode)candidate.deepCopy();
         assessment.put("taskId",task.id());
+        assessment.set("reviewScore", candidate.path("score"));
         if (task.candidateVersion() != null) assessment.put("candidateVersion", task.candidateVersion());
         if (!task.targetId().isEmpty()) assessment.put("targetId",task.targetId());
         if (task.inputJson()!=null) assessment.set("maxScore",json.readTree(task.inputJson()).path("maxScore"));
@@ -159,6 +166,19 @@ public class AiGradingService {
         }
         if (task.errorCode() != null) value.set("error", json.createObjectNode().put("code", task.errorCode()).put("message", task.errorMessage()));
         return json.readTree(json.writeValueAsString(value));
+    }
+
+    private void requireConfirmedScore(AiGradingTask task, PracticeAiAccess.View view, double score) {
+        JsonNode result = view.state().path("result");
+        JsonNode adopted = task.targetId().isEmpty() ? result.path("aiAssessment")
+                : result.path("aiAssessments").path(task.targetId());
+        if (!task.id().equals(adopted.path("taskId").asString())) throw stale();
+        double saved = adopted.path("reviewScore").asDouble(adopted.path("score").asDouble());
+        if (score != saved) throw candidateConflict();
+    }
+
+    private static ApiException candidateConflict() {
+        return new ApiException(HttpStatus.CONFLICT, "AI_CANDIDATE_CONFLICT", "这份 AI 评分已经保存，调整分数请使用人工评分");
     }
 
     private AiGradingTask owned(String user, String kind, String id, String qid, String task) {

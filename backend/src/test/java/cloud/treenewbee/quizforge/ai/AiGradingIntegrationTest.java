@@ -181,6 +181,9 @@ class AiGradingIntegrationTest extends MySqlTestBase {
         assertThat(confirmed.has("payload")).isTrue();
         assertThat(ai.confirm(user, "bank", sample.collection(), sample.question().questionId(), created.path("taskId").asString(), "confirm", null, null)).isEqualTo(confirmed);
         assertThat(UPSTREAM.calls(key)).isEqualTo(1);
+        assertThatThrownBy(() -> ai.confirm(user, "bank", sample.collection(), sample.question().questionId(),
+                created.path("taskId").asString(), "change-confirmed", null, 1.5))
+                .isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.code()).isEqualTo("AI_CANDIDATE_CONFLICT"));
         var dto = ok(get(aiPath(sample) + "/tasks/" + created.path("taskId").asString()));
         assertThat(dto.toString()).doesNotContain("referenceAnswer", "checkpoint", "inputJson", "keyId", "questionData");
         verify(runner).execute(eq("prepareAiGrading"), any(), anyMap());
@@ -372,6 +375,24 @@ class AiGradingIntegrationTest extends MySqlTestBase {
         assertThat(retry.path("taskId").asString()).isNotEqualTo(task);
         runOne();
         assertThat(UPSTREAM.calls(key)).isEqualTo(2);
+    }
+
+    @Test void confirmingRejectedCandidateKeepsSuggestionAndFreezesChosenScore() {
+        var sample = submitted("简答题");
+        String task = enqueue(sample);
+        doReturn(cloud.treenewbee.quizforge.rules.RuleResult.rejected("INVALID_ANSWER"))
+                .when(runner).execute(eq("review"), any(), anyMap());
+        runOne();
+        reset(runner);
+        var response = ai.confirm(user, "bank", sample.collection(), sample.question().questionId(), task, "confirm-score", null, 1.5);
+        var assessment = response.path("payload").path("state").path("result").path("aiAssessments").path(firstPart(sample));
+        assertThat(assessment.path("score").asDouble()).isEqualTo(2);
+        assertThat(assessment.path("reviewScore").asDouble()).isEqualTo(1.5);
+        assertThat(ai.confirm(user, "bank", sample.collection(), sample.question().questionId(), task, "confirm-score", null, 1.5)).isEqualTo(response);
+        assertThatThrownBy(() -> ai.confirm(user, "bank", sample.collection(), sample.question().questionId(), task, "wrong-score", null, null))
+                .isInstanceOfSatisfying(ApiException.class, error -> assertThat(error.code()).isEqualTo("AI_CANDIDATE_CONFLICT"));
+        assertThat(UPSTREAM.calls(key)).isEqualTo(1);
+        verify(runner).execute(eq("review"), any(), anyMap());
     }
 
     @Test void automaticRegistrationRollsBackTogetherWithSubmission() {

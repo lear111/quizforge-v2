@@ -24,7 +24,8 @@ test('提交主观题后 AI 评分显示反馈与花费，人工评分覆盖，�
     const {collections}=await uploadAndImportFromLibrary(page);
     const collection=collections.find(row=>row.title==='简答题');
     await page.goto('/practice/');
-    await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+    // 明确选择本次验收的题库，不依赖启动时自动打开的另一道题。
+    await expect(page.locator(`.library-item[data-item-id="${collection.id}"]`)).toBeAttached();
     await expect(page.locator('#collection-loading')).toBeHidden();
     if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
     await page.locator(`.library-item[data-item-id="${collection.id}"]`).click();
@@ -46,11 +47,12 @@ test('提交主观题后 AI 评分显示反馈与花费，人工评分覆盖，�
     }).toBe('confirmed');
     await expect(frame.locator('.ai-feedback')).toContainText('本机假模型');
     await expect(frame.locator('.grade-value')).toHaveText('2 / 5 分');
+    const directory=resolve(process.env.QF_SCREENSHOT_DIR||'../.artifacts/local/ai-grading');
+    await mkdir(directory,{recursive:true});
+    await page.screenshot({path:resolve(directory,`ai-grading-result-${info.project.name}.png`),fullPage:true});
     const slider=frame.getByRole('slider',{name:'人工评分',exact:true});
     await slider.focus();await slider.press('End');
     await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
-    const directory=resolve(process.env.QF_SCREENSHOT_DIR||'../.artifacts/local/ai-grading');
-    await mkdir(directory,{recursive:true});
     await page.screenshot({path:resolve(directory,`ai-grading-${info.project.name}.png`),fullPage:true});
     await page.goto('/');
     await expect(page.locator('#ai-balance')).toHaveText('¥0.9925');
