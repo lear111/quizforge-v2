@@ -66,6 +66,7 @@ docker compose -p qf-ai-grading -f deploy/docker-compose.yml -f deploy/docker-co
 | 浏览器判分、完成练习、考试交卷登记与历史采用 | `browserReportRegistersAutomaticTaskWithoutCallingAiOrPreparingInsideTransaction`、`finishingAndExamHandinScheduleAutomaticAiAndUpdateCompletedHistory` |
 | 拓展拒绝保留原结果、重试、宿主不裁剪模型分数 | `retryCreatesNewTaskAndCandidateRejectionPreservesOriginalResult`、`extensionReviewOwnsRangeAndStepAndHostStoresItsResult` |
 | 身份隔离、提交前拒绝、请求大小限制 | `requestIdReuseAndIdorDoNotExposePrivateMaterials`、`oversizedHttpRequestIsRejectedBeforeCreatingTask` |
-| 材料白名单、候选格式、target 规则 | `GradingProtocolTest` |
+| 材料白名单、候选格式、JavaScript 空白规则、target 规则 | `GradingProtocolTest` |
+| 删除题库 / 考试、内容指纹变化使旧任务失效 | `deletingCollectionCancelsQueuedAiWithoutCallingModel`、`deletingGradingExamCancelsItsAiTask`、`changedQuestionContentInvalidatesTaskBeforePreparingMaterials` |
 | 图片权限、data URL、单张与合计上限 | `GradingPromptTest` |
 | 桌面 / 手机的提交、AI 反馈和余额、人工覆盖、自动设置持久化 | `ai-grading.spec.mjs` |

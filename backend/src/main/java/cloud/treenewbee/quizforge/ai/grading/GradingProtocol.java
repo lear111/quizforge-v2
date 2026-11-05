@@ -53,10 +53,10 @@ public class GradingProtocol {
         catch (RuntimeException invalid) { throw invalid("模型没有返回有效 JSON"); }
         require(value != null && value.isObject() && value.size() == 2 && value.has("score") && value.has("feedback"), "模型应返回 score 和 feedback");
         require(value.path("score").isNumber() && Double.isFinite(value.path("score").asDouble()), "模型分数必须为有限数");
-        require(value.path("feedback").isString() && !value.path("feedback").asString().isBlank()
+        require(value.path("feedback").isString() && !trim(value.path("feedback").asString()).isEmpty()
                 && value.path("feedback").asString().length() <= 18000, "模型反馈为空或超过 18000 字符");
         ObjectNode result = (ObjectNode) value.deepCopy();
-        result.put("feedback", value.path("feedback").asString().trim());
+        result.put("feedback", trim(value.path("feedback").asString()));
         return result;
     }
 
@@ -94,7 +94,17 @@ public class GradingProtocol {
         if (!condition) throw invalid(message);
     }
 
-    private static boolean space(int value) { return Character.isWhitespace(value) || Character.isSpaceChar(value) || value == 0xfeff; }
+    // 与旧 JavaScript trim 的空白集合一致，包括 NBSP 与 BOM。
+    private static boolean space(int value) {
+        return value >= 9 && value <= 13 || Character.isSpaceChar(value) || value == 0xfeff;
+    }
+
+    private static String trim(String value) {
+        int first = 0, last = value.length();
+        while (first < last && space(value.charAt(first))) first++;
+        while (last > first && space(value.charAt(last - 1))) last--;
+        return value.substring(first, last);
+    }
 
     static ApiException invalid(String message) {
         return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_AI_INPUT", message);

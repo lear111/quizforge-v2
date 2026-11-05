@@ -38,6 +38,17 @@ class GradingProtocolTest {
         assertThatThrownBy(() -> GradingProtocol.target("a".repeat(129))).isInstanceOf(ApiException.class);
     }
 
+    @ParameterizedTest @ValueSource(strings = {"\u00a0", "\ufeff", "\u3000"})
+    void rejectsEcmaWhitespaceOnlyFeedback(String whitespace) {
+        assertThatThrownBy(() -> protocol.candidate(json.writeValueAsString(java.util.Map.of("score", 1, "feedback", whitespace))))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test void trimsEcmaWhitespaceAroundFeedback() {
+        assertThat(protocol.candidate(json.writeValueAsString(java.util.Map.of("score", 1, "feedback", "\u00a0有依据\ufeff")))
+                .path("feedback").asString()).isEqualTo("有依据");
+    }
+
     @Test void rejectsExcessFeedback() {
         assertThatThrownBy(() -> protocol.candidate(json.writeValueAsString(java.util.Map.of("score", 1, "feedback", "字".repeat(18001)))))
                 .isInstanceOf(ApiException.class);
