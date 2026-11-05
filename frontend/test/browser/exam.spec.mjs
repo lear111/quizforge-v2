@@ -62,6 +62,8 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   await page.locator('#exam-review').click();
   await expect(page.locator('#exam-status')).toContainText('考试已完成');
   await page.locator('#exam-return').click();
+  // 题库页保留刚才的历史视图，先切回作答再开始下一场。
+  await page.locator('#return-practice').click();
   await page.locator('#exam-start').click();
   await page.getByLabel('不限时',{exact:true}).check();
   const unlimitedCreated=page.waitForResponse(response=>response.url().endsWith('/exams')&&response.request().method()==='POST');
