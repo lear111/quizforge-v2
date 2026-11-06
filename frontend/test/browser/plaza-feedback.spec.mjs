@@ -43,7 +43,7 @@ test('plaza comments delete report admin removal and reporter notification',asyn
       await member.getByRole('button',{name:'收藏',exact:true}).click();
       await expect(member.getByRole('button',{name:'取消收藏',exact:true})).toBeVisible();
     } finally { release(); }
-    await member.unroute(matcher,{behavior:'wait'});
+    await member.unrouteAll({behavior:'wait'});
     const section=member.getByRole('region',{name:'评论与举报'});
     const text='<b>这是纯文本</b>\n第二行';
     await section.locator('[name=body]').fill(text);
