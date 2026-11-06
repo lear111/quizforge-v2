@@ -208,12 +208,24 @@ SSE 事件：`message`（`{userMessageId}`，请求已接受）→ 若干 `delta
 | `GET /api/packs/{id}`、`GET /api/packs/{id}/catalog` | 详情、包内目录 |
 | `POST /api/packs`、`PUT /api/packs/{id}`、`DELETE /api/packs/{id}` | 上传、编辑（带 `revision` 冲突检查）、删除 |
 | `GET /api/packs/{id}/download`、`POST /api/packs/{id}/download-selection`、`GET .../download-status` | 整包 / 部分下载、下载预检 |
-| `POST /api/packs/{id}/comments`、`DELETE /api/comments/{id}`、`POST /api/packs/{id}/report` | 评论与举报 |
+| `GET /api/plaza/packs/{id}/comments` | 评论列表，匿名可读；`cursor` 键集分页，返回 `{items:[{id,userId,author,body,createdAt,canDelete}],nextCursor}` |
+| `POST /api/plaza/packs/{id}/comments` | 登录后评论 `{body}`；去首尾空白后 1～2000 字，每用户每分钟 10 次；201 `{comment}` |
+| `DELETE /api/plaza/comments/{id}` | 评论作者本人或管理员删除，204；题库发布者不能删除他人评论 |
+| `POST /api/plaza/packs/{id}/report` | 举报 `{reason}`，去首尾空白后 1～1000 字，每用户每分钟 5 次；201 `{ok:true,id}`；同用户同包只保留一条待处理举报 |
 | `POST /api/plaza/packs/{id}/imports` | 从公开详情或收藏创建独立练习实例 `{banks:[bank_uuid…]}`，不产生他人资源条目 |
 
 ### 2.7 管理（admin，沿用旧 Java Hub 接口）
 
 `/api/admin/...` 下的审核、拓展白名单、账号封禁、邀请码、AI 配置、统计、审计等接口，路径与行为沿用旧 Java Hub。所有管理接口都要求管理员身份，并对写操作复查身份和来源。字段级定义在管理模块的详细设计中整理。
+
+举报处理（题库广场 4/4）：
+
+- `GET /api/admin/catalog/reports?cursor=…`：未处理优先，再按创建时间和 ID 倒序；每页 20 条，返回 `{items,nextCursor}`。
+- `GET /api/admin/catalog/reports/{id}`：举报原因、题库与举报人、处理记录；仅管理员可读。
+- `POST /api/admin/catalog/reports/{id}/resolve`：`{decision:"removed"|"dismissed"|"handled",note}`；处理说明去首尾空白后 1～1000 字。下架复用删除原资源的逻辑，不影响已导入练习实例；同时写审计并向举报人发站内通知。相同处理重放不重复通知，不同处理返回 409 `REPORT_ALREADY_HANDLED`。
+- `DELETE /api/admin/catalog/comments/{id}`：管理员删除任意评论并写审计，204。
+
+评论和举报仅面向已审核且未删除的公开包，封禁用户禁止写入。限频返回 429 `FEEDBACK_RATE_LIMIT`；长度或空内容返回 400 `VALIDATION_FAILED`；不存在或不可见的评论/包返回 404。列表使用纯文本，不解释 HTML。
 
 ### 2.8 本地专用、V2 不提供的接口
 

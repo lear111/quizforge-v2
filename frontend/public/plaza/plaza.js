@@ -1,4 +1,5 @@
 import {el} from '../admin/pages/format.js';
+import {mountFeedback} from './feedback.js';
 const $=s=>document.querySelector(s);
 let next=null;
 let busy=false;
@@ -41,6 +42,7 @@ async function detail(){
     const banks=[...form.querySelectorAll(':checked')].map(e=>e.value);await request(`/api/plaza/packs/${id}/imports`,'POST',{banks});
     $('#feedback').replaceChildren('已导入独立练习实例。',el('a',{href:'/practice/',text:'进入练习空间'}));
   }finally{submit.disabled=false;}});};holder.append(form);
+  await mountFeedback(holder,id,request);
 }
 $('#search').onsubmit=e=>{e.preventDefault();work(()=>load());};$('#more').onclick=()=>work(()=>load(true));
 // 导航不能被搜索或收藏的忙碌状态丢弃；详情返回时再核对当前选择。
