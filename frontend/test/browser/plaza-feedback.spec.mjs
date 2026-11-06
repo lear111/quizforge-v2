@@ -9,7 +9,7 @@ function sql(query) {
   const project=process.env.QF_COMPOSE_PROJECT;
   if(!project?.startsWith('qf-'))throw new Error('需要独立的 qf- Compose 项目');
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c',
-    'exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
+    'exec mysql --default-character-set=utf8mb4 --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
 }
 
 test('plaza comments delete report admin removal and reporter notification',async({page,browser},info)=>{

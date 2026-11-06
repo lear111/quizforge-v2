@@ -28,7 +28,7 @@ test('administrators manage users, invitations and see the audit log; others see
   // 新 Compose 中没有其他活跃用户，先上报心跳再断言在线人数。
   expect((await page.request.post('/api/activity',{headers:{Origin:admin.origin},data:{kind:'heartbeat'}})).status()).toBe(204);
   await page.goto('/admin/');
-  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','题库审核','导入校验队列','拓展审核','站内通知','兑换码','AI 服务','操作日志']);
+  await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','题库审核','举报处理','导入校验队列','拓展审核','站内通知','兑换码','AI 服务','操作日志']);
   // 概况包含今日上传统计；队列页使用同一管理员权限。
   await expect(page.getByRole('heading',{name:'概况'})).toBeVisible();
   await expect(page.locator('.qa-card')).toHaveCount(5);
