@@ -148,7 +148,7 @@ public class ImportQueueJobs {
 
     public Job claim() {
         Instant now = now();
-        jobs.recover(now);
+        recoverExpired(now);
         metadata.failedJobs();
         return tx.execute(status -> {
             var slot = jobs.slot(concurrency, now);
@@ -160,6 +160,15 @@ public class ImportQueueJobs {
             jobs.occupy(slot.get().id(), job.id(), job.generation() + 1, now.plus(LEASE));
             return jobs.find(job.id()).orElseThrow();
         });
+    }
+
+    /** 每个候选独立短事务；忙碌的行留到下一轮，租约条件在锁内复核。 */
+    public int recoverExpired(Instant now) {
+        int recovered = 0;
+        for (String id : jobs.expired(now)) {
+            recovered += tx.execute(status -> jobs.lockExpired(id, now).isPresent() ? jobs.recover(id, now) : 0);
+        }
+        return recovered;
     }
 
     private void renewAll() {

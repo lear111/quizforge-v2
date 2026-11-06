@@ -3,6 +3,7 @@ import {mkdir, readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {registerByApi} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 
 const expect = baseExpect.configure({timeout: 30000});
 
@@ -10,12 +11,7 @@ test('existing dialogs manage empty groups, names, moves, conflicts and irrevers
   test.skip(process.env.QF_READ_BROWSER_TESTS !== '1', '需要独立的本机 Compose');
   test.setTimeout(240000);
   const {origin} = await registerByApi(page, 'library', '目录管理验收');
-  const response = await page.request.post('/api/library/import', {
-    headers: {Origin: origin},
-    multipart: {file: {name: 'basic-types.qbank', mimeType: 'application/zip', buffer: await readFile(resolve('../samples/basic-types.qbank'))}},
-  });
-  expect(response.status(), await response.text()).toBe(200);
-  const {collections} = await response.json();
+  const {collections} = await uploadAndImportFromLibrary(page);
   // 目录管理不验证审核流程；独立准备本测试的样例，避免依赖先运行的读题/考试测试。
   const project = process.env.QF_COMPOSE_PROJECT;
   if (!project?.startsWith('qf-')) throw new Error('需要独立的本机 Compose 项目');

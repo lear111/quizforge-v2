@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test('限时考试保存独立草稿，到期自动交卷并从原题库查看考试历史',async({page},info)=>{
@@ -12,9 +13,7 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   if(!project?.startsWith('qf-'))throw Error('必须使用独立 qf-* 测试项目');
   const sql=query=>execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});
   const {origin}=await registerByApi(page,'exam','考试验收');
-  const uploaded=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'basic-types.qbank',mimeType:'application/zip',buffer:await readFile(resolve('../samples/basic-types.qbank'))}}});
-  expect(uploaded.status(),await uploaded.text()).toBe(200);
-  const {collections}=await uploaded.json();
+  const {collections}=await uploadAndImportFromLibrary(page);
   const bank=collections.find(row=>row.title==='单选题');expect(bank.id).toMatch(/^[a-f0-9-]{36}$/);
   sql(`INSERT INTO admin_extension_review(digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id='${bank.id}' ON DUPLICATE KEY UPDATE status='approved';`);
   await page.goto('/practice/');
@@ -23,7 +22,7 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
   await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
   await expect(page.locator('#collection-loading')).toBeHidden();
-  await page.locator('#exam-start').click();await page.locator('#exam-duration').fill('1');
+  await page.locator('#exam-start').click();await expect(page.locator('#exam-duration')).toHaveValue('60');await page.locator('#exam-duration').fill('1');
   const created=page.waitForResponse(response=>response.url().endsWith('/exams')&&response.request().method()==='POST');
   await page.locator('.exam-dialog button[type=submit]').click();
   const creation=await created;expect(creation.status()).toBe(200);const exam=await creation.json();expect(exam.id).toMatch(/^[a-f0-9-]{36}$/);
@@ -38,6 +37,7 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   // 只缩短自己的持久化截止时间，再重新打开校准倒计时；不用 sleep 判断状态。
   await page.locator('#exam-return').click();await expect(page.locator('#exam-start')).toBeVisible();
   await page.locator('#exam-start').click();
+  await expect(page.locator('#exam-duration')).toHaveValue('1');
   sql(`UPDATE exam_exam SET deadline_at=UTC_TIMESTAMP(3)+INTERVAL 10 SECOND WHERE id='${exam.id}';`);
   await page.locator('.exam-record').filter({hasText:'继续考试'}).click();
   await expect(page.locator('#exam-status')).toContainText('剩余');
@@ -61,4 +61,43 @@ test('限时考试保存独立草稿，到期自动交卷并从原题库查看�
   await expect(page.locator('#exam-review')).toBeVisible();
   await page.locator('#exam-review').click();
   await expect(page.locator('#exam-status')).toContainText('考试已完成');
+});
+
+test('考试设置回填最近时长并记住不限时选择',async({page})=>{
+  test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','需要独立的本机 Compose');
+  test.setTimeout(180000);
+  const {origin}=await registerByApi(page,'exam-defaults','考试设置验收');
+  const {collections}=await uploadAndImportFromLibrary(page);
+  const bank=collections.find(row=>row.title==='单选题');
+  // 已删除的考试也属于最近使用的设置，且不会占用作答中的名额。
+  const previous=await page.request.post(`/api/collections/bank/${bank.id}/exams`,{
+    headers:{Origin:origin},data:{requestId:'previous-duration',durationMinutes:17}
+  });
+  expect(previous.status()).toBe(200);
+  const previousExam=await previous.json();
+  expect((await page.request.delete(`/api/collections/exam/${previousExam.id}/exam`,{headers:{Origin:origin}})).status()).toBe(200);
+  await page.goto('/practice/');
+  await expect(page.locator('.question-pane:not(.collection-candidate):not([hidden]):not([inert]) iframe.question-frame')).toBeVisible();
+  await expect(page.locator('#collection-loading')).toBeHidden();
+  if(await page.locator('#library-toggle').getAttribute('aria-expanded')!=='true')await page.locator('#library-toggle').click();
+  await page.locator(`.library-item[data-item-id="${bank.id}"]`).click();
+  await expect(page.locator('#document-title')).toHaveText(bank.title);
+  await expect(page.locator('#collection-loading')).toBeHidden();
+  const settingsLoaded=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/collections/bank/${bank.id}/exams`&&response.request().method()==='GET');
+  await page.locator('#exam-start').click();
+  expect((await (await settingsLoaded).json()).defaultDurationMinutes).toBe(17);
+  await expect(page.locator('#exam-duration')).toHaveValue('17');
+  await page.getByLabel('不限时',{exact:true}).check();
+  const unlimitedCreated=page.waitForResponse(response=>response.url().endsWith('/exams')&&response.request().method()==='POST');
+  await page.locator('.exam-dialog button[type=submit]').click();
+  const unlimitedResponse=await unlimitedCreated;
+  expect(unlimitedResponse.status()).toBe(200);
+  const unlimitedExam=await unlimitedResponse.json();
+  expect(unlimitedExam.durationMinutes).toBeNull();
+  await expect(page.locator('#exam-status')).toContainText('已用');
+  await page.locator('#exam-return').click();
+  await page.locator('#exam-start').click();
+  await expect(page.getByLabel('不限时',{exact:true})).toBeChecked();
+  await expect(page.locator('#exam-duration')).toBeDisabled();
+  expect((await page.request.delete(`/api/collections/exam/${unlimitedExam.id}/exam`,{headers:{Origin:origin}})).status()).toBe(200);
 });

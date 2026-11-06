@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test('real practice finish, frozen history, editable notes and deletion survive reload',async({page},info)=>{
@@ -12,9 +13,7 @@ test('real practice finish, frozen history, editable notes and deletion survive 
   if(!project?.startsWith('qf-'))throw Error('Use an isolated qf-* Compose project');
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const {origin}=await registerByApi(page,'lifecycle','练习闭环验收');
-  const imported=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'basic-types.qbank',mimeType:'application/zip',buffer:await readFile(resolve('../samples/basic-types.qbank'))}}});
-  expect(imported.status()).toBe(200);
-  const {collections}=await imported.json(),collection=collections.find(row=>row.title==='简答题');
+  const {collections}=await uploadAndImportFromLibrary(page),collection=collections.find(row=>row.title==='简答题');
   expect(collection.id).toMatch(/^[a-f0-9-]{36}$/);
   const query=`INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id='${collection.id}' ON DUPLICATE KEY UPDATE status='approved';`;
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});

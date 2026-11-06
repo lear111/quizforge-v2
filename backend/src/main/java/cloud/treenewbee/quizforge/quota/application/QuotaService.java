@@ -88,7 +88,9 @@ public class QuotaService {
         var account = lock(userId);
         long delta = clearedCategory == null ? 0 : -mapper.prefixBytes(userId, clearedCategory, clearedPrefix).stream().reduce(0L, Math::addExact);
         for (var item : items) {
-            long previous = mapper.item(userId, item.category(), item.objectId()).orElse(0L);
+            // 已持有该用户的账户锁；先 UPSERT，再读取确定存在的明细行。
+            mapper.ensureItem(userId, item.category(), item.objectId(), item.collectionId());
+            long previous = mapper.item(userId, item.category(), item.objectId()).orElseThrow();
             delta = Math.addExact(delta, Math.subtractExact(item.bytes(), previous));
         }
         long limit = view(account).storage().limitBytes();

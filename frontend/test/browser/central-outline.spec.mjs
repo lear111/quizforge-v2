@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 
 test('central outline shows two adjacent author groups with the same name and hides unreferenced questions',async({page},info)=>{
   test.skip(process.env.QF_READ_BROWSER_TESTS!=='1','Requires an isolated Compose fixture');
@@ -11,10 +12,7 @@ test('central outline shows two adjacent author groups with the same name and hi
   if(!project?.startsWith('qf-'))throw Error('An isolated qf-* Compose project is required');
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const {origin}=await registerByApi(page,'outline','大纲验收');
-  const imported=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'central-outline.qbank',mimeType:'application/zip',buffer:await readFile(resolve('../samples/central-outline.qbank'))}}});
-  expect(imported.status()).toBe(200);
-  const {collections:[collection]}=await imported.json();
-  expect(collection.warnings[0]).toMatchObject({count:1,questionIds:['unreferenced-example']});
+  const {collections:[collection]}=await uploadAndImportFromLibrary(page,resolve('../samples/central-outline.qbank'));
   expect(collection.id).toMatch(/^[a-f0-9-]{36}$/);
   const query=`INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id='${collection.id}' ON DUPLICATE KEY UPDATE status='approved';`;
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:query,stdio:['pipe','pipe','pipe']});

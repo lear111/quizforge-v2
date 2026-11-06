@@ -115,26 +115,8 @@ public class ImportService {
         catch (IOException cleanup) { LOG.warn("Unable to remove an import temporary file", cleanup); }
     }
 
-    /**
-     * 解析、校验并存储一个 .qbank（私人导入与题库广场共用，设计 04 第 6.1 节）：相同内容只存一份，
-     * 未知的拓展摘要登记为待审核。解析与规则调用在事务外完成；存储与 {@code sameTransaction} 在同一个事务中执行。
-     * {@code beforeStore} 在事务开始、写入任何内容之前执行（参数为包的分组名），用于先锁住调用方的行，保持加锁顺序
-     * （私人导入先锁用户的练习空间目录）。
-     */
-    public <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
-        return ingest(archive, beforeStore, sameTransaction, false, () -> {});
-    }
-
-    /** 队列入口跨题库归组，所有规则调用使用后台名额；提交前由调用方检查租约栅栏。 */
-    public <T> T ingestQueued(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
-        return ingest(archive, beforeStore, sameTransaction, true, () -> {});
-    }
-
+    /** 队列跨题库归组，所有规则使用后台名额；提交前复核租约栅栏。 */
     public <T> T ingestQueued(Path archive, Runnable guard, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction) {
-        return ingest(archive, beforeStore, sameTransaction, true, guard);
-    }
-
-    private <T> T ingest(Path archive, Consumer<String> beforeStore, Function<Ingested, T> sameTransaction, boolean queued, Runnable guard) {
         long started = System.nanoTime();
         QbankPackageParser parser = new QbankPackageParser(blobs::put);
         Map<String, Long> fileSizes = new LinkedHashMap<>();
@@ -143,15 +125,14 @@ public class ImportService {
         });
         var parsed = parser.finish(); // Includes C-04 digests and immutable author JSON.
         long parsedAt = System.nanoTime();
-        var validated = queued ? queuedValidation.validate(parsed.extensions(), parsed.banks(), guard) : null;
+        var validated = queuedValidation.validate(parsed.extensions(), parsed.banks(), guard);
         Map<String, Extension> extensions = new LinkedHashMap<>();
         for (ParsedExtension extension : parsed.extensions()) {
             for (String path : extension.files().keySet()) if (path.codePointCount(0, path.length()) > 255) {
                 throw new ImportFailure("INVALID_EXTENSION", "拓展文件路径超过存储上限：" + extension.path());
             }
             RulePackage spec = rules.spec(extension);
-            JsonNode capabilities = queued ? validated.get(extension.path()).capabilities()
-                    : rules.call(spec, "capabilities", Map.of());
+            JsonNode capabilities = validated.get(extension.path()).capabilities();
             if (!capabilities.path("canAiGrade").isBoolean() || !capabilities.path("canOutlineItems").isBoolean()) throw ImportRules.unavailable();
             extensions.put(extension.path(), new Extension(extension, spec, capabilities.path("canOutlineItems").asBoolean()));
         }
@@ -161,9 +142,9 @@ public class ImportService {
             beforeStore.accept(parsed.manifest().group());
             return sameTransaction.apply(persist(parsed.manifest().group(), extensions, prepared));
         });
-        LOG.info("题库包处理完成：parseMs={} validateMs={} storeMs={} banks={} queued={}",
+        LOG.info("题库包处理完成：parseMs={} validateMs={} storeMs={} banks={}",
                 (parsedAt - started) / 1_000_000, (validatedAt - parsedAt) / 1_000_000,
-                (System.nanoTime() - validatedAt) / 1_000_000, prepared.size(), queued);
+                (System.nanoTime() - validatedAt) / 1_000_000, prepared.size());
         return result;
     }
 
@@ -199,17 +180,14 @@ public class ImportService {
         for (var group : groups.entrySet()) {
             Extension extension = extensions.get(group.getKey());
             List<Object> data = group.getValue().stream().map(i -> authorQuestions.get(i).get("data")).toList();
-            var outcomes = validated == null ? null : validated.get(group.getKey()).questions();
-            if (outcomes == null) rules.batch(extension.spec(), "validateBank", data, null);
+            var outcomes = validated.get(group.getKey()).questions();
             List<Integer> missingOutline = group.getValue().stream().filter(i -> {
                 Placement placement = placements.get(authorQuestions.get(i).get("id"));
                 return placement == null || placement.outline() == null;
             }).toList();
             Map<Integer, Object> outlines = new HashMap<>();
             if (extension.canOutline() && extension.spec().outlineItemsDeclared() && !missingOutline.isEmpty()) {
-                List<JsonNode> generated = outcomes == null ? rules.batch(extension.spec(), "outlineBatch",
-                        missingOutline.stream().map(i -> authorQuestions.get(i).get("data")).toList(), "outlineItems")
-                        : missingOutline.stream().map(i -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash
+                List<JsonNode> generated = missingOutline.stream().map(i -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash
                                 .compute(authorQuestions.get(i).get("data"))).path("outlineItems")).toList();
                 for (int i = 0; i < missingOutline.size(); i++) {
                     if (!generated.get(i).isArray()) throw ImportRules.unavailable();
@@ -219,13 +197,8 @@ public class ImportService {
                     }
                 }
             }
-            List<?> scoreInput = data.stream().map(value -> {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("data", value); item.put("state", Map.of("status", "unanswered", "submitted", false)); return item;
-            }).toList();
-            List<JsonNode> scores = outcomes == null ? rules.batch(extension.spec(), "scoreBatch", scoreInput, "scores")
-                    : data.stream().map(value -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash.compute(value))
-                            .path("score")).toList();
+            List<JsonNode> scores = data.stream().map(value -> outcomes.get(cloud.treenewbee.quizforge.content.domain.RuleInputHash.compute(value))
+                    .path("score")).toList();
             for (int i = 0; i < group.getValue().size(); i++) {
                 int index = group.getValue().get(i);
                 Map<String, Object> author = authorQuestions.get(index);

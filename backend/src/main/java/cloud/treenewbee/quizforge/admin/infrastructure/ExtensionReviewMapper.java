@@ -96,7 +96,7 @@ public interface ExtensionReviewMapper {
 
     /** 当前公开版本或待审核版本中用到该拓展的题库包（未删除）；current 表示是当前公开的已审核版本。 */
     @Select("""
-            SELECT r.pack_id, r.revision, r.title, r.review_status, (p.approved_revision = r.revision) AS current
+            SELECT r.pack_id, r.revision, r.title, r.review_status, COALESCE(p.approved_revision = r.revision, FALSE) AS current
               FROM catalog_pack_revision r JOIN catalog_pack p ON p.id = r.pack_id
              WHERE p.status = 'active' AND JSON_CONTAINS(r.extension_digests, JSON_QUOTE(#{digestHex}))
                AND (r.revision = p.approved_revision OR r.review_status = 'pending')

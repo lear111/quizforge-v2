@@ -84,7 +84,7 @@ class ExamModeIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
 
     @Autowired JdbcTemplate jdbc;
     @Autowired org.mybatis.spring.SqlSessionTemplate sql;
@@ -166,6 +166,41 @@ class ExamModeIntegrationTest extends MySqlTestBase {
         ok(send("DELETE", exam(id) + "/exam", null));
         error(send("POST", bank("判断题") + "/exams", Map.of("requestId", "create", "durationMinutes", 1)), 409, "EXAM_DELETED");
         error(send("GET", exam(id), null), 404, "NOT_FOUND");
+    }
+
+    @Test void concurrentDifferentRequestsOnlyStartOneInProgressExam() throws Exception {
+        String collection = samples.get("判断题").collection();
+        var gate = new java.util.concurrent.CyclicBarrier(2);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> { gate.await(10, TimeUnit.SECONDS); return send("POST", bank("判断题") + "/exams", Map.of("requestId", "first", "durationMinutes", 30)); });
+            var second = executor.submit(() -> { gate.await(10, TimeUnit.SECONDS); return send("POST", bank("判断题") + "/exams", Map.of("requestId", "second", "durationMinutes", 45)); });
+            var responses = List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS));
+            assertThat(responses).extracting(HttpResponse::statusCode).containsExactlyInAnyOrder(200, 409);
+            var rejected = responses.stream().filter(row -> row.statusCode() == 409).findFirst().orElseThrow();
+            error(rejected, 409, "EXAM_IN_PROGRESS");
+            assertThat(JSON.readTree(rejected.body()).path("error").path("message").asString()).contains("作答中的考试");
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM exam_exam WHERE collection_id=? AND status='in_progress'", Integer.class, collection)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_context WHERE collection_id=? AND kind='exam'", Integer.class, collection)).isEqualTo(1);
+    }
+
+    @Test void defaultsRememberLatestDurationIncludingUnlimitedAndAreScopedToOwnedCollection() throws Exception {
+        assertThat(ok(send("GET", bank("判断题") + "/exams", null)).path("defaultDurationMinutes").asInt()).isEqualTo(60);
+        String timed = start("判断题", "timed", 25).path("id").asString();
+        ok(send("DELETE", exam(timed) + "/exam", null));
+        assertThat(ok(send("GET", bank("判断题") + "/exams", null)).path("defaultDurationMinutes").asInt()).isEqualTo(25);
+        clock.value = clock.value.plusSeconds(1);
+        String unlimited = start("判断题", "unlimited", null).path("id").asString();
+        ok(send("DELETE", exam(unlimited) + "/exam", null));
+        assertThat(ok(send("GET", bank("判断题") + "/exams", null)).path("defaultDurationMinutes").isNull()).isTrue();
+        assertThat(ok(send("GET", bank("单选题") + "/exams", null)).path("defaultDurationMinutes").asInt()).isEqualTo(60);
+    }
+
+    @Test void gradingExamDoesNotPreventStartingNextExamAndOtherCollectionsAreIndependent() throws Exception {
+        String id = start("判断题", "old", 10).path("id").asString();
+        jdbc.update("UPDATE exam_exam SET status='grading' WHERE id=? AND user_id=?", id, user);
+        assertThat(start("判断题", "new", 20).path("id").asString()).isNotEqualTo(id);
+        assertThat(start("单选题", "other", 30).path("id").asString()).isNotBlank();
     }
 
     @ParameterizedTest @ValueSource(ints = {

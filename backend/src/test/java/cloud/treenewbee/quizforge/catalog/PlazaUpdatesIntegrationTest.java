@@ -44,7 +44,7 @@ import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.catalog.application.CatalogReviewService;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
-import cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService;
+import cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports;
 import cloud.treenewbee.quizforge.practice.application.PracticeLifecycleJobs;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import tools.jackson.databind.JsonNode;
@@ -84,7 +84,7 @@ class PlazaUpdatesIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired LegacyPracticeImportService imports;
+    @Autowired QueuedPracticeImports imports;
     @Autowired CatalogMapper catalog;
     @Autowired CatalogReviewService reviews;
     @Autowired PracticeLifecycleJobs jobs;

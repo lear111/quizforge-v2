@@ -2,6 +2,7 @@ import {test,expect as baseExpect} from '@playwright/test';
 import {mkdir,readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByForm} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test('account quota cards reflect real imports and deleting an owned bank releases space',async({page},info)=>{
@@ -14,12 +15,8 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   await page.goto('/');
   await expect(page.locator('.quota-card')).toHaveCount(1);
   await expect(page.locator('.quota-number').first()).toHaveText('0 B / 256.00 MiB');
-  const response=await page.request.post('/api/library/import',{
-    headers:{Origin:new URL(page.url()).origin},
-    multipart:{file:{name:'basic-types.qbank',mimeType:'application/octet-stream',buffer:await readFile(resolve('../samples/basic-types.qbank'))}},
-  });
-  expect(response.status()).toBe(200);
-  const {collections}=await response.json();expect(collections).toHaveLength(5);
+  const {packId,collections}=await uploadAndImportFromLibrary(page);expect(collections).toHaveLength(5);
+  await page.goto('/');
   const usage=async()=>{const r=await page.request.get('/api/account/quota');expect(r.status()).toBe(200);return r.json();};
   const before=await usage();expect(before.storage.usedBytes).toBeGreaterThan(0);expect(before.dailyDownload.usedBytes).toBe(0);
   const catalog=await page.request.get('/api/catalog');expect(catalog.status()).toBe(200);
@@ -49,5 +46,9 @@ test('account quota cards reflect real imports and deleting an owned bank releas
   expect((await deleted).status()).toBe(204);
   await expect(page.locator('#library-manage-dialog')).not.toBeVisible();
   await expect(page.locator(`.library-item[data-item-id="${collections[0].id}"]`)).toHaveCount(0);
-  const after=await usage();expect(after.storage.usedBytes).toBeLessThan(before.storage.usedBytes);expect(after.dailyDownload.usedBytes).toBe(0);
+  const after=await usage();expect(after.storage.usedBytes).toBe(before.storage.usedBytes);
+  // 原文件或任一实例仍在时继续计费；最后一个引用删除才释放。
+  for(const collection of collections.slice(1))expect((await page.request.delete(`/api/collections/bank/${collection.id}`,{headers:{Origin:new URL(page.url()).origin}})).status()).toBe(204);
+  expect((await page.request.delete(`/api/library/uploads/${packId}`,{headers:{Origin:new URL(page.url()).origin}})).status()).toBe(204);
+  expect((await usage()).storage.usedBytes).toBe(0);expect(after.dailyDownload.usedBytes).toBe(0);
 });

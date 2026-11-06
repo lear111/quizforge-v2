@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "loadtest/seed"))
 from seed import api_client, local_url, require
+from queued_import import upload_and_import
 from answers import sample_banks
 
 
@@ -61,11 +62,11 @@ def main():
     cookie = headers["Set-Cookie"].split(";", 1)[0]
     archive = ROOT / "samples/loadtest-300.qbank"
     answers = next(iter(sample_banks(archive).values()))["answers"]
-    boundary = "qf-" + secrets.token_hex(16)
-    upload = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="loadtest-300.qbank"\r\nContent-Type: application/zip\r\n\r\n'.encode()
-              + archive.read_bytes() + f'\r\n--{boundary}--\r\n'.encode())
-    status, body, _ = request("/api/library/import", upload, cookie, "multipart/form-data; boundary=" + boundary)
-    require(status, body)
+    def approve(pack):
+        sql = ("UPDATE admin_extension_review e JOIN catalog_pack_revision r ON r.pack_id='" + pack + "' "
+               "SET e.status='approved' WHERE JSON_CONTAINS(r.extension_digests,JSON_QUOTE(LOWER(HEX(e.digest))));")
+        subprocess.run(compose + ["exec", "-T", "mysql", "sh", "-c", 'exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'], input=sql,text=True,capture_output=True,check=True)
+    body = upload_and_import(request, archive.read_bytes(), archive.name, cookie, approve)
     collection = str(uuid.UUID(body["collections"][0]["id"]))
     sql = ("INSERT INTO admin_extension_review(digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' "
            "FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id "

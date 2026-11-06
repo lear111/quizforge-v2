@@ -23,6 +23,15 @@ public interface QuotaMapper {
     @Select("SELECT storage_bytes, daily_download_bytes FROM quota_defaults WHERE id = 1")
     Defaults defaults();
 
+    /** 先建立明细行，避免两个用户的首次明细读取在同一个间隙上等待插入。 */
+    @Insert("""
+            INSERT INTO quota_storage_item (user_id, category, object_id, collection_id, size_bytes)
+            VALUES (#{userId}, #{category}, #{objectId}, #{collectionId}, 0)
+            ON DUPLICATE KEY UPDATE user_id = quota_storage_item.user_id
+            """)
+    int ensureItem(@Param("userId") String userId, @Param("category") String category,
+                   @Param("objectId") String objectId, @Param("collectionId") String collectionId);
+
     @Select("SELECT size_bytes FROM quota_storage_item WHERE user_id = #{userId} AND category = #{category} AND object_id = #{objectId} FOR UPDATE")
     Optional<Long> item(@Param("userId") String userId, @Param("category") String category, @Param("objectId") String objectId);
 
