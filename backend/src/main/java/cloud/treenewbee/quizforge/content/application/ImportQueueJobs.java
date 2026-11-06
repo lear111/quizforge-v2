@@ -56,6 +56,9 @@ public class ImportQueueJobs {
     private final AccountAdminService admins;
     private final AdminAuditService audit;
     private final NotificationService notifications;
+    /** 公开包新版本自动通过（管理员上传）时的题库更新通知（设计 04 第 3.3 节）。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    private cloud.treenewbee.quizforge.catalog.application.PackUpdateNotices updateNotices;
     private final JsonMapper json;
     private final cloud.treenewbee.quizforge.rules.RuleRunnerClient runner;
     private final boolean enabled;
@@ -331,6 +334,7 @@ public class ImportQueueJobs {
         if (!(admin || "private".equals(info.visibility()))) return;
         if (catalog.decide(pack, revision, "approved", admin ? user : null, null, now()) == 1) {
             catalog.approve(pack, revision, now());
+            updateNotices.approved(pack, revision);
             metadata.notified(pack, revision, "approved");
             event(pack, revision, "validation-approved", Map.of("adminUpload", admin));
             notifications.publishSystem(user, "题库审核通过", "你的题库包已通过校验与审核，可以导入练习空间。");

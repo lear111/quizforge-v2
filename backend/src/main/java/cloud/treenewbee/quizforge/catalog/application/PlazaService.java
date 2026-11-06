@@ -64,6 +64,10 @@ public class PlazaService {
         if (plaza.favorite(user,id,clock.instant()) == 0 && plaza.isFavorite(user,id) == 0) throw notFound();
     }
     public void unfavorite(String user,String id) { plaza.unfavorite(user,id); }
+    /** 收藏者确认已看到当前已审核版本：收藏列表中的“有新版本”提示消失。只改自己的书签。 */
+    public void favoriteSeen(String user,String id) {
+        if (plaza.seen(user,id) == 0 && plaza.isFavorite(user,id) == 0) throw notFound();
+    }
     private static ApiException invalid() { return new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","分页或搜索参数无效"); }
     private static ApiException notFound() { return new ApiException(HttpStatus.NOT_FOUND,"PACK_NOT_FOUND","题库包不存在或作者已删除"); }
 }

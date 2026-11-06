@@ -40,6 +40,9 @@ public class PlazaController {
     public Object favorites(Principal user,@RequestParam(required=false) String after) { return plaza.favorites(user.getName(),after); }
     @PutMapping("/api/plaza/packs/{id}/favorite")
     public ResponseEntity<Void> favorite(Principal user,@PathVariable String id) { plaza.favorite(user.getName(),id); return ResponseEntity.noContent().build(); }
+    /** 收藏中的“有新版本”：确认已看到当前已审核版本。 */
+    @PutMapping("/api/plaza/packs/{id}/favorite/seen")
+    public ResponseEntity<Void> favoriteSeen(Principal user,@PathVariable String id) { plaza.favoriteSeen(user.getName(),id); return ResponseEntity.noContent().build(); }
     @DeleteMapping("/api/plaza/packs/{id}/favorite")
     public ResponseEntity<Void> unfavorite(Principal user,@PathVariable String id) { plaza.unfavorite(user.getName(),id); return ResponseEntity.noContent().build(); }
 }

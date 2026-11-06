@@ -124,4 +124,6 @@ MySQL + 真实 rule-runner 集成测试覆盖五种题型导入/读题、并发 
 
 ## 广场与收藏（广场 2/4）
 
-`public/plaza/plaza.js` 使用 `/api/plaza/packs` 列表/详情/原文件/收藏/`imports`；`public/library/library.js` 增加 `/api/library/favorites` 与取消收藏。广场到练习仅创建实例；旧 catalog `/practice` 接口已删除。版本自动切换、更新通知、评论和举报不在本切片。
+`public/plaza/plaza.js` 使用 `/api/plaza/packs` 列表/详情/原文件/收藏/`imports`；`public/library/library.js` 增加 `/api/library/favorites` 与取消收藏。广场到练习仅创建实例；旧 catalog `/practice` 接口已删除。评论和举报不在本切片。
+
+题库广场 3/4：练习空间题库列表按 `banks[].update` 显示“有新版本 / 作者已移除 / 作者已删除”角标，概览在标题下显示对应提示（`practice/library/update-labels.js`，只读历史不显示）；“我的题库”的收藏分区按 `seenRevision` 显示新版本号与更新说明，“知道了”调用 `PUT /api/plaza/packs/{id}/favorite/seen`；发布新版本的表单中“更新说明”为必填。

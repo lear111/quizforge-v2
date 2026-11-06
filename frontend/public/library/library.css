@@ -27,3 +27,4 @@
   .library-heading { align-items:stretch; flex-direction:column; }
   .library-card,.library-detail { padding:18px; }
 }
+.favorite-update{margin:8px 0;padding:10px 12px;border-radius:10px;background:#fff7e6;color:#8a5a00;font-size:13px;line-height:1.6}.favorite-update .favorite-notes{margin:4px 0 8px;white-space:pre-wrap;color:var(--text,#4a4955)}

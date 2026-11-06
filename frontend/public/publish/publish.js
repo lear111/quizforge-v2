@@ -162,7 +162,8 @@ function time(value) {
 
 function revisionForm(pack, latest) {
   const archive = el('input', { name: 'archive', type: 'file', accept: '.qbank', 'aria-label': '新版本题库包' });
-  const notes = el('textarea', { name: 'releaseNotes', maxlength: '2000', rows: '3', placeholder: '更新说明：会随题库更新通知发送给已加入的用户' });
+  const notes = el('textarea', { name: 'releaseNotes', maxlength: '2000', rows: '3', required: true,
+    placeholder: '必填：本版本改了什么。审核通过后会随题库更新通知发给已导入这个题库包的用户' });
   const keep = latest.screenshots.length ? el('div', { class: 'field' }, el('span', { class: 'label', text: '沿用上一版本的截图' }),
     el('div', { class: 'shot-grid' }, ...latest.screenshots.map((shot) => el('figure', {},
       el('img', { src: `/api/catalog/files/${encodeURIComponent(shot.id)}`, alt: shot.name, loading: 'lazy' }),
@@ -172,7 +173,7 @@ function revisionForm(pack, latest) {
   const form = el('form', { class: 'revision-form', novalidate: true, 'data-pack': pack.id },
     el('div', { class: 'field' }, el('label', { text: '新版本题库包（.qbank，整包）' }), el('div', { class: 'dropzone' }, archive,
       el('small', { text: '包内题库按 bank.json 的 UUID 对应：UUID 相同为更新，消失为移除，多出为新增。' }))),
-    el('div', { class: 'field' }, el('label', { text: '更新说明' }), notes),
+    el('div', { class: 'field' }, el('label', { text: '更新说明（必填）' }), notes),
     ...infoFields(latest), keep, screenshotsField(), rightsField(), progress, submit);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -181,6 +182,7 @@ function revisionForm(pack, latest) {
       const kept = [...form.querySelectorAll('input[name="keepScreenshots"]:checked')].length;
       checkScreenshots(form, kept);
       if (!archive.files.length) throw new RequestError('PACK_INFO_INVALID', '请选择新版本的 .qbank 题库包');
+      if (!notes.value.trim()) { notes.focus(); throw new RequestError('PACK_INFO_INVALID', '请填写更新说明'); }
       if (!form.elements.namedItem('rights').checked) throw new RequestError('PACK_INFO_INVALID', '请确认你有权分享这些题库');
       submit.disabled = true; progress.hidden = false;
       const result = await upload(`/api/catalog/packs/${encodeURIComponent(pack.id)}/revisions`, new FormData(form), progress);

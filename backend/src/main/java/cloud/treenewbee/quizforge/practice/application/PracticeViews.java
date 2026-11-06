@@ -13,9 +13,14 @@ public final class PracticeViews {
     public record QuestionSummary(String id, String title, Extension type, String outlineLabel,
             JsonNode outlineItems, JsonNode listening, Integer outlineGroupIndex, String outlineGroupName) {}
     public record Availability(boolean available, String code, String message) {}
-    public record Bank(String id, String kind, String title, String group, int questionCount, Availability availability, String path) {
+    /** update：来自题库广场的实例的版本状态（PracticeUpdates.Update）；私人题库为 null。 */
+    public record Bank(String id, String kind, String title, String group, int questionCount, Availability availability, String path,
+            PracticeUpdates.Update update) {
         public Bank(String id, String kind, String title, String group, int questionCount, Availability availability) {
-            this(id, kind, title, group, questionCount, availability, id);
+            this(id, kind, title, group, questionCount, availability, id, null);
+        }
+        public Bank(String id, String kind, String title, String group, int questionCount, Availability availability, String path) {
+            this(id, kind, title, group, questionCount, availability, path, null);
         }
     }
     public record Catalog(List<Bank> banks, List<Object> extensions, Map<String, List<String>> groups,
@@ -26,7 +31,7 @@ public final class PracticeViews {
     }
     public record Overview(String id, String kind, String title, String revision, String description,
             JsonNode features, JsonNode listening, List<QuestionSummary> questions, Map<String, State> states,
-            Availability availability, boolean readOnly) {}
+            Availability availability, boolean readOnly, PracticeUpdates.Update update) {}
     public record Question(String id, String title, JsonNode data, Integer outlineGroupIndex, String outlineGroupName) {}
     public record Capabilities(boolean canSave, boolean canSubmit, boolean canRetry, boolean canReview, boolean canAiGrade, boolean canWhiteboard) {}
     public record QuestionResponse(Question question, State state, JsonNode draft, Stamp stamp,
