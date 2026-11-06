@@ -162,7 +162,7 @@ CREATE TABLE auth_session (                        -- 浏览器会话（ADR-005�
   KEY idx_session_expiry (absolute_expires_at)     -- 定时清理
 );
 
-CREATE TABLE auth_device (                         -- 设备令牌（C-05），可从旧库直接迁移
+CREATE TABLE auth_device (                         -- 设备令牌（C-05）；旧令牌不迁移（FR-09 v1.3）
   id            CHAR(36)     NOT NULL,
   user_id       CHAR(36)     NOT NULL,
   token_hash    BINARY(32)   NOT NULL,
@@ -621,7 +621,7 @@ SELECT 1
 | 旧数据 | 新表 | 说明 |
 | --- | --- | --- |
 | Hub `users`、`user_phones`、`user_blocks` 等 | `account_*` | 保留原 ID 与密码哈希 |
-| Hub `connect_devices` | `auth_device` | 令牌哈希原样迁入 |
+| Hub `connect_devices` | — | 不迁移（FR-09 v1.3），客户端重新授权一次 |
 | Hub `packs`、`files`、审核相关表 | `catalog_*` | 文件复制到 `blobs/` 并登记 `content_blob` |
 | 练习库 `cloud_extension_reviews` | `admin_extension_review` | 摘要原样迁入，用新实现重算校验 |
 | 工作区 `extensions/*` | `content_extension_package` / `_file` | 按 C-04 算法计算摘要，相同则共享 |

@@ -30,6 +30,9 @@ server:
   port: ${QF_PORT:8080}
   # The app sits behind Nginx; trust X-Forwarded-* only from it (deploy/nginx).
   forward-headers-strategy: native
+  tomcat:
+    # 拒绝超限请求时读完请求体再响应，客户端才能收到 413（AI 网关请求上限 13 MiB，Nginx 限制 14 MiB）。
+    max-swallow-size: 16MB
   servlet:
     encoding:
       charset: UTF-8

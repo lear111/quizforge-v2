@@ -1,6 +1,6 @@
 # 遗留契约清单
 
-> **文档版本：** v0.1（初稿，待评审）
+> **文档版本：** v0.3（补全 C-05 / V-1，记录作者决定）
 > **日期：** 2026-10-27
 > **依据：** [需求 1.3 节 C-01～C-06](../requirements/01-requirements.md)，[ADR-006](../adr/ADR-006-frontend-reuse.md)
 > **源码版本：** `quizforge_web` @ `4522bb8`，`quizforge_hub` @ `83d6dfd`
@@ -140,45 +140,197 @@
 
 ---
 
-## C-05 Windows / Android 客户端调用的 Hub 接口
+## C-05 Windows / Android 客户端调用的 Hub 接口（V-1，2026-11-05 补全）
 
-**出处：** `quizforge_hub/java-hub/.../account/DeviceService.java`、`DeviceController.java`、`catalog/LocalImportService.java`、`ai/AiController.java`；`docs/JAVA_ADMIN_AI_PRACTICE.md`
+**出处（以代码为准）：** 服务端 `quizforge_hub/java-hub/.../account/DeviceController.java`、`DeviceService.java`、`AccountHttp.java`、`ai/AiController.java`、`ai/AiGateway.java`、`ai/AiPoints.java`、`ai/AiUpstreams.java`、`catalog/LocalImportService.java`、`catalog/PublicHubController.java`、`delivery/RequestLimit.java`、`delivery/TrafficService.java`；协议文档 `docs/HUB_CONNECT_AI.md`、`docs/HUB_ANDROID_IMPORT.md`。客户端 `quizforge_web/core/server/host/ai/hub-connection.js`、`ai-provider.js`、`http/admin-contact.js`、`core/desktop/windows/HubImportRequest.cs`、`HubPackageImport.cs`；`quizforge_android/.../HubConnection.java`、`HubImportClient.java`、`AiGateway.java`。
 
-### 设备授权（类似 OAuth 2.0 授权码 + PKCE）
+未录制旧服务的真实响应（任务要求不连接旧平台）：结构来自上述源码与它们的测试（`AccountHttpTest`、`AiHttpTest`、`LocalImportHttpTest`、`hub-connection.test.mjs`）。
 
-1. 客户端在浏览器中打开 `GET /connect/authorize`，参数包括 `v=1`、`client`、`redirect_uri`、`state`、`code_challenge`、`code_challenge_method=S256`、`device_name`。
-   - `redirect_uri` 只允许 `http://127.0.0.1:<端口>/hub/connect/callback` 或 `http://localhost:<端口>/hub/connect/callback`，端口 ≥ 1024。
-   - 授权请求 10 分钟内有效。
-2. 用户登录并确认后（`POST /api/connect/authorize`），浏览器带着一次性授权码跳回本机回调地址。
-3. 客户端调用 `POST /api/connect/token`，用授权码和 `code_verifier` 换取设备令牌。
-4. 设备令牌格式为 `qfd_<随机串>`；**数据库中只存 SHA-256 哈希**（`connect_devices.token`）。
-5. 规则：每个账号最多 10 台设备（超出时撤销最久未用的）；180 天未使用自动失效；账号被封禁后立即失效。
+### 总览：已发布客户端实际调用的接口
 
-### 设备令牌可调用的接口
+客户端的服务器地址**写死**为 `https://quizforge.treenewbee.cloud`（Windows 的 `HubPackageImport.Origin`、`hub-connection.js` 的 `HUB_ORIGIN`、Android 的 `HubImportClient.ORIGIN`），不读配置；发布版没有覆盖入口。
 
-| 接口 | 用途 |
+| 接口 | 认证 | Web/Windows | Android |
+| --- | --- | --- | --- |
+| `GET /connect/authorize`（系统浏览器打开） | 浏览器会话 | ✓ | ✓ |
+| `POST /api/connect/token` | 授权码 + PKCE | ✓ | ✓ |
+| `GET /api/connect/me` | 设备令牌 | ✓ | ✓ |
+| `POST /api/connect/redeem` | 设备令牌 | ✓ | ✓ |
+| `POST /api/connect/logout` | 设备令牌 | ✓ | ✓ |
+| `POST /api/ai/v1/chat/completions` | 设备令牌 | ✓ | ✓ |
+| `GET /api/packs/{id}/local-import?revision=` | 匿名 | ✓ | ✓ |
+| `GET /api/packs/{id}/download?revision=&sha256=` | 匿名 | ✓ | ✓ |
+| `GET /api/admin-contact` | 匿名 | ✓（设置页联系方式） | — |
+| 链接 `/manage/#library`（题库广场入口，浏览器打开） | — | ✓ | ✓ |
+
+**只有 Hub 自己的网页调用、已发布客户端不调用：** `POST /api/connect/authorize`（授权页）、`GET/PUT/DELETE /api/connect/devices*`（账号页）、`GET /api/config`、`GET /api/java/capabilities`（Hub 前端 `hub.js`）、`GET /api/downloads`、`/download/files/*`。
+
+### 通用规则
+
+- **错误格式有两种：** 设备与 AI 接口为 `{"error":{"code":"…","message":"…"}}`；固定版本导入为 `{"error":"文字","code":"LOCAL_IMPORT_*"}`（`error` 是字符串，客户端读顶层 `code`）。
+- **限频：** 每分钟固定窗口，内存计数（`RequestLimit`），键为“分组 + 用户 ID”或“分组 + IP”；超限 429，文字“操作太频繁，请稍后再试”。计数表满 10000 项时 503。
+- **JSON 请求体（`AccountHttp.body`）：** 必须是 `application/json`（否则 415）、最大 24000 字节（否则 413）、重复键或语法错误 400、非对象 400。这些错误在设备接口中的错误码是 `CONNECT_REQUEST_REJECTED`。
+- **同源校验：** 只用于浏览器调用的 `POST /api/connect/authorize` 与 `PUT/DELETE /api/connect/devices/{id}`；设备接口不校验 Origin（客户端不发送）。
+- 令牌无效的统一响应：401 `DEVICE_TOKEN_INVALID`“设备登录已失效，请在 AI 设置中重新登录”。客户端收到 401（不看错误码）就清除本地令牌。
+
+### 1. `GET /connect/authorize`（浏览器页面）
+
+| 项目 | 内容 |
 | --- | --- |
-| `GET /api/connect/me` | 当前设备对应的用户信息 |
-| `GET /api/connect/devices`、`PUT/DELETE /api/connect/devices/{id}` | 设备列表、改名、撤销 |
-| `POST /api/connect/logout` | 设备退出 |
-| `POST /api/connect/redeem` | 兑换 AI 额度 |
-| `POST /api/ai/v1/chat/completions` | AI 网关（OpenAI 兼容格式），**只接受设备 Bearer**，浏览器 Cookie 不可用 |
+| 参数 | **恰好**以下 7 个、各一次：`v=1`；`client=web\|android`；`redirect_uri`；`state`（`[A-Za-z0-9._~-]{22,256}`）；`code_challenge`（`[A-Za-z0-9_-]{43}`）；`code_challenge_method=S256`；`device_name`（去控制字符后 1–40 个码点）。或者只有 `request=<64 位十六进制>`（登录后回到页面） |
+| `redirect_uri` | `web`：`^http://(127\.0\.0\.1\|localhost):<1024–65535>/hub/connect/callback$`；`android`：恰好 `quizforge://hub/connect` |
+| 限频 | `connect-authorize` 30/分钟（IP） |
+| 未登录 | 303 到登录页，登录后回到 `?request=<key>` |
+| 已登录 | 200 HTML，确认页带 `data-request="<key>"`；请求 10 分钟有效，最多 5000 个（超出 503） |
+| 错误 | HTML 错误页（不重定向）：400“连接请求无效，请回到 QuizForge 重新点击登录”；`request` 过期 400；404 `OFFICIAL_AI_DISABLED`（未开放，也是 HTML） |
 
-### 固定版本导入
+### 2. `POST /api/connect/authorize`（确认页，浏览器会话 + 同源）
 
-- `GET /api/packs/{id}/local-import?revision=...`：返回固定版本清单，不扣流量；版本变化时返回 409。
-- `GET /api/packs/{id}/download?revision=...&sha256=...`：匿名下载已审核公开的 `.qbank`，按站点 / IP 预算扣流量，上限 64 MiB，并校验实际字节。
-- 错误码使用 `LOCAL_IMPORT_*` 前缀。
-- 由开关 `LOCAL_IMPORT_ENABLED` 控制。
+- 请求 `{"request":"<key>","decision":"allow"|"deny"}`；限频 `connect-decision` 20/分钟（用户）。
+- 成功 200 `{"redirect":"<redirect_uri>?code=<43 位 base64url>&state=<state>"}` 或 `{"redirect":"<redirect_uri>?error=access_denied&state=<state>"}`，由页面脚本跳转（**不是** 302，与 `HUB_CONNECT_AI.md` 3.2 不同）。
+- 授权码 32 字节随机、120 秒、一次性，绑定用户、`client`、`redirect_uri`、`code_challenge`、设备名；库中只存 SHA-256。
+- 错误（`CONNECT_REQUEST_REJECTED`）：401 请先登录；403 来源不受信任；403 账号已停用；410 请求已过期；400 请选择允许或拒绝。
 
-### 软件下载
+### 3. `POST /api/connect/token`
 
-- `GET /download` 页面、`GET /api/downloads` 清单、`GET|HEAD /download/files/{name}` 安装包下载。
+- 请求体**恰好** `{"v":1,"client":"web|android","code":"…","code_verifier":"…","redirect_uri":"…"}`，`Content-Type: application/json`；限频 `connect-token` 20/分钟（IP）。
+- 校验：`code` 为 `[A-Za-z0-9_-]{43}`；`code_verifier` 为 `[A-Za-z0-9._~-]{43,128}`；未过期；`client`、`redirect_uri` 与签发时一致；`base64url(SHA-256(verifier)) == challenge`；账号未封禁。
+- 成功 200：`{"token":"qfd_<43 位 base64url>","device":{"id":"…","name":"…","client":"web","created":"2026-11-05T01:02:03.000Z"},"user":{"name":"…"}}`。
+- 失败 400 `INVALID_GRANT`。**只要授权码存在就被删除**（失败也作废）；并发兑换只有一个成功。
+- 同一账号最多 10 个有效设备，按 `last_used DESC, created DESC` 保留前 10 个，其余撤销。
+- **客户端依赖：** `token` 必须匹配 `^qfd_[A-Za-z0-9_-]{43}$`；`user.name`、`device.name` 必须是字符串（否则视为无效）；`device.id` 任意（转字符串保存）。
+
+### 4. 设备令牌
+
+- 请求头必须匹配 `Authorization: Bearer qfd_[A-Za-z0-9_-]{43}`；库中只存 SHA-256；Cookie 无效。
+- 已撤销、连续 180 天未使用、账号被封禁都返回 401；距上次超过 60 秒才更新 `last_used`。
+
+### 5. `GET /api/connect/me`
+
+200：`{"user":{"name":"…"},"device":{"id":"…","name":"…","client":"web","created":"…"},"ai":{"enabled":true,"model":"QuizForge 官方模型","vision":true,"balance":9876}}`。
+
+- `ai.enabled` = 总开关打开且有可用 Key；`balance` 单位 0.0001 元。不含邮箱、手机号。
+- **客户端依赖：** 401 视为已退出；缺 `ai` 或非 2xx 显示“暂不可用”；只读 `ai.enabled`（必须严格为 `true`）、`ai.model`（截到 80 字）、`ai.balance`（非负安全整数，否则按 0）。
+
+### 6. `POST /api/connect/redeem`
+
+- 请求 `{"code":"…"}`；限频 `ai-redeem` 10/分钟（用户，超限 429 `CONNECT_REQUEST_REJECTED`）。
+- 成功 200 `{"added":50000,"balance":92000}`。
+- 400 `REDEEM_CODE_INVALID`“兑换码无效、已使用或已过期”；429 `REDEEM_LOCKED`（1 小时内失败 10 次）；401 见上。缺少 `code` 或不是字符串也按无效计一次失败。
+- **客户端依赖：** 只认这两个错误码（文字用客户端自己的）；其他情况要求 `balance` 是整数，否则“兑换没有完成”。
+
+### 7. `POST /api/connect/logout`
+
+成功 204，无响应体，撤销当前设备。令牌无效 401。客户端不等待结果，无论成败都删除本地令牌。
+
+### 8. 设备列表（账号页，只接受浏览器会话）
+
+- `GET /api/connect/devices` → `{"devices":[{"id","name","client","created","lastUsed"}]}`，只列未撤销且 180 天内用过的，按最后使用倒序。
+- `PUT /api/connect/devices/{id}` 请求 `{"name":"…"}` → `{"device":{…}}`；`DELETE` → `{"ok":true}`。限频 `connect-devices` 30/分钟（用户）。不存在或不属于本人 404（`CONNECT_REQUEST_REJECTED`）；未登录 401。
+
+### 9. `POST /api/ai/v1/chat/completions`
+
+| 项目 | 内容 |
+| --- | --- |
+| 认证 | 设备令牌（Cookie 无效） |
+| 请求头 | `application/json`，否则 415 `AI_REQUEST_UNSUPPORTED` |
+| 请求体 | 上限 13 MiB（超过 413 `AI_REQUEST_TOO_LARGE`）；重复键或非法 JSON 400 |
+| 允许的字段 | `model`（必须 `quizforge-official`）、`messages`（1–50 条，每条只有 `role`∈system/user/assistant 与 `content`）、`max_tokens`（1–8192 整数，缺省 8192）、`temperature`（0–2）、`response_format`（`type`∈json_object/json_schema/text）、`stream`（**只能是 `false`**）；其他字段 400 `AI_REQUEST_UNSUPPORTED` |
+| 内容 | 字符串，或部件数组：`{"type":"text","text":…}`、`{"type":"image_url","image_url":{"url":"data:image/(png\|jpeg\|webp);base64,…","detail"?:…}}`；不接受外部 URL |
+| 图片 | 单张 ≤ 4 MiB、合计 ≤ 12 MiB（解码后），超过 413 |
+| 并发 | 每用户 2，全站 `AI_SITE_CONCURRENCY`（默认 2，最大 8）；超出 429 `AI_BUSY`，不排队 |
+| 余额 | 小于 1 个单位 402 `AI_BALANCE_EXHAUSTED`，不调用上游 |
+| 上游 | 最多试 3 个 Key；每个 90 秒；全部被限流 429 `AI_BUSY`；其他失败 502 `AI_UPSTREAM_FAILED`；都不扣费。没有可用 Key 503 `AI_DISABLED`；总开关关闭 404 `OFFICIAL_AI_DISABLED` |
+
+成功 200：
+
+```json
+{"id":"qf-<uuid>","object":"chat.completion","model":"quizforge-official",
+ "choices":[{"index":0,"message":{"role":"assistant","content":"…"},"finish_reason":"stop"}],
+ "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},
+ "quizforge":{"cost":60,"balance":41940}}
+```
+
+`choices` 与 `usage` 取自上游，其他标识去掉。扣费 = `ceil((输入 × 输入单价 + 输出 × 输出单价) / 1000000)`，至少 1；旧平台余额扣到 0 为止，`cost` 是实际扣到的数。
+
+**客户端依赖（Web `ai-provider.js`、Android `AiGateway.java`）：**
+
+- 只发 `stream:false`（官方额度 `outputMode=json`，即 `response_format:{type:"json_object"}`）。**旧网关和旧客户端都没有流式。**
+- 读 `choices[0].message.content`（字符串或文本部件数组，非空、≤ 24000 字符）；`finish_reason` 为空或 `stop`；`content_filter` 或 `message.refusal` 视为拒答；响应最大 2 MiB。
+- 读 `usage.*` 中的非负整数；`id` 须匹配 `[A-Za-z0-9._:-]{0,200}`，否则忽略。不读 `quizforge`。
+- 错误分类：401 或 `DEVICE_TOKEN_INVALID` → 需要登录（清令牌）；402 或 `AI_BALANCE_EXHAUSTED` → 余额；`AI_BUDGET_EXHAUSTED` → 预算（旧服务已不再返回）；`AI_BUSY` 或 429 → 稍后重试；`AI_UPSTREAM_FAILED` 或 502 → 上游；413 或 `AI_REQUEST_TOO_LARGE` → 超限；404、503 → 不可用；其他 → 配置错误。
+
+### 10. `GET /api/packs/{id}/local-import?revision=<n>`
+
+- 匿名；限频 `local-import-manifest` 60/分钟（IP）；不扣流量。其他方法 405。
+- 200（`application/json`，≤ 32 KiB）：`{"schemaVersion":1,"pack":{"id":"<小写 UUID>","revision":1,"title":"…"},"archive":{"name":"xxx.qbank","size":123,"sha256":"<64 位小写十六进制>"}}`。
+
+### 11. `GET /api/packs/{id}/download?revision=<n>&sha256=<hex>`
+
+- 匿名；限频 `download` 30/分钟（IP）；预算：站点每月 150 GB、每 IP 每天 1 GiB（超出 429 `LOCAL_IMPORT_TRAFFIC_LIMIT`）；成功时下载数 +1。
+- 200：`Content-Type: application/octet-stream`、`Content-Length` 必须等于 `size`、**不得有** `Content-Encoding`、`Cache-Control: private, no-store`、`Content-Disposition: attachment; filename="question-bank.qbank"; filename*=UTF-8''…`；响应体为原始文件。
+
+### 12. 固定版本导入的公共规则
+
+| HTTP | `code` | 条件 |
+| --- | --- | --- |
+| 404 | `LOCAL_IMPORT_DISABLED` | 未开启 |
+| 400 | `LOCAL_IMPORT_REQUEST_INVALID` | `id` 不是小写 UUID；参数集合不恰好是 `revision`（下载再加 `sha256`）；参数重复；查询串含 `[a-z0-9=&-]` 以外的字符（因此拒绝百分号编码）；`revision` 不是 `[1-9][0-9]{0,15}` 或超过 2^53−1；`sha256` 不是 64 位小写十六进制 |
+| 405 | `LOCAL_IMPORT_REQUEST_INVALID` | 非 GET |
+| 429 | `LOCAL_IMPORT_RATE_LIMITED` | 限频 |
+| 404 | `LOCAL_IMPORT_UNAVAILABLE` | 不存在、未公开、没有附件（对作者也一样） |
+| 409 | `LOCAL_IMPORT_REVISION_CHANGED` | 版本或 SHA-256 与当前不符（不自动换版本） |
+| 422 | `LOCAL_IMPORT_FORMAT_UNSUPPORTED` | 文件名不以 `.qbank` 结尾 |
+| 413 | `LOCAL_IMPORT_TOO_LARGE` | 超过 64 MiB |
+| 503 | `LOCAL_IMPORT_SERVER_ERROR` | 附件信息无效 |
+
+**客户端依赖：** 不跟随重定向（3xx 直接失败，所以不能用 302 下载）；JSON 响应须为 `application/json`，下载须为 `application/octet-stream` 且不压缩；`pack.id`、`pack.revision` 必须与链接一致；`pack.title` 是字符串；`archive.name` 以 `.qbank` 结尾（Android 还要求 ≤ 255 字符、不含路径分隔符和控制字符）；`schemaVersion`、`revision`、`size` 必须是 JSON 整数；下载后校验长度和 SHA-256；全程 180 秒。匿名请求，不带 Cookie 和令牌。
+
+### 13. `quizforge://hub/import` 链接
+
+固定为 `quizforge://hub/import?v=1&pack=<小写 UUID>&revision=<正整数>`；客户端要求整串匹配 `[a-z0-9:/?=&-]+`、恰好 3 个参数、长度 ≤ 1024。网页不加入任何其他内容，点击后只提示已请求打开。
+
+### 14. `GET /api/admin-contact`（V2 不实现，见作者决定 3）
+
+匿名，200 `{"content":"…","revision":0}`（`content` ≤ 4000 字符，`revision` 非负安全整数，≤ 32 KiB）。其他情况客户端显示“暂时无法读取联系方式”。
+
+### 15. `GET /api/config`、`GET /api/java/capabilities`（已发布客户端不调用）
+
+- `/api/config`：`maxArchiveMB`、`registrationReady`、`registrationMethods`、`verificationMethods`、`captchaReady`、`authPolicy`、`invitationRequired`、`turnstileSiteKey`、`cloudEnabled`、`practiceOrigin`、`adminEnabled`、`localImport:{enabled,protocolVersion:1,scheme:"quizforge"}`、`officialAi:{enabled,protocolVersion:1}`。
+- `/api/java/capabilities`：`phase`、`practiceOrigin`、`legacyOrigin`、`localImportEnabled`、`native`（已实现能力的字符串数组）、`pending`。
+
+### 旧文档、旧服务与旧客户端不一致的地方（以代码为准）
+
+| 项目 | 文档 | 代码 |
+| --- | --- | --- |
+| `stream` 字段 | `HUB_CONNECT_AI.md` 第 6 节：拒绝 | 接受 `stream:false`，拒绝其他值；客户端都发送 `stream:false`（**不接受就全部失败**） |
+| 确认授权的结果 | 3.2：302 重定向 | 200 JSON `{redirect}`，由页面跳转 |
+| 全站并发 | 第 6 节：8 | 配置 `AI_SITE_CONCURRENCY`，默认 2、最大 8 |
+| 请求大小 | 第 6 节：12 MiB | 13 MiB（图片单独按 12 MiB 限制；base64 编码后图片合计最多约 9.7 MiB 就会先触发请求体上限，客户端自己把请求限制在 12 MiB 以内） |
+| `ai` 字段 | 第 5 节含 `pricePerMillion`、`model:"通义千问 qwen-vl-plus"` | 没有 `pricePerMillion`；`model` 固定为“QuizForge 官方模型” |
+| 402 响应 | 第 6.1 节 `error` 含 `balance` | 只有 `code`、`message` |
+| 计费公式 | 6.1：`total_tokens × 单价` | 按输入、输出分别计价（只有总量时取较高单价） |
+| 设备接口范围 | 本文 v0.1：设备令牌可调用设备列表 | 设备列表只接受浏览器会话 |
+| `/api/connect/*` 关闭时 | 第 6 节：`OFFICIAL_AI_DISABLED` | `me`、`logout`、`redeem` 经 `device()` 检查 `requireEnabled`，错误相同；`GET /connect/authorize` 返回 HTML |
+| 授权页文字 | 3.2：显示权限说明和余额 | 只显示设备、账号与“授权后这台设备将以你的账号登录” |
 
 ### 对 V2 的影响
 
-- 以上路径、参数、响应格式和错误码都要保持不变。**待核实：** 各接口的完整响应字段，需在详细设计前从源码逐个整理。
-- **设备令牌只存哈希，可以直接迁移**，用户迁移后无需在客户端重新授权（ADR-005 的待查问题已解决）。
+- 路径、参数、响应结构、错误码按上面实现；V2 的差异（余额可为负、撤销是永久的等）列在详细设计 02 第 3 节。
+- **设备令牌不迁移**（需求 FR-09 v1.3，覆盖本文 v0.1 “可以直接迁移”的说法）：V2 上线后客户端收到 401，提示重新登录一次。
+- **题库包格式（需求 C-01 v1.3）：** V2 的题库包是格式 4；已发布客户端的导入器只接受格式 3（`library-package.js`），协议能走通，但导入会被客户端拒绝。各客户端的处理见下面的作者决定。
+
+### 作者决定（2026-11-05，PR #120）
+
+| # | 事项 | 决定 |
+| --- | --- | --- |
+| 1 | 已发布客户端与格式 4 | **Android 客户端不更新：** 旧 Android 在 V2 上可以连接设备、使用 AI 网关与兑换，但不能导入格式 4 题库（返回不支持的格式）。**Windows 已由作者适配格式 4：** 上线后旧 Windows 用户需升级到新版（下载页提供）。 |
+| 2 | 客户端服务器地址写死 | V2 上线时接管同一域名 `quizforge.treenewbee.cloud` 并使用有效证书（上线前检查清单）。 |
+| 3 | `/api/admin-contact`（第 14 节） | **不实现。** 联系方式以置顶通知提供；旧 Windows 设置页显示“暂时无法读取联系方式”，可以接受。 |
+| 4 | 流式输出 | 客户端 AI 网关按旧契约只支持非流式（`stream:false`），不新增流式。 |
+| 5 | 契约测试的期望值 | 来自旧源码（不录制旧服务的响应）。V2 部署到正式域名后，用旧 Windows 客户端做一次真机验收（上线前检查清单）。 |
+
+上线前检查清单见[功能盘点 H 节](../plan/03-feature-inventory.md)。
 
 ---
 
@@ -258,7 +410,7 @@
 
 | 编号 | 事项 | 影响 |
 | --- | --- | --- |
-| V-1 | C-05 各接口的完整请求、响应字段与错误码 | 客户端兼容 |
+| ~~V-1~~ | ~~C-05 各接口的完整请求、响应字段与错误码~~ | **已补全**（见 C-05，2026-11-05） |
 | V-2 | scrypt salt 的生成规则 | 密码迁移 |
 | V-3 | 考试相关接口的完整列表与状态机 | 考试模块设计 |
 | ~~V-4~~ | ~~在线版是否开放题目编辑~~ | **已决定：不提供**。前端删除编辑器入口，后端不实现编辑接口 |
@@ -269,3 +421,5 @@
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | v0.1 | 2026-10-27 | 初稿 |
+| v0.2 | 2026-11-05 | 按旧 Hub 与旧客户端源码补全 C-05（V-1）；更正“设备令牌可以直接迁移”“设备令牌可调用设备列表” |
+| v0.3 | 2026-11-05 | 记录作者对 PR #120 待决事项的决定 |

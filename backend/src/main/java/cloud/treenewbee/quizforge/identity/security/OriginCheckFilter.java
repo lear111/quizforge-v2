@@ -15,6 +15,10 @@ import jakarta.servlet.http.HttpServletResponse;
 public class OriginCheckFilter extends OncePerRequestFilter {
 
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+    private static final Set<String> DEVICE_PATHS = Set.of("/api/connect/token", "/api/connect/redeem", "/api/connect/logout",
+            "/api/ai/v1/chat/completions");
+    /** 匿名只读：非 GET 由控制器按契约返回 405。 */
+    private static final java.util.regex.Pattern LOCAL_IMPORT = java.util.regex.Pattern.compile("/api/packs/[^/]+/local-import");
 
     private final String allowedOrigin;
 
@@ -25,8 +29,9 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        // 只对写请求检查来源。
-        if (SAFE_METHODS.contains(request.getMethod())) {
+        // 只对写请求检查来源。设备接口由令牌认证、不使用 Cookie，客户端也不发送 Origin（遗留契约 C-05）。
+        if (SAFE_METHODS.contains(request.getMethod()) || DEVICE_PATHS.contains(request.getRequestURI())
+                || LOCAL_IMPORT.matcher(request.getRequestURI()).matches()) {
             filterChain.doFilter(request, response);
             return;
         }

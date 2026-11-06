@@ -23,6 +23,15 @@ async function load(more=false){
   next=data.next;$('#more').hidden=!next;
   if(!data.items.length&&!more)$('#packs').append(el('p',{text:'暂无符合条件的题库'}));
 }
+// “下载并导入到本地”：只请求打开客户端，下载、校验和导入结果由客户端报告（遗留契约 C-05 第 13 节）。
+let localImportConfig;
+async function localImport(pack){
+  localImportConfig??=fetch('/api/config',{cache:'no-store'}).then(response=>response.json()).then(config=>config.localImport?.enabled===true).catch(()=>false);
+  if(!await localImportConfig||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(pack.id))return [];
+  const link=el('a',{href:`quizforge://hub/import?v=1&pack=${pack.id}&revision=${Number(pack.revision)}`,text:'下载并导入到本地'});
+  link.onclick=()=>{$('#feedback').textContent='已请求打开 QuizForge，请在系统提示中允许打开。未安装客户端时可以下载文件后手动导入。';};
+  return [link];
+}
 async function detail(){
   const id=location.hash.slice(1);if(!id){$('#detail').hidden=true;return;}
   const data=await request('/api/plaza/packs/'+encodeURIComponent(id));
@@ -34,7 +43,7 @@ async function detail(){
   holder.replaceChildren(el('h2',{text:p.title}),el('p',{text:`${p.ownerName??'发布者'} · 第 ${p.revision} 版 · 下载 ${p.downloadCount} 次`}),
     el('p',{text:p.summary}),el('p',{text:'标签：'+JSON.parse(p.tags).join('、')}),el('p',{class:'plaza-description',text:data.description}),el('h3',{text:'更新说明'}),el('p',{text:data.releaseNotes||'暂无更新说明'}),
     ...data.screenshots.map(s=>el('img',{src:'/api/catalog/files/'+encodeURIComponent(s.id),alt:s.name})),
-    el('div',{class:'library-actions'},el('a',{href:`/api/plaza/packs/${id}/archive`,text:'下载到本地'}),favorite));
+    el('div',{class:'library-actions'},el('a',{href:`/api/plaza/packs/${id}/archive`,text:'下载到本地'}),...await localImport(p),favorite));
   const form=el('form');
   for(const bank of data.banks)form.append(el('label',{class:'plaza-bank'},el('input',{type:'checkbox',name:'banks',value:bank.uuid,checked:true}),`${bank.title}（${bank.questionCount} 道题）`));
   const submit=el('button',{type:'submit',text:'导入练习空间'});form.append(submit);

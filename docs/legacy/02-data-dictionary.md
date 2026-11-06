@@ -46,7 +46,7 @@
 | `email_codes`、`email_sends`、`contact_codes`、`contact_sends` | 验证码及发送记录 | 不迁移（临时数据） |
 | `registration_policy`、`authentication_policy` | 注册与登录策略 | 迁移（配置） |
 | `invitations`、`invitation_audit` | 邀请码（存摘要）及审计 | 迁移 |
-| `connect_devices` | id, user_id, token（SHA-256）, name, client, created, last_used, revoked | 迁移（C-05，用户无需重新授权） |
+| `connect_devices` | id, user_id, token（SHA-256）, name, client, created, last_used, revoked | **不迁移**（需求 FR-09 v1.3）：V2 上线后客户端重新授权一次 |
 | `connect_codes` | 一次性授权码 | 不迁移（10 分钟有效） |
 
 ### 题库广场
