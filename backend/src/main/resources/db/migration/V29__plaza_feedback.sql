@@ -6,7 +6,8 @@ CREATE TABLE catalog_comment (
     body VARCHAR(2000) NOT NULL,
     created_at DATETIME(3) NOT NULL,
     PRIMARY KEY (id),
-    KEY idx_comment_pack (pack_id, created_at DESC, id DESC)
+    KEY idx_comment_pack (pack_id, created_at DESC, id DESC),
+    KEY idx_comment_time (created_at DESC, id DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE catalog_report (

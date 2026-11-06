@@ -453,7 +453,7 @@ CREATE TABLE exam_exam (
 | practice | `practice_history_annotation` | 历史批注：history_id, question_id, user_id, strokes(JSON), created_at；只追加不修改（需求 FR-03 v1.5） |
 | catalog | `catalog_comment` | V29：id, pack_id, user_id, body, created_at；按 (pack_id, created_at DESC, id DESC) 键集分页 |
 | catalog | `catalog_report` | V29：id, pack_id, user_id, reason, status(pending/removed/dismissed/handled), resolution, reviewer_id, reviewed_at, created_at；生成列 pending_user 仅在 pending 时为 user_id，唯一键 (pack_id,pending_user) 保证同用户同包只有一条待处理举报；按 (is_pending DESC,created_at DESC,id DESC) 分页 |
-| catalog | `catalog_feedback_rate` | V29：PK(user_id,kind)，window_until, attempts；原子 UPSERT 实现各用户的评论/举报独立 60 秒窗口，封禁与失败写入不扣次数 |
+| catalog | `catalog_feedback_rate` | V29：PK(user_id,kind)，window_until, attempts；原子 UPSERT 实现各用户的评论/举报独立 60 秒窗口；沿用旧 Hub 按尝试计次，独立短事务提交，校验或业务失败不返还次数；封禁用户不进入限频窗口 |
 | admin | `admin_extension_review` | 拓展审核白名单（C-04）：digest PK, extension_id, version, inventory(JSON), status(approved/revoked), reviewer_id, reviewed_at, reason |
 | admin | `admin_setting` | 键值配置：注册与登录策略、管理员联系方式、AI 注册赠送等，`value JSON` + `version` |
 | admin | `admin_audit` | 管理操作审计 |

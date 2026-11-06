@@ -3,8 +3,9 @@ import {mountFeedback} from '../../plaza/feedback.js';
 
 const labels={pending:'未处理',removed:'已下架',dismissed:'已驳回',handled:'已处理'};
 export async function render(container, context) {
+  if(context.param==='comments'){await comments(container,context);return;}
   if(context.param){await detail(container,context,context.param);return;}
-  container.append(el('h1',{text:'举报处理'}));
+  container.append(el('h1',{text:'举报处理'}),el('a',{href:'#reports/comments',text:'管理全部评论'}));
   const list=el('div'),more=el('button',{type:'button',class:'qa-button',text:'加载更多'});
   container.append(list,more);let cursor=null;
   async function load(){
@@ -15,6 +16,32 @@ export async function render(container, context) {
       el('p',{class:'qa-prewrap',text:report.reason})));
     cursor=data.nextCursor;more.hidden=!cursor;
     if(!data.items.length&&!list.children.length)list.append(el('p',{text:'暂无举报'}));
+  }
+  more.onclick=async()=>{more.disabled=true;try{await load();}catch(error){context.toast(error.message,'danger');}finally{more.disabled=false;}};
+  await load();
+}
+
+async function comments(container,context){
+  container.append(el('a',{href:'#reports',text:'← 返回举报列表'}),el('h1',{text:'评论管理'}));
+  const list=el('div'),more=el('button',{type:'button',class:'qa-button',text:'加载更多'});
+  container.append(list,more);let cursor=null;
+  async function load(){
+    const data=await context.request('/api/admin/catalog/comments'+(cursor?'?cursor='+encodeURIComponent(cursor):''));
+    for(const comment of data.items){
+      const item=el('article',{class:'qa-panel','data-comment-id':comment.id});
+      const remove=el('button',{type:'button',class:'qa-button danger',text:'删除评论'});
+      remove.onclick=async()=>{
+        if(remove.disabled||!confirm('删除这条评论？'))return;
+        remove.disabled=true;
+        try{await context.request('/api/admin/catalog/comments/'+encodeURIComponent(comment.id),'DELETE');item.remove();context.toast('评论已删除','success');}
+        catch(error){context.toast(error.message,'danger');remove.disabled=false;}
+      };
+      item.append(el('p',{text:`${comment.author??'用户'} · ${time(comment.createdAt)}`}),
+        el('p',{class:'qa-prewrap',text:comment.body}),el('a',{href:'/plaza/#'+encodeURIComponent(comment.packId),text:'查看题库包'}),remove);
+      list.append(item);
+    }
+    cursor=data.nextCursor;more.hidden=!cursor;
+    if(!data.items.length&&!list.children.length)list.append(el('p',{text:'暂无评论'}));
   }
   more.onclick=async()=>{more.disabled=true;try{await load();}catch(error){context.toast(error.message,'danger');}finally{more.disabled=false;}};
   await load();

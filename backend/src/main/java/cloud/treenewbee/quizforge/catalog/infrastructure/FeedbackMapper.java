@@ -26,6 +26,12 @@ public interface FeedbackMapper {
             """)
     List<Comment> comments(@Param("pack") String pack, @Param("time") Instant time, @Param("after") String after);
 
+    @Select("<script>SELECT " + COMMENTS + " FROM catalog_comment c LEFT JOIN account_user u ON u.id=c.user_id WHERE 1=1 " + """
+            <if test="after != null">AND (c.created_at &lt; #{time} OR (c.created_at=#{time} AND c.id &lt; #{after}))</if>
+            ORDER BY c.created_at DESC,c.id DESC LIMIT 21</script>
+            """)
+    List<Comment> adminComments(@Param("time") Instant time, @Param("after") String after);
+
     @Insert("INSERT INTO catalog_comment(id,pack_id,user_id,body,created_at) VALUES(#{id},#{pack},#{user},#{body},#{now})")
     int insertComment(@Param("id") String id, @Param("pack") String pack, @Param("user") String user,
                       @Param("body") String body, @Param("now") Instant now);

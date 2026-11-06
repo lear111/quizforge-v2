@@ -55,4 +55,9 @@ public class PackFeedbackController {
         feedback.deleteComment(user.getName(), id, true);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/api/admin/catalog/comments")
+    public Object adminComments(Principal user, @RequestParam(required = false) String cursor) {
+        return feedback.adminComments(user.getName(), cursor);
+    }
 }

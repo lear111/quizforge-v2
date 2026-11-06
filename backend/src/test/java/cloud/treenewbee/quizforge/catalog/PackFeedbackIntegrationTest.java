@@ -338,4 +338,28 @@ class PackFeedbackIntegrationTest extends MySqlTestBase {
         assertThat(sql.queryForObject("SELECT status FROM content_import_job WHERE id=?", String.class, job)).isEqualTo("cancelled");
         assertThat(request(null, "/api/plaza/packs/" + pack, "GET", null).statusCode()).isEqualTo(404);
     }
+
+    @Test void adminCanPageAndDeleteUnreportedCommentsEvenAfterPackRemoval() throws Exception {
+        String id = feedback.comment(owner.id(), pack, "未被举报的评论").id();
+        sql.update("UPDATE catalog_pack SET status='deleted' WHERE id=?", pack);
+        assertThat(request(owner, "/api/admin/catalog/comments", "GET", null).statusCode()).isEqualTo(403);
+        var page = feedback.adminComments(admin.id(), null);
+        var ids = new ArrayList<>(page.items().stream().map(FeedbackMapper.Comment::id).toList());
+        String cursor = page.nextCursor();
+        while (cursor != null) {
+            var next = feedback.adminComments(admin.id(), cursor);
+            ids.addAll(next.items().stream().map(FeedbackMapper.Comment::id).toList());
+            cursor = next.nextCursor();
+        }
+        assertThat(ids).contains(id).doesNotHaveDuplicates();
+        assertThat(request(admin, "/api/admin/catalog/comments/" + id, "DELETE", null).statusCode()).isEqualTo(204);
+        assertThat(rows.comment(id)).isEmpty();
+    }
+
+    @Test void invalidSubmissionAttemptsAlsoConsumeRateWindowWithoutWritingComments() {
+        for (int i = 0; i < 10; i++)
+            error(() -> feedback.comment(owner.id(), pack, "　"), HttpStatus.BAD_REQUEST, "VALIDATION_FAILED");
+        error(() -> feedback.comment(owner.id(), pack, "评论"), HttpStatus.TOO_MANY_REQUESTS, "FEEDBACK_RATE_LIMIT");
+        assertThat(sql.queryForObject("SELECT COUNT(*) FROM catalog_comment WHERE pack_id=?", Integer.class, pack)).isZero();
+    }
 }

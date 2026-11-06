@@ -224,6 +224,7 @@ SSE 事件：`message`（`{userMessageId}`，请求已接受）→ 若干 `delta
 - `GET /api/admin/catalog/reports/{id}`：举报原因、题库与举报人、处理记录；仅管理员可读。
 - `POST /api/admin/catalog/reports/{id}/resolve`：`{decision:"removed"|"dismissed"|"handled",note}`；处理说明去首尾空白后 1～1000 字。下架复用删除原资源的逻辑，不影响已导入练习实例；同时写审计并向举报人发站内通知。相同处理重放不重复通知，不同处理返回 409 `REPORT_ALREADY_HANDLED`。
 - `DELETE /api/admin/catalog/comments/{id}`：管理员删除任意评论并写审计，204。
+- `GET /api/admin/catalog/comments?cursor=…`：全部评论的时间倒序键集列表，含未被举报和已下架包的评论；每页 20 条，返回 `{items,nextCursor}`。
 
 评论和举报仅面向已审核且未删除的公开包，封禁用户禁止写入。限频返回 429 `FEEDBACK_RATE_LIMIT`；长度或空内容返回 400 `VALIDATION_FAILED`；不存在或不可见的评论/包返回 404。列表使用纯文本，不解释 HTML。
 

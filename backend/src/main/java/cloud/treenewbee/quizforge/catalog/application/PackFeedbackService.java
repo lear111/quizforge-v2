@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** 评论、举报与处理；包行在举报行之前加锁，不对不存在的举报加锁。 */
@@ -26,6 +27,7 @@ public class PackFeedbackService {
                               java.time.Instant createdAt, boolean canDelete) {}
     public record Comments(List<CommentView> items, String nextCursor) {}
     public record Reports(List<FeedbackMapper.Report> items, String nextCursor) {}
+    public record AdminComments(List<FeedbackMapper.Comment> items, String nextCursor) {}
     private final FeedbackMapper rows;
     private final CatalogMapper catalog;
     private final PlazaService plaza;
@@ -36,6 +38,7 @@ public class PackFeedbackService {
     private final AdminAuditService audit;
     private final NotificationService notifications;
     private final TransactionTemplate tx;
+    private final TransactionTemplate rateTx;
     private final Clock clock;
 
     public PackFeedbackService(FeedbackMapper rows, CatalogMapper catalog, PlazaService plaza,
@@ -51,6 +54,8 @@ public class PackFeedbackService {
         this.audit = audit;
         this.notifications = notifications;
         this.tx = tx;
+        this.rateTx = new TransactionTemplate(Objects.requireNonNull(tx.getTransactionManager()));
+        this.rateTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.clock = clock;
     }
 
@@ -66,10 +71,10 @@ public class PackFeedbackService {
     }
 
     public FeedbackMapper.Comment comment(String user, String pack, String input) {
+        active(user);
+        rate(user, "comment", 10);
         String body = text(input, 2000, "评论");
         return tx.execute(status -> {
-            active(user);
-            rate(user, "comment", 10);
             writable(pack);
             String id = Ids.uuidV7();
             changed(rows.insertComment(id, pack, user, body, clock.instant()));
@@ -77,11 +82,21 @@ public class PackFeedbackService {
         });
     }
 
+    /** 后台可管理未被举报或已下架包中的评论，不依赖公开详情可见性。 */
+    public AdminComments adminComments(String user, String cursor) {
+        admins.requireAdmin(user);
+        var after = KeysetCursor.decode(cursor);
+        var found = rows.adminComments(after == null ? null : after.time(), after == null ? null : after.id());
+        var items = List.copyOf(found.subList(0, Math.min(20, found.size())));
+        return new AdminComments(items, found.size() > 20
+                ? KeysetCursor.encode(items.getLast().createdAt(), items.getLast().id()) : null);
+    }
+
     public String report(String user, String pack, String input) {
+        active(user);
+        rate(user, "report", 5);
         String reason = text(input, 1000, "举报原因");
         return tx.execute(status -> {
-            active(user);
-            rate(user, "report", 5);
             writable(pack);
             // 唯一键约束只覆盖 pending；重复举报保留最初的原因，不覆盖他人的举报。
             rows.insertReport(Ids.uuidV7(), pack, user, reason, clock.instant());
@@ -165,9 +180,13 @@ public class PackFeedbackService {
     }
 
     private void rate(String user, String kind, int max) {
-        var now = clock.instant();
-        rows.hit(user, kind, now, now.plusSeconds(60));
-        if (rows.attempts(user, kind) > max)
+        // 沿用旧 Hub 的尝试次数口径：校验或业务失败也计次，不与业务回滚一起撤销。
+        boolean exceeded = Boolean.TRUE.equals(rateTx.execute(status -> {
+            var now = clock.instant();
+            rows.hit(user, kind, now, now.plusSeconds(60));
+            return rows.attempts(user, kind) > max;
+        }));
+        if (exceeded)
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "FEEDBACK_RATE_LIMIT", "操作过于频繁，请稍后再试");
     }
 
