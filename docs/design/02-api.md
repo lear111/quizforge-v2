@@ -111,6 +111,7 @@
 - 私人版本的配额只保留一份：`quota_private_revision` 的资源标志和实例计数在用户 `quota_account` 锁内更新，资源或任一实例仍存在时继续计费；最后一个引用删除时释放。不同私人上传版本仍各自计费；公开包免费。
 - V24 对既有私人实例逐本补建资源条目，转移既有逻辑用量，保留作答；没有原始文件的版本使用 `source=legacy`、`blob_sha256=NULL`，不能下载或直接发布，但可从已存内容创建新实例。
 - 后台队列接口增加全量 `{counts:{queued,running,failed}}`，`items` 仍有 200 条上限；概况增加 `uploads:{today,topUsers:[{userId,name,uploads}]}`，以北京时间统计接收尝试（含中断），只向管理员开放。
+- `GET /api/admin/overview` 增加 `banks:{publicPacks,pendingVersions,downloadsLast7Days,pendingReports,importQueueLength}`：公开包数仅计当前在广场可见的已审核包；待审版本仅计未删除公开包；下载按北京时间今天及前六天汇总；举报仅计未处理；队列长度仅计 `queued`，不含运行中、失败任务。下载日计数自 V31 上线后记录，旧累计下载次数不能还原发生日期，不补算历史。
 
 ## 2. 浏览器接口清单
 

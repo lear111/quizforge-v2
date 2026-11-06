@@ -173,7 +173,7 @@ class ActivityOverviewIntegrationTest extends MySqlTestBase {
         assertThat(today.path("day").asString()).isEqualTo("2026-11-01");
         assertThat(today.path("active").asLong()).isEqualTo(1);
         assertThat(today.path("practiced").asLong()).isEqualTo(1);
-        assertThat(overview.path("banks").isNull()).isTrue();
+        assertThat(overview.path("banks").path("publicPacks").isNumber()).isTrue();
 
         // 5 分钟没有活动即不再算在线。
         clock.now.set(START.plus(Duration.ofMinutes(6)));

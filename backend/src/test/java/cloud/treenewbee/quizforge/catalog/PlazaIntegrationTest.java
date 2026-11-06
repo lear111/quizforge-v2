@@ -31,6 +31,7 @@ class PlazaIntegrationTest extends MySqlTestBase {
     @Autowired BlobStore blobs;
     @Autowired QuotaService quotas;
     @MockitoSpyBean RuleRunnerClient runner;
+    @MockitoSpyBean PlazaMapper downloadMapper;
     @Value("${local.server.port}") int port;
     final HttpClient http=HttpClient.newHttpClient();
     final JsonMapper json=JsonMapper.builder().build();
@@ -99,7 +100,20 @@ class PlazaIntegrationTest extends MySqlTestBase {
         assertThat(response.statusCode()).isEqualTo(200);assertThat(response.body()).isEmpty();
         assertThat(response.headers().firstValue("X-Accel-Redirect")).isPresent();
         assertThat(plaza.detail(null,id).pack().downloadCount()).isEqualTo(31);
+        assertThat(sql.queryForObject("SELECT SUM(downloads) FROM catalog_download_day WHERE pack_id=?", Long.class, id))
+                .isEqualTo(31);
     }
+    @Test void dailyDownloadFailureRollsBackCumulativeCount() throws Exception {
+        String id = pack("下载回滚", "public", "active", 7);
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("模拟日计数写入失败"))
+                .when(downloadMapper).recordDownload(any(), eq(id));
+        assertThatThrownBy(() -> plaza.download(id))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+        assertThat(plaza.detail(null, id).pack().downloadCount()).isEqualTo(7);
+        assertThat(sql.queryForObject("SELECT COUNT(*) FROM catalog_download_day WHERE pack_id=?", Long.class, id))
+                .isZero();
+    }
+
     @Test void favoritesAreUserOwnedIdempotentAndRetainDeletedPublicMetadata() throws Exception {
         var a=user();var b=user();String id=pack("收藏","public","active",0);
         String path="/api/plaza/packs/"+id+"/favorite";

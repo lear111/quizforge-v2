@@ -1,12 +1,15 @@
 package cloud.treenewbee.quizforge.catalog.application;
 
+import cloud.treenewbee.quizforge.activity.application.ActivityTracker;
 import cloud.treenewbee.quizforge.catalog.infrastructure.*;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PlazaService {
@@ -53,10 +56,12 @@ public class PlazaService {
             catalog.files(id,pack.revision()).stream().map(f->new CatalogPublishService.FileView(f.id(),f.name(),f.mime(),f.size())).toList(),
             user!=null && plaza.isFavorite(user,id)>0);
     }
+    @Transactional
     public CatalogMapper.RevisionRow download(String id) {
         var pack=visible(id);
         var revision=catalog.revision(id,pack.revision()).orElseThrow(PlazaService::notFound);
         if(revision.blobSha256()==null || plaza.download(id,pack.revision())!=1) throw notFound();
+        plaza.recordDownload(LocalDate.ofInstant(clock.instant(), ActivityTracker.ZONE), id);
         return revision;
     }
     public void favorite(String user,String id) {

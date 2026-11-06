@@ -1,6 +1,7 @@
 package cloud.treenewbee.quizforge.catalog.infrastructure;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.apache.ibatis.annotations.*;
@@ -42,6 +43,12 @@ public interface PlazaMapper {
           AND r.review_status='approved' AND r.validation_status='validated'
         """)
     int download(@Param("id") String id,@Param("revision") int revision);
+
+    @Insert("""
+        INSERT INTO catalog_download_day(download_day,pack_id,downloads) VALUES(#{day},#{id},1)
+        ON DUPLICATE KEY UPDATE downloads=downloads+1
+        """)
+    int recordDownload(@Param("day") LocalDate day, @Param("id") String id);
 
     @Insert("""
         INSERT IGNORE INTO catalog_favorite(user_id,pack_id,created_at,seen_revision)

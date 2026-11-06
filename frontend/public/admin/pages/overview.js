@@ -1,7 +1,7 @@
 import { el, bytes } from './format.js';
 
 // 概况：用户总数、近 7 天新注册、当前在线、存储总用量，以及近 7 天的注册与活跃趋势。
-// 题库相关的统计等题库广场完成后再加（下方留出位置）。
+// 下载按北京时间汇总，旧累计次数不倒推到每日计数。
 
 export async function render(container, context) {
   const data = await context.request('/api/admin/overview');
@@ -11,6 +11,11 @@ export async function render(container, context) {
     ['当前在线', String(data.online), '5 分钟内有活动的用户（单实例统计）'],
     ['存储总用量', bytes(data.storageUsedBytes), '私人上传的题库'],
     ['今日上传次数', String(data.uploads.today), '北京时间；包含未完成的上传尝试'],
+    ['公开题库包数', String(data.banks.publicPacks), '已审核且当前可在广场浏览'],
+    ['待审核版本数', String(data.banks.pendingVersions), '未删除公开包的待审版本'],
+    ['近 7 天下载次数', String(data.banks.downloadsLast7Days), '北京时间；从日计数功能上线起记录'],
+    ['未处理举报数', String(data.banks.pendingReports)],
+    ['导入队列长度', String(data.banks.importQueueLength), '等待处理的任务，不含正在处理与失败的任务'],
   ];
   const max = Math.max(1, ...data.trend.map((day) => Math.max(day.registered, day.active)));
   const bar = (value, tone) => el('span', { class: `qa-bar ${tone}`, style: `width:${(value / max) * 100}%` });
@@ -30,8 +35,5 @@ export async function render(container, context) {
     el('section', { class: 'qa-panel' },
       el('h2', { text: '今日上传最多的用户（前 5）' }),
       el('ol', {}, ...data.uploads.topUsers.map(user => el('li', {text:`${user.name}：${user.uploads} 次`}))),
-      data.uploads.topUsers.length ? null : el('p', {class:'qa-muted',text:'今天还没有上传'})),
-    el('section', { class: 'qa-panel', 'data-placeholder': 'banks' },
-      el('h2', { text: '题库' }),
-      el('p', { class: 'qa-muted', text: '题库数量、待审核与下载等统计将在题库广场完成后加入。' })));
+      data.uploads.topUsers.length ? null : el('p', {class:'qa-muted',text:'今天还没有上传'})));
 }
