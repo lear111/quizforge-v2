@@ -218,7 +218,16 @@ async function loadFavorites(more=false) {
   for(const pack of data.items) {
     const remove=el('button',{type:'button',text:'取消收藏'});
     remove.onclick=()=>action(remove,async()=>{await request(`/api/plaza/packs/${encodeURIComponent(pack.id)}/favorite`,'DELETE');await loadFavorites();});
-    $('#favorites').append(el('article',{class:'library-card'},el('h3',{text:pack.title}),
+    // 收藏后作者发布并通过了新版本：显示新版本号与更新说明，“知道了”后不再提示（设计 04 第 3.3 节）。
+    const updated=pack.status!=='deleted'&&pack.seenRevision!=null&&pack.revision>pack.seenRevision;
+    let notice=null;
+    if(updated){
+      const seen=el('button',{type:'button',text:'知道了'});
+      seen.onclick=()=>action(seen,async()=>{await request(`/api/plaza/packs/${encodeURIComponent(pack.id)}/favorite/seen`,'PUT');await loadFavorites();});
+      notice=el('div',{class:'favorite-update','data-favorite-update':pack.id},el('strong',{text:`有新版本：第 ${pack.revision} 版`}),
+        pack.releaseNotes?el('p',{class:'favorite-notes',text:pack.releaseNotes}):null,seen);
+    }
+    $('#favorites').append(el('article',{class:'library-card','data-favorite':pack.id},el('h3',{text:pack.title}),notice,
       pack.status==='deleted'?el('p',{text:'作者已删除'}):el('div',{class:'library-actions'},
         el('a',{href:'/plaza/#'+pack.id,text:'查看详情 / 导入练习空间'}),el('a',{href:`/api/plaza/packs/${pack.id}/archive`,text:'下载到本地'})),remove));
   }

@@ -411,6 +411,22 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     @Test
+    void newVersionsRequireReleaseNotesBecauseTheyAreSentToLearners() throws Exception {
+        User owner = user();
+        String pack = json(publish(owner, archive(List.of("单选题"), null), info("合集"), List.of())).path("packId").asString();
+        // 不经过 revise 辅助方法（它会补一段更新说明）：直接提交缺少更新说明的新版本。
+        HttpResponse<String> missing = multipart(owner, "/api/catalog/packs/" + pack + "/revisions", info("合集"),
+                archive(List.of("单选题"), null), List.of(), List.of());
+        assertThat(missing.statusCode()).as(missing.body()).isEqualTo(400);
+        assertThat(missing.body()).contains("更新说明");
+        assertThat(jdbc.queryForObject("SELECT latest_revision FROM catalog_pack WHERE id = ?", Integer.class, pack)).isEqualTo(1);
+        Map<String, String> blank = info("合集");
+        blank.put("releaseNotes", "   ");
+        assertThat(multipart(owner, "/api/catalog/packs/" + pack + "/revisions", blank, archive(List.of("单选题"), null),
+                List.of(), List.of()).statusCode()).isEqualTo(400);
+    }
+
+    @Test
     void reviewDetailListsExternalAudioHosts() throws Exception {
         User owner = user();
         User admin = admin();
@@ -456,7 +472,10 @@ class CatalogIntegrationTest extends MySqlTestBase {
 
     private HttpResponse<String> revise(User user, String pack, byte[] archive, Map<String, String> fields, List<byte[]> shots,
                                         List<String> keep) throws Exception {
-        return validated(multipart(user, "/api/catalog/packs/" + pack + "/revisions", fields, archive, shots, keep));
+        // 新版本必须填写更新说明（随题库更新通知发送）；用例没有指定时补一段。
+        Map<String, String> withNotes = new LinkedHashMap<>(fields);
+        withNotes.putIfAbsent("releaseNotes", "更新说明");
+        return validated(multipart(user, "/api/catalog/packs/" + pack + "/revisions", withNotes, archive, shots, keep));
     }
 
     // 既有审核用例显式推进后台任务；接收请求本身的异步行为由队列用例断言。

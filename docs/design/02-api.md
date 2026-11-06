@@ -390,6 +390,8 @@ practice/
 - `GET /api/plaza/packs/{id}/archive`：原始文件，Java 授权后 Nginx 直接传输；授权成功的 GET 原子增加一次下载次数（包括客户端随后中止；失败授权不计）。不计个人下载配额。
 - `POST /api/plaza/packs/{id}/imports`：登录，`{banks:[uuid…],group?}`，使用当前已审核版本，复用快速创建实例，返回 `{collections:[{id,title,bankId}]}`；公开包免费、重复调用独立。
 - `PUT /api/plaza/packs/{id}/favorite` / `DELETE …/favorite`：会话用户收藏/取消，幂等。`GET /api/library/favorites?after=` 返回当前用户书签 `{items,next}`，删除包保留标题、状态 `deleted`，不再能下载/导入。
+- 收藏列表的每项另有 `seenRevision`（收藏者最后确认过的已审核版本）与当前版本的 `releaseNotes`；`revision > seenRevision` 时显示“有新版本”。`PUT /api/plaza/packs/{id}/favorite/seen`：确认已看到当前版本（只改自己的书签，未收藏返回 404）。
+- 版本自动切换（设计 04 第 3.5 节）：`GET /api/collections/bank/{id}` 与 `GET /api/library/index` 的 `banks[]` 增加 `update:{status,revision?}`。`status` 为 `current`、`pending`（有新版本，“再练一次”时使用；`revision` 为新版本号）、`removed`（作者已移除）、`deleted`（作者已删除）；私人题库为 `null`。概览请求中能切换时在返回前完成切换，列表只读。
 - 匿名浏览、详情、公开截图及下载沿用旧 Hub `PublicHubController.list/detail/archive` 与 `FileDelivery.archive` 的可匿名行为；写操作仍需会话和 Origin。
 - 删除旧临时 `POST /api/catalog/packs/{id}/practice`，不保留别名。
 - 热门排序的计数会随下载变化，键集分页不提供跨请求数据库快照；不使用 OFFSET。

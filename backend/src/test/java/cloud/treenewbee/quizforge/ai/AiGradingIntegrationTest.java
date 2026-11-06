@@ -98,6 +98,7 @@ class AiGradingIntegrationTest extends MySqlTestBase {
     @Autowired AiGradingService ai;
     @Autowired AiGradingJobs aiJobs;
     @MockitoSpyBean AiGradingMapper aiMapper;
+    @MockitoSpyBean PublishedVersions versions;
     @Autowired AiBalanceService balances;
     @Autowired UpstreamKeyService keys;
     @Autowired PracticeLifecycleService lifecycle;
@@ -128,7 +129,7 @@ class AiGradingIntegrationTest extends MySqlTestBase {
     }
 
     @BeforeEach void viewer() {
-        reset(runner, aiMapper); UPSTREAM.reset(); jdbc.update("DELETE FROM ai_upstream_key"); clock.now = Instant.parse("2026-11-03T12:00:00Z");
+        reset(runner, aiMapper, versions); UPSTREAM.reset(); jdbc.update("DELETE FROM ai_upstream_key"); clock.now = Instant.parse("2026-11-03T12:00:00Z");
         var account = auth.register(Ids.uuidV7()+"@example.test", "浏览器判分", "password123", "test");
         user = account.userId(); cookie = "__Host-qf_session="+account.token(); viewers.add(user);
         jdbc.update("UPDATE account_user SET is_admin=TRUE WHERE id=?", user);
@@ -144,7 +145,7 @@ class AiGradingIntegrationTest extends MySqlTestBase {
     }
 
     @AfterEach void cleanup() {
-        UPSTREAM.holdRelease.countDown(); reset(runner, aiMapper);
+        UPSTREAM.holdRelease.countDown(); reset(runner, aiMapper, versions);
         for (String viewer : viewers) deleteUser(viewer);
         viewers.clear();
         for (String bank : extraBanks) {jdbc.update("DELETE FROM content_question WHERE bank_id=?",bank);jdbc.update("DELETE FROM content_bank WHERE id=?",bank);}
@@ -504,6 +505,61 @@ class AiGradingIntegrationTest extends MySqlTestBase {
         assertThat(balances.balance(user).balance()).isEqualTo(9850);
         assertThat(jdbc.queryForObject("SELECT grading_generation FROM practice_question_state WHERE user_id=?", Integer.class, user)).isEqualTo(generation);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_grading_task WHERE user_id=? AND status!='confirmed'", Integer.class, user)).isZero();
+    }
+
+    /**
+     * 题库广场 3/4：模型调用期间完成练习并“再练一次”，归档事务清空作答并切换到新版本（PracticeUpdates.afterRestart）。
+     * 旧任务回来时题目已属于新版本、作答已清空，不得把旧版本题目的 AI 结果写到新版本题目上。
+     */
+    @Test void restartSwitchingToNewVersionDiscardsRunningAiTaskOfOldVersion() throws Exception {
+        var original = samples.get("简答题");
+        var q = original.question();
+        var source = banks.findById(q.bankId()).orElseThrow();
+        String v2 = Ids.uuidV7(), pack = Ids.uuidV7();
+        banks.insert(new cloud.treenewbee.quizforge.content.infrastructure.BankRow(v2,
+                cloud.treenewbee.quizforge.practice.ai.PracticeAiAccess.hash(v2), source.bankUuid(),
+                source.sourceTitle(), source.description(), source.formatVersion(), source.features(),
+                source.listening(), 1, clock.instant()));
+        extraBanks.add(v2);
+        var data = (ObjectNode) JSON.readTree(q.data());
+        ((ObjectNode) data.path("parts").get(0)).set("stem",
+                JSON.readTree("{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"第二版题干\"}]}]}"));
+        questions.insert(new QuestionRow(v2, q.questionId(), 0, q.title() + "（第二版）", q.extensionDigest(),
+                null, q.listening(), JSON.writeValueAsString(data), q.maxScore(),
+                cloud.treenewbee.quizforge.practice.ai.PracticeAiAccess.hash(data.toString()), null, null));
+        jdbc.update("""
+                UPDATE practice_collection SET source_pack_id=?, source_bank_uuid=?, source_revision=1, update_status='current'
+                 WHERE id=? AND user_id=?""", pack, source.bankUuid(), original.collection(), user);
+        doReturn(Map.of(pack, new PublishedVersions.Latest(false, 2, Map.of(source.bankUuid(), v2))))
+                .when(versions).latest(org.mockito.ArgumentMatchers.<Collection<String>>argThat(ids -> ids != null && ids.contains(pack)), anyCollection());
+
+        var sample = submitted("简答题");
+        String task = enqueue(sample); UPSTREAM.holdGrading = true;
+        try (var worker = Executors.newVirtualThreadPerTaskExecutor()) {
+            var claimed = aiJobs.claim().orElseThrow();
+            var work = worker.submit(() -> aiJobs.run(claimed));
+            assertThat(UPSTREAM.holdArrived.tryAcquire(20, TimeUnit.SECONDS)).isTrue();
+            var finishing = summaries.summary(user, sample.collection());
+            jobs.begin(user, sample.collection(), "finish-v1", finishing.path("roundId").asString(),
+                    finishing.path("summaryVersion").asString(), "finish");
+            for (int n = 0; n < 8 && jobs.tick(); n++) { /* 门控推进完成任务 */ }
+            var finished = summaries.summary(user, sample.collection());
+            assertThat(finished.path("canRestart").asBoolean()).as(finished.toString()).isTrue();
+            jobs.begin(user, sample.collection(), "restart-v2", finished.path("roundId").asString(),
+                    finished.path("summaryVersion").asString(), "archive");
+            for (int n = 0; n < 8 && jobs.tick(); n++) { /* 门控推进归档任务 */ }
+            assertThat(jdbc.queryForObject("SELECT bank_id FROM practice_collection WHERE id=?", String.class, sample.collection())).isEqualTo(v2);
+            UPSTREAM.holdRelease.countDown(); work.get(30, TimeUnit.SECONDS);
+        }
+        assertThat(aiMapper.find(user, task).orElseThrow().status()).isEqualTo("superseded");
+        // 新一轮中本题没有任何作答，更没有来自旧任务的 AI 结果。
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM practice_question_state WHERE user_id=? AND question_id=?
+                   AND (status='submitted' OR grading_source='ai' OR result IS NOT NULL)""",
+                Integer.class, user, q.questionId())).isZero();
+        var current = JSON.valueToTree(reads.question(user, sample.collection(), q.questionId(), null));
+        assertThat(current.toString()).contains("第二版题干").doesNotContain("本机假模型反馈");
+        assertThat(aiJobs.claim()).isEmpty();
     }
 
     @Test void changedQuestionContentInvalidatesTaskBeforePreparingMaterials() {

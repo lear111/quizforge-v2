@@ -62,6 +62,8 @@ public class PracticeLifecycleJobs {
     @org.springframework.beans.factory.annotation.Autowired
     private cloud.treenewbee.quizforge.practice.grading.BrowserGradingService browserGrading;
     @org.springframework.beans.factory.annotation.Autowired
+    private PracticeUpdates updates;
+    @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.context.ApplicationEventPublisher gradingEvents;
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.beans.factory.ObjectProvider<cloud.treenewbee.quizforge.ai.grading.AiGradingJobs> aiJobs;
@@ -423,6 +425,8 @@ public class PracticeLifecycleJobs {
                 changed(contexts.setCurrentRound(context.id(), job.userId(), null, clock.instant()));
                 changed(contexts.phase(context.id(), job.userId(), "active", null, clock.instant()));
                 changed(contexts.bumpProgressVersion(context.id(), job.userId(), clock.instant()));
+                // 作答已清空：在同一事务中切换到最新的已审核版本（设计 04 第 3.1 节）。
+                updates.afterRestart(job.userId(), job.collectionId(), context.id());
                 finish(job, json.createObjectNode().put("restarted", true).put("historyId", job.roundId()));
             });
         }

@@ -59,16 +59,24 @@ public class PracticeReadService {
         this.directory = directory;
     }
 
+    /** 广场题库的懒更新（设计 04 第 3 节）；字段注入避免改动构造参数。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    private PracticeUpdates updates;
+
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Catalog catalog(String userId) {
+        var versions = updates.list(userId);
         List<Bank> banks = reads.collections(userId).stream().map(collection -> new Bank(collection.id(), "bank",
-                collection.title(), collection.groupName(), collection.questionCount(), available(collection.bankId()))).toList();
+                collection.title(), collection.groupName(), collection.questionCount(), available(collection.bankId()),
+                collection.id(), versions.get(collection.id()))).toList();
         List<String> groups = java.util.stream.Stream.concat(directory.groups(userId).stream(), banks.stream().map(Bank::group))
                 .filter(group -> group != null && !group.isBlank()).distinct().sorted().toList();
         return new Catalog(banks, List.of(), Map.of("banks", groups, "extensions", List.of()), true, false, directory.revision(userId));
     }
 
     public Overview overview(String userId, String id) {
+        // 懒更新（设计 04 第 3.2 节）：没有进行中的作答时在本次请求中切换到最新的已审核版本，再读取概览。
+        var update = updates.open(userId, id);
         var collection = collection(userId, id);
         String context = context(userId, id);
         List<QuestionSummary> questions = new ArrayList<>();
@@ -87,7 +95,7 @@ public class PracticeReadService {
         String revision = stamps.stamp(context, "bank", 0, collection.contentSha256(), collection.contentSha256()).contentVersion();
         return new Overview(id, "bank", collection.title(), revision, collection.description(), features(collection),
                 listeningMetadata(collection), List.copyOf(questions), java.util.Collections.unmodifiableMap(states),
-                new Availability(true, null, null), !"active".equals(reads.completionStatus(context,userId).orElse("active")));
+                new Availability(true, null, null), !"active".equals(reads.completionStatus(context,userId).orElse("active")), update);
     }
 
     public Object question(String userId, String id, String qid, String knownStamp) {

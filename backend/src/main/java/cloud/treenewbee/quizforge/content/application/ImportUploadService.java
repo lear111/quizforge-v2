@@ -168,6 +168,10 @@ public class ImportUploadService {
                 var owned = catalog.lockOwned(existingPack, user).orElseThrow(ImportUploadService::notFound);
                 var before = metadata.owned(existingPack, user, owned.latestRevision()).orElseThrow(ImportUploadService::notFound);
                 if (privatePack != "private".equals(before.visibility())) throw notFound();
+                // 公开包的新版本必须填写更新说明：审核通过后随题库更新通知发给已导入的用户（设计 04 第 3.3 节）。
+                if (!privatePack && (info.releaseNotes() == null || info.releaseNotes().isBlank())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "PACK_INFO_INVALID", "请填写更新说明");
+                }
                 if (privatePack) requireRejected(user, existingPack);
                 pack = existingPack;
                 revision = owned.latestRevision() + 1;
