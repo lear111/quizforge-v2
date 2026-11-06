@@ -67,13 +67,13 @@ public class PracticeHistoryService {
                     var page=new LinkedHashMap<>(pages.page(user,digest,payload.path("extension").path("version").asString()));
                     page.put("extension",payload.path("extension"));pageValues.set(digest,json.valueToTree(page));
                 } catch(ApiException|java.io.IOException unavailable) {
-                    // 宿主只读视图不加载拓展、SDK 或替代脚本；冻结数据仍完整返回。
+                    // 宿主仅显示不可用提示，不加载拓展、SDK 或替代脚本；冻结数据不删除。
                     var page=json.createObjectNode();
                     page.set("extension",payload.path("extension"));
                     page.put("unavailable",true);
                     page.put("message",pages.canExecute(user,entry.extensionDigest())
                             ? "该资源已被管理员移除，题目结构、作答与评分仍保留。"
-                            : "该题型拓展已被管理员停用，无法显示原页面");
+                            : "该题的历史记录已丢失（题型拓展已被管理员停用）");
                     pageValues.set(digest,page);
                 }
             }

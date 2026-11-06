@@ -14,7 +14,7 @@
 | 4. 认证与会话 | 发现问题并修复 | Cookie 为 `__Host-qf_session; HttpOnly; Secure; SameSite=Lax; Path=/`，无 Domain；会话令牌只存哈希，每次查询检查 idle/absolute、封禁。浏览器写请求严格匹配 Origin；仅 L6 的 PKCE/Bearer 接口豁免，不接受 Cookie 代替凭据。登出、封禁已有失效检查；找回密码漏撤销设备授权已修复（SR-01），并统一兑换授权码的锁顺序（SR-07）。找回密码已知/未知账号的发送响应一致；验证码限次、过期、一次性及登录错误统一提示由既有测试覆盖。 |
 | 5. 上传与文件 | 已确认安全（已检查范围） | `QbankArchiveReader` 的白名单路径、重复名/大小写、非法编码、CRC、实际解压计数、条目/累计大小检查；`BlobStore` 校验哈希、拒绝符号链接、原子发布。上传图片按文件头限定 PNG/JPEG/WebP，4 MiB；截图受数量/大小限制。资源查询检查上传者或有权访问的当前/考试/历史资源。Nginx 的 blob/SDK alias 都为 internal，X-Accel 只能由数据库哈希或 SDK 白名单拼接，不接受用户文件路径；大文件不经 Java 传输。 |
 | 6. 答案可见性 | 已确认安全（按 FR-11 的明确例外） | 未提交读题只返回 project，概览不带 data；缓存只用于未提交投影。浏览器判分原文在状态锁定为 submitted 后、仅本用户本题下发；AI prepare 也要求已提交。`BrowserGradingIntegrationTest.rawDataIsUnavailableBeforeLockAcrossQuestionsAndAcrossUsers`、`PracticeReadIntegrationTest`、`AiGradingIntegrationTest.requestIdReuseAndIdorDoNotExposePrivateMaterials` 覆盖边界。**原始 .qbank 下载本就含作者答案**，FR-11 v1.17 允许已审核公开包匿名下载、所有者下载自己的原文件；不能将此产品决定误报为提交前泄露漏洞。 |
-| 7. 注入与 XSS | 已确认安全（已检查范围） | 全部 `*Mapper.java` 搜索无 `${}`，动态排序使用固定 choose 分支，值均以 `#{}` 绑定。Hub 评论/通知/昵称/题库信息使用 textContent，评论保留换行但不解析 HTML；宿主没有将这些字段交给 Markdown/HTML 渲染器。练习宿主 innerHTML 的已检查用途为固定图标/骨架；拓展 HTML/富文本在不透明来源沙箱中。停用历史通用视图全部用 textContent，图片地址只接受 64 位哈希（新增前端回归）。 |
+| 7. 注入与 XSS | 已确认安全（已检查范围） | 全部 `*Mapper.java` 搜索无 `${}`，动态排序使用固定 choose 分支，值均以 `#{}` 绑定。Hub 评论/通知/昵称/题库信息使用 textContent，评论保留换行但不解析 HTML；宿主没有将这些字段交给 Markdown/HTML 渲染器。练习宿主 innerHTML 的已检查用途为固定图标/骨架；拓展 HTML/富文本在不透明来源沙箱中。停用历史仅用 textContent 显示固定提示，不呈现冻结题目内容或图片（新增前端回归）。 |
 | 8. 资源滥用 | 关键昂贵路径已有约束；统一频控策略需作者决定 | 上传 128 MiB、每日 20 次（北京日界线）、私人原文件配额在事务内预留；并发队列槽位和后台名额不能由用户参数扩大。图片每用户 30 次/分钟、4 MiB，单题引用 20 张；白板 2 MiB。浏览器判分单批 20、投影/请求大小校验；AI 输入/图片/输出 token、余额检查、每用户与站点并发、3 次模型调用上限及检查点/扣费 ref 幂等。L6 模型、ref 均由宿主决定，不能传任意 provider URL 或借 ref 重用逃费。**并非每一个廉价写接口都有单独用户限频**，见第 5 节，不将“有 Nginx 总大小限制”夸大为全面限频。 |
 | 9. 密钥与配置 | 发现问题并修复；部署检查仍需完成 | 本地完整可达 Git 历史扫描未发现所列规则的密钥候选，范围与局限见第 4 节。provider 模式已有验证码 pepper（32 字符）与 AI AES-GCM 主密钥（32 字节）检查，fake 只允许本地/测试来源。补充拒绝正式配置继续使用默认 runner 令牌、默认数据库密码（SR-04）。模型客户端明确关闭请求/响应日志；日志记录 Key ID 而非 Key，验证码生产发送失败只记录掩码联系方式与固定错误。开发 fake 日志会记录**合成验证码**，不得在真实域名开启。 |
 | 10. 拓展与沙箱 | 发现问题并修复；导入待审校验为设计中的受限例外 | 普通练习、考试、AI、浏览器规则/页面与 SDK 的入口按实时白名单判定。历史原有脚本绕过已修复（SR-02）；导入不再执行已 revoked/rejected 摘要（SR-03）。**未知/待审拓展必须先在导入专用服务器沙箱校验**，这是上传队列的既有设计，不是允许向浏览器下发。runner 主进程不执行拓展，子进程权限/96 MiB/超时/队列/输出受限；浏览器 opaque iframe 内 Worker，CSP 禁网络，650 ms 钩子限制，消息校验 source 与随机 session。 |
@@ -33,9 +33,9 @@
 
 复现：形成历史 → 将题库更新到其他内容 → 撤销旧拓展摘要 → 原 `ContentAccessMapper.extension/manifests` 的历史分支不检查审核状态，仍能取得旧拓展脚本与 SDK。
 
-作者已决定：撤销优先于历史执行。修复历史 SQL 的实时批准条件；无法执行时只返回 unavailable 标记，不返回 html/script/style。宿主直接显示标题、分数/来源、冻结作答与授权图片，不创建 iframe，不加载 SDK。冻结投影、白板、图片授权均保留；重新批准同一摘要后恢复原页面。文件被管理员移除时同样使用宿主视图，但保留原“资源已被管理员移除”提示。同步修改验收清单 §6。
+作者已于 2026-11-05 调整决定：撤销优先于历史执行。修复历史 SQL 的实时批准条件；无法执行时只返回 unavailable 标记，不返回 html/script/style。该题位置仅显示“该题的历史记录已丢失（题型拓展已被管理员停用）”，不呈现通用视图、作答、分数、图片或白板入口，不创建 iframe，不加载 SDK。冻结投影、作答、评分、白板与图片均不删除，删除历史时照常释放；重新批准同一摘要后恢复原页面及白板。文件被管理员移除时也仅显示提示，保留原“资源已被管理员移除”文案。同步修改验收清单 §6。
 
-回归：`PracticeCompletionHistoryIntegrationTest.historyAssetsRemainAuthorizedAfterBankChangesUntilHistoryIsDeleted` 覆盖拒绝直接取页面、无脚本、冻结 payload 不变、图片可读、重新批准恢复；`removedExtensionPageKeepsHistoryAndRegistersReadablePlaceholder` 检查无替代脚本。`history-unavailable.test.mjs` 检查纯文本、哈希图片白名单、无 iframe/script；桌面与手机的 `practice-lifecycle.spec.mjs` 实际撤销、显示宿主视图、再批准恢复。
+回归：`PracticeCompletionHistoryIntegrationTest.historyAssetsRemainAuthorizedAfterBankChangesUntilHistoryIsDeleted` 覆盖拒绝直接取页面、无脚本、准确提示、冻结 payload 不变、图片权限保留、重新批准恢复及删除后图片权限释放；`removedExtensionPageKeepsHistoryAndRegistersReadablePlaceholder` 检查无替代脚本。`history-unavailable.test.mjs` 检查仅一个纯文本提示、无题目/作答/图片/iframe/script、隐藏白板及重新批准后恢复；桌面与手机的 `practice-lifecycle.spec.mjs` 实际撤销、仅显示丢失提示、再批准恢复页面与白板笔迹。
 
 ### SR-03：导入校验仍执行已撤销/拒绝拓展（中）
 
@@ -104,7 +104,7 @@
 1. **廉价写接口统一限频**：草稿、白板、收藏、标记通知等没有统一的“每用户每分钟”阈值，当前依靠业务大小限制、乐观锁/幂等及部分领域限频。白板约 250 ms 自动保存，不宜自行套用普通表单频率。建议另定分接口的持续速率、突发量及多实例共享后再实施；本 PR 没有擅自设定产品阈值。不是已证明的越权或免费 AI 漏洞。
 2. **生产部署凭据与网络**：MySQL root 密码仍须由 L7 生产部署配置覆盖，应用不读取或持有 root 凭据；provider 的实际短信/邮件/人机验证配置需上线演练。未配置的通道失败关闭，不用 fake 回退。正式应用现已拒绝默认业务 DB 密码/runner token；生产仍应有独立 Compose、HTTPS、备份和防火墙验收。
 3. **在途与已交付代码的边界**：撤销阻止后续页面/SDK/规则请求，但无法从一个已经打开、断网的浏览器收回此前交付的 JavaScript，也不能追溯中断已发出的沙箱调用。若要求实时强制终止所有已打开页面，需要额外的通知/心跳与 runner 取消协议，不能靠 HTTP 授权检查声称已实现。
-4. **历史原样保留与安全视图**：作者已批准“停用拓展后宿主只读视图、重新批准恢复”的规则，已实现，不再作为待决问题。未知拓展在导入沙箱运行属于既有导入设计，浏览器和练习路径仍只执行已批准摘要。
+4. **历史原样保留与停用提示**：按作者 2026-11-05 最新决定，停用拓展后该题位置仅显示历史丢失提示、不显示通用视图，数据不删除，重新批准后恢复；已实现，不再作为待决问题。未知拓展在导入沙箱运行属于既有导入设计，浏览器和练习路径仍只执行已批准摘要。
 5. **单应用实例约束**：图片/L6 限频、AI 网关并发仍为既有进程内计数；当前单 app 部署有效，多实例会按实例放大额度。扩容前必须迁到共享计数，不把它们描述为跨节点全局保护。数据库上传日限额、配额、任务租约与扣费幂等不依赖这些内存计数。
 6. **下载预算覆盖范围**：`qf.client.monthly-budget-bytes` / IP 日预算目前仅约束 L6 固定版本下载；普通广场 `/api/plaza/packs/{id}/archive` 与所有者原文件下载不接这套预算。因此它不能被当成“全站所有路径的带宽硬上限”。若要防止通过其他原文件路由绕过带宽预算，应另行确认统一预算/边缘限速策略；本 PR 只按明确要求统一下载统计，不擅自恢复已经取消的用户每日下载额度。
 
@@ -112,10 +112,10 @@
 
 本地后端使用 JDK 21、Testcontainers MySQL 8.4、真实 runner（AI 使用 FakeUpstream）。第一轮相关测试 106 项，发现 1 个旧占位脚本断言与新规则不一致，已更新；最终定向 `mvn verify` 39 项、0 失败/错误。另补北京日界线与默认用户配置的检查；补测和完整 CI 的最终数量记录在 PR 描述中。CI 必须 Backend、Frontend、Rule runner、Compose smoke 四项通过才开非草稿 PR。
 
-前端构建与 172 个 Node 测试通过（包括新增宿主只读视图测试）。桌面/手机生命周期浏览器测试增加实际撤销/恢复步骤，截图输出到被忽略的测试产物目录，由 Compose smoke 验证。没有更改数据库结构，无 Flyway 新迁移，没有修改 SubmitService、DraftService、IdempotentDraftService 或 QuestionStateMapper 的并发逻辑。
+按 2026-11-05 补充决定调整后，前端构建与 173 个 Node 测试通过（包括仅提示、纯文本和白板恢复测试）。桌面/手机生命周期浏览器测试增加实际撤销/恢复步骤，截图输出到被忽略的测试产物目录，由 Compose smoke 验证。没有更改数据库结构，无 Flyway 新迁移，没有修改 SubmitService、DraftService、IdempotentDraftService 或 QuestionStateMapper 的并发逻辑。
 
 另关闭未使用的 Spring 默认 UserDetailsService 自动配置，避免每次启动生成并打印默认密码；没有开启 Basic/form 认证，也没有改变会话/设备认证。`SecurityIntegrationTest.noGeneratedPasswordUserIsRegistered` 验证无默认用户 Bean。
 
-生产文件：`QuizForgeApplication`、`AccountService`、`DeviceService`、`LocalImportService`、`DeploymentSecrets`；`CatalogMapper`/`CatalogPublishService`；`QueuedImportValidation`；`ContentAccessMapper`/`ContentPages`；`PracticeHistoryService`；`frontend/practice/app.js`、`history/history-view.js`、新增 `history/unavailable-question.js`。
+生产文件：`QuizForgeApplication`、`AccountService`、`DeviceService`、`LocalImportService`、`DeploymentSecrets`；`CatalogMapper`/`CatalogPublishService`；`QueuedImportValidation`；`ContentAccessMapper`/`ContentPages`；`PracticeHistoryService`；`frontend/practice/app.js`、`practice/practice-context.js`、`history/history-view.js`、新增 `history/unavailable-question.js`。
 
 测试文件：`AccountCompletionIntegrationTest`、`ClientContractIntegrationTest`、`SecurityIntegrationTest`、`DeploymentSecretsTest`、`CatalogIntegrationTest`、`ImportQueueIntegrationTest`、`PracticeCompletionHistoryIntegrationTest`、`frontend/test/history-unavailable.test.mjs`、`frontend/test/browser/practice-lifecycle.spec.mjs`。文档：本报告、`docs/plan/02-practice-acceptance.md` §6。

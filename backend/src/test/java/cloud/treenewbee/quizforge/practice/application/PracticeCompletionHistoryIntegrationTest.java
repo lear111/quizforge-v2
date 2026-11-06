@@ -414,7 +414,7 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
             assertThat(revoked.path("pages").path(key).path("unavailable").asBoolean()).isTrue();
             assertThat(revoked.path("pages").path(key).has("script")).isFalse();
             assertThat(revoked.path("pages").path(key).has("html")).isFalse();
-            assertThat(revoked.path("pages").path(key).path("message").asString()).isEqualTo("该题型拓展已被管理员停用，无法显示原页面");
+            assertThat(revoked.path("pages").path(key).path("message").asString()).isEqualTo("该题的历史记录已丢失（题型拓展已被管理员停用）");
             assertThat(revoked.path("questions")).isEqualTo(before.path("questions"));
             var extension=before.path("questions").get(0).path("payload").path("extension");
             error(request("/api/extensions/"+key+"/"+extension.path("version").asString()+"/page",null),404,"NOT_FOUND");
