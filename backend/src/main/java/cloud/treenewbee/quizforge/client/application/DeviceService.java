@@ -184,10 +184,11 @@ public class DeviceService {
         // 先普通读：不存在的行不加锁（避免间隙锁）；真正的一次性由删除的影响行数保证。
         var grant = code == null ? null : devices.findCode(hash(code)).orElse(null);
         Map<String, Object> result = grant == null ? null : transactions.execute(status -> {
+            // 与封禁、找回密码保持账户 → 授权码的加锁顺序。
+            accounts.lockUser(grant.userId());
             if (devices.deleteCode(hash(code)) != 1) return null;
             Instant now = clock.instant();
             String expected = verifier == null ? null : Base64.getUrlEncoder().withoutPadding().encodeToString(sha256(verifier));
-            accounts.lockUser(grant.userId());
             if (!grant.expiresAt().isAfter(now) || !Objects.equals(grant.client(), input.get("client"))
                     || !Objects.equals(grant.redirectUri(), input.get("redirect_uri")) || expected == null
                     || !MessageDigest.isEqual(grant.challenge().getBytes(StandardCharsets.US_ASCII), expected.getBytes(StandardCharsets.US_ASCII))

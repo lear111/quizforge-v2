@@ -1,4 +1,5 @@
 import {waitLifecycleJob} from './practice/lifecycle-jobs.js';
+import {mountUnavailableQuestion} from './history/unavailable-question.js';
 import {gradeTicket,gradePending} from './grading/browser-grading.js';
 import {loadLibraryIndex} from './shared/online.js';
 import {createListeningPlayer} from './listening/listening-player.js';
@@ -463,10 +464,10 @@ async function showHistoryQuestion(pane,qid,{historyEntry=pane.historyEntry,hist
   pane.loading=true;
   let candidateHost=null,candidatePlugin=null;
   try{
-    const assets=await prepareAssets(entry.page);
+    const assets=entry.page.unavailable?entry.page:await prepareAssets(entry.page);
     const historyQuestion={...entry,page:assets},next={...pane,view:'history',historyEntry,historyView,historyDraftMode,historyQuestion,historyQuestionId:qid,summaryShown:false};
     candidateHost=el('div','question-frame-candidate');pane.frameHost.append(candidateHost);
-    candidatePlugin=mountExtension(candidateHost,assets,contextFor(next),{onLayout:(options,frame)=>setFrameLayout(pane,options,frame),onRequest:(method,args)=>pageRequest(pane.plugin===candidatePlugin?pane:next,method,args),onError:message=>{if(active()===pane&&pane.plugin===candidatePlugin)notice(message);}});
+    candidatePlugin=assets.unavailable?mountUnavailableQuestion(candidateHost,entry.payload,assets.message):mountExtension(candidateHost,assets,contextFor(next),{onLayout:(options,frame)=>setFrameLayout(pane,options,frame),onRequest:(method,args)=>pageRequest(pane.plugin===candidatePlugin?pane:next,method,args),onError:message=>{if(active()===pane&&pane.plugin===candidatePlugin)notice(message);}});
     await candidatePlugin.ready;
     if(pane.closed)throw new Error('题库页面已关闭');
 

@@ -67,11 +67,14 @@ public class PracticeHistoryService {
                     var page=new LinkedHashMap<>(pages.page(user,digest,payload.path("extension").path("version").asString()));
                     page.put("extension",payload.path("extension"));pageValues.set(digest,json.valueToTree(page));
                 } catch(ApiException|java.io.IOException unavailable) {
-                    // 管理员移除文件后，仍保留其余冻结信息。
-                    var page=json.createObjectNode();page.set("apiVersion",json.valueToTree(Map.of("major",1,"minor",5)));
-                    page.set("extension",payload.path("extension"));page.put("html","<p>该资源已被管理员移除，题目结构、作答与评分仍保留。</p><h3 id=title></h3><pre id=answer></pre><pre id=result></pre>");
-                    page.put("script","QF.page.register({onLoad(value){document.getElementById('title').textContent=value.question.title;document.getElementById('answer').textContent=JSON.stringify(value.answer,null,2);document.getElementById('result').textContent=JSON.stringify(value.result,null,2);}});");
-                    page.put("style","pre{white-space:pre-wrap;overflow-wrap:anywhere}");pageValues.set(digest,page);
+                    // 宿主只读视图不加载拓展、SDK 或替代脚本；冻结数据仍完整返回。
+                    var page=json.createObjectNode();
+                    page.set("extension",payload.path("extension"));
+                    page.put("unavailable",true);
+                    page.put("message",pages.canExecute(user,entry.extensionDigest())
+                            ? "该资源已被管理员移除，题目结构、作答与评分仍保留。"
+                            : "该题型拓展已被管理员停用，无法显示原页面");
+                    pageValues.set(digest,page);
                 }
             }
             questions.addObject().put("pageKey",digest).set("payload",payload);

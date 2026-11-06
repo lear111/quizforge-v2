@@ -6,7 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
-/** Authorization is checked against live approval and the caller's nondeleted collections on every request. */
+/** 每次访问均检查实时审核状态和归属；历史保留数据不授予被撤销拓展的执行权限。 */
 @Mapper
 public interface ContentAccessMapper {
     String AVAILABLE = """
@@ -29,7 +29,9 @@ public interface ContentAccessMapper {
             ) OR EXISTS(SELECT 1 FROM practice_round r JOIN practice_round_question q ON q.round_id=r.id AND q.user_id=r.user_id
               JOIN practice_collection c ON c.id=r.collection_id AND c.user_id=r.user_id
               WHERE r.user_id=#{userId} AND q.extension_digest=#{digest} AND r.deleted_at IS NULL
-                AND c.deleted_at IS NULL AND r.history_frozen_at IS NOT NULL)
+                AND c.deleted_at IS NULL AND r.history_frozen_at IS NOT NULL
+                AND EXISTS(SELECT 1 FROM admin_extension_review approval
+                  WHERE approval.digest=q.extension_digest AND approval.status='approved'))
             """)
     boolean extension(@Param("userId") String userId, @Param("digest") byte[] digest);
 
@@ -82,6 +84,7 @@ public interface ContentAccessMapper {
             UNION SELECT DISTINCT e.manifest FROM practice_round r JOIN practice_round_question q ON q.round_id=r.id AND q.user_id=r.user_id
               JOIN practice_collection c ON c.id=r.collection_id AND c.user_id=r.user_id
               JOIN content_extension_package e ON e.digest=q.extension_digest
+              JOIN admin_extension_review approval ON approval.digest=q.extension_digest AND approval.status='approved'
               WHERE r.user_id=#{userId} AND r.deleted_at IS NULL AND c.deleted_at IS NULL AND r.history_frozen_at IS NOT NULL
             """)
     List<String> manifests(@Param("userId") String userId);

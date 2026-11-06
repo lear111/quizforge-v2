@@ -328,8 +328,9 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
         doThrow(new java.io.IOException("removed")).when(pages).page(eq(user),anyString(),anyString());
         var history=ok(request(base(type)+"/history/"+id,null));
         var page=history.path("pages").properties().iterator().next().getValue();
-        assertThat(page.path("html").asString()).contains("该资源已被管理员移除");
-        assertThat(page.path("script").asString()).contains("QF.page.register({onLoad", "textContent=value.question.title", "JSON.stringify(value.answer", "JSON.stringify(value.result");
+        assertThat(page.path("message").asString()).contains("该资源已被管理员移除");
+        assertThat(page.path("unavailable").asBoolean()).isTrue();
+        assertThat(page.has("script")).isFalse();
         assertThat(history.path("questions").get(0).path("payload").path("state").path("status").asString()).isEqualTo("submitted");
     }
     @Test void archiveFailureDoesNotResetAnswersAndNewRequestCanResume() throws Exception {
@@ -405,9 +406,22 @@ class PracticeCompletionHistoryIntegrationTest extends MySqlTestBase {
         try {
             complete(begin(type,"finish","finish",ok(summary(type))));String id=complete(begin(type,"restart","archive",ok(summary(type)))).path("historyId").asString();
             jdbc.update("UPDATE practice_collection SET bank_id=? WHERE id=?",samples.get("多选题").question().bankId(),sample.collection());
+            var before=ok(request(base(type)+"/history/"+id,null));
             jdbc.update("UPDATE admin_extension_review SET status='revoked' WHERE digest=?",digest);
             var image=request("/api/resources/"+hash,null);assertThat(image.statusCode()).isEqualTo(200);assertThat(image.headers().firstValue("X-Accel-Redirect")).isPresent();
-            assertThat(ok(request(base(type)+"/history/"+id,null)).path("pages").size()).isEqualTo(1);
+            var revoked=ok(request(base(type)+"/history/"+id,null));
+            String key=HexFormat.of().formatHex(digest);
+            assertThat(revoked.path("pages").path(key).path("unavailable").asBoolean()).isTrue();
+            assertThat(revoked.path("pages").path(key).has("script")).isFalse();
+            assertThat(revoked.path("pages").path(key).has("html")).isFalse();
+            assertThat(revoked.path("pages").path(key).path("message").asString()).isEqualTo("该题型拓展已被管理员停用，无法显示原页面");
+            assertThat(revoked.path("questions")).isEqualTo(before.path("questions"));
+            var extension=before.path("questions").get(0).path("payload").path("extension");
+            error(request("/api/extensions/"+key+"/"+extension.path("version").asString()+"/page",null),404,"NOT_FOUND");
+            jdbc.update("UPDATE admin_extension_review SET status='approved' WHERE digest=?",digest);
+            var restored=ok(request(base(type)+"/history/"+id,null));
+            assertThat(restored.path("pages")).isEqualTo(before.path("pages"));
+            assertThat(restored.path("questions")).isEqualTo(before.path("questions"));
             histories.delete(user,sample.collection(),id);error(request("/api/resources/"+hash,null),404,"NOT_FOUND");
         } finally {jdbc.update("UPDATE admin_extension_review SET status='approved' WHERE digest=?",digest);jdbc.update("DELETE FROM content_bank_asset WHERE bank_id=? AND path='retained.png'",sample.question().bankId());}
     }

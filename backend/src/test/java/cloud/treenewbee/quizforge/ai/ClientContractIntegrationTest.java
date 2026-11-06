@@ -46,6 +46,8 @@ import cloud.treenewbee.quizforge.ai.application.AiBalanceService;
 import cloud.treenewbee.quizforge.ai.application.RedeemCodeService;
 import cloud.treenewbee.quizforge.ai.application.UpstreamKeyService;
 import cloud.treenewbee.quizforge.catalog.infrastructure.CatalogMapper;
+import cloud.treenewbee.quizforge.catalog.infrastructure.PlazaMapper;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import cloud.treenewbee.quizforge.client.application.ClientAiService;
 import cloud.treenewbee.quizforge.shared.web.ApiException;
 import cloud.treenewbee.quizforge.identity.application.AccountAdminService;
@@ -123,6 +125,9 @@ class ClientContractIntegrationTest extends MySqlTestBase {
     @Autowired UpstreamKeyService keys;
     @Autowired RedeemCodeService codes;
     @Autowired CatalogMapper catalog;
+    @MockitoSpyBean PlazaMapper plaza;
+    @MockitoSpyBean cloud.treenewbee.quizforge.identity.infrastructure.AccountMapper accounts;
+    @MockitoSpyBean cloud.treenewbee.quizforge.client.infrastructure.DeviceMapper devices;
     @Autowired JdbcTemplate jdbc;
     @Autowired MutableClock clock;
     @Value("${local.server.port}") int port;
@@ -669,6 +674,7 @@ class ClientContractIntegrationTest extends MySqlTestBase {
         assertThat(response.headers().firstValue("Content-Disposition").orElse(""))
                 .isEqualTo("attachment; filename=\"question-bank.qbank\"; filename*=UTF-8''%E4%B8%AD%E6%96%87%20%E9%A2%98%E5%BA%93.qbank");
         assertThat(downloads(pack)).isEqualTo(1);
+        assertThat(dailyDownloads(pack)).isEqualTo(1);
     }
 
     @Test
@@ -701,6 +707,7 @@ class ClientContractIntegrationTest extends MySqlTestBase {
         jdbc.update("UPDATE catalog_pack_revision SET size = ? WHERE pack_id = ?", 64L * 1024 * 1024 + 1, large);
         assertImportError(get("/api/packs/" + large + "/local-import?revision=1", null, null), 413, "LOCAL_IMPORT_TOO_LARGE");
         assertThat(downloads(pack)).isZero();
+        assertThat(dailyDownloads(pack)).isZero();
     }
 
     @Test
@@ -712,16 +719,85 @@ class ClientContractIntegrationTest extends MySqlTestBase {
         assertThat(get(path, null, null).statusCode()).isEqualTo(200);
         assertImportError(get(path, null, null), 429, "LOCAL_IMPORT_TRAFFIC_LIMIT");
         assertThat(downloads(pack)).isEqualTo(1);
+        assertThat(dailyDownloads(pack)).isEqualTo(1);
         // 站点每月预算优先，失败时 IP 的计数回滚。
         jdbc.update("DELETE FROM client_download_traffic");
         jdbc.update("INSERT INTO client_download_traffic (period, bytes, updated_at) VALUES (?, 1000000, NOW(3))",
                 "month:" + clock.now.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate().toString().substring(0, 7));
         assertImportError(get(path, null, null), 429, "LOCAL_IMPORT_TRAFFIC_LIMIT");
         assertThat(downloads(pack)).isEqualTo(1);
+        assertThat(dailyDownloads(pack)).isEqualTo(1);
 
         clock.now = clock.now.plus(Duration.ofMinutes(2));
         for (int i = 0; i < 60; i++) assertThat(get("/api/packs/" + pack + "/local-import?revision=1", null, null).statusCode()).isEqualTo(200);
         assertImportError(get("/api/packs/" + pack + "/local-import?revision=1", null, null), 429, "LOCAL_IMPORT_RATE_LIMITED");
+    }
+
+    @Test
+    void dailyDownloadFailureRollsBackTotalAndTraffic() throws Exception {
+        byte[] bytes = {1};
+        String pack = pack("rollback.qbank", bytes);
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException("模拟日统计写入失败"))
+                .when(plaza).recordDownload(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(pack));
+        String path = "/api/packs/" + pack + "/download?revision=1&sha256=" + HexFormat.of().formatHex(sha256(bytes));
+        assertThat(get(path, null, null).statusCode()).isEqualTo(500);
+        assertThat(downloads(pack)).isZero();
+        assertThat(dailyDownloads(pack)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(bytes),0) FROM client_download_traffic", Long.class)).isZero();
+    }
+
+    @Test
+    void pinnedDownloadUsesSameBeijingDateBoundaryAsPlaza() throws Exception {
+        byte[] bytes = {1};
+        String pack = pack("date.qbank", bytes);
+        var day = clock.now.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate().plusDays(1);
+        clock.now = day.atTime(23, 59, 59).atZone(ZoneId.of("Asia/Shanghai")).toInstant();
+        String path = "/api/packs/" + pack + "/download?revision=1&sha256=" + HexFormat.of().formatHex(sha256(bytes));
+        assertThat(get(path, null, null).statusCode()).isEqualTo(200);
+        assertThat(get("/api/plaza/packs/" + pack + "/archive", null, null).statusCode()).isEqualTo(200);
+        clock.now = clock.now.plusSeconds(2);
+        assertThat(get(path, null, null).statusCode()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT downloads FROM catalog_download_day WHERE pack_id=? AND download_day=?",
+                Long.class, pack, day)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT downloads FROM catalog_download_day WHERE pack_id=? AND download_day=?",
+                Long.class, pack, day.plusDays(1))).isEqualTo(1);
+        assertThat(downloads(pack)).isEqualTo(3);
+    }
+
+    @Test
+    void concurrentPinnedDownloadsCountEveryAcceptedRequestExactlyOnce() throws Exception {
+        byte[] bytes = {1};
+        String pack = pack("concurrent.qbank", bytes);
+        String path = "/api/packs/" + pack + "/download?revision=1&sha256=" + HexFormat.of().formatHex(sha256(bytes));
+        var ready = new java.util.concurrent.CountDownLatch(8);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(8)) {
+            var results = new ArrayList<java.util.concurrent.Future<Integer>>();
+            for (int i = 0; i < 8; i++) results.add(pool.submit(() -> {
+                ready.countDown();
+                assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
+                return get(path, null, null).statusCode();
+            }));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (var result : results) assertThat(result.get(20, TimeUnit.SECONDS)).isEqualTo(200);
+        }
+        assertThat(downloads(pack)).isEqualTo(8);
+        assertThat(dailyDownloads(pack)).isEqualTo(8);
+    }
+
+    @Test
+    void codeExchangeLocksAccountBeforeConsumingCode() throws Exception {
+        var grant = grant(user, "web", webRedirect(), verifier(), "加锁顺序");
+        org.mockito.Mockito.clearInvocations(accounts, devices);
+        json(exchange(grant.exchange()), 200);
+        var order = org.mockito.Mockito.inOrder(accounts, devices);
+        order.verify(accounts).lockUser(user.id());
+        order.verify(devices).deleteCode(org.mockito.ArgumentMatchers.any());
+    }
+
+    private long dailyDownloads(String pack) {
+        return jdbc.queryForObject("SELECT COALESCE(SUM(downloads),0) FROM catalog_download_day WHERE pack_id=?", Long.class, pack);
     }
 
     // ------------------------------------------------------------------ 辅助
