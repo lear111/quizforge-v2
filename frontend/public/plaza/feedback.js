@@ -13,13 +13,15 @@ export async function mountFeedback(holder,packId,request,{admin=false}={}) {
   const reportForm=el('form',{class:'qa-form'},el('label',{},'举报原因',reason),reportButton);
   const report=el('details',{},el('summary',{text:'举报题库包'}),reportForm);
   section.append(el('h3',{text:'评论'}),notice,list,more,form,report);holder.append(section);
-  let cursor=null,busy=false;
+  let cursor=null,busy=false,loadGeneration=0;
   async function action(button,fn) {
     if(busy)return;busy=true;button.disabled=true;notice.textContent='';
     try{await fn();}catch(error){notice.textContent=error.message;}finally{busy=false;button.disabled=false;}
   }
   async function load(append=false) {
+    const generation=++loadGeneration;
     const data=await request(`/api/plaza/packs/${encodeURIComponent(packId)}/comments${append&&cursor?'?cursor='+encodeURIComponent(cursor):''}`);
+    if(generation!==loadGeneration)return;
     if(!append)list.replaceChildren();
     for(const comment of data.items) {
       const item=el('article',{'data-comment-id':comment.id,class:'plaza-comment'},

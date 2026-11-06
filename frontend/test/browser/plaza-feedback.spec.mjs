@@ -32,7 +32,18 @@ test('plaza comments delete report admin removal and reporter notification',asyn
     member.on('pageerror',error=>errors.push(error.message));
     member.on('dialog',dialog=>dialog.accept());
     await registerByApi(member,'feedback-member','举报成员');
-    await member.goto('/plaza/#'+pack);
+    let entered,release;
+    const held=new Promise(done=>entered=done),gate=new Promise(done=>release=done);
+    const matcher=url=>url.pathname===`/api/plaza/packs/${pack}/comments`;
+    await member.route(matcher,async route=>{entered();await gate;await route.continue();});
+    try {
+      await member.goto('/plaza/#'+pack);
+      await held;
+      // 评论列表尚未返回时，收藏必须立即可用；用门控替代固定等待。
+      await member.getByRole('button',{name:'收藏',exact:true}).click();
+      await expect(member.getByRole('button',{name:'取消收藏',exact:true})).toBeVisible();
+    } finally { release(); }
+    await member.unroute(matcher,{behavior:'wait'});
     const section=member.getByRole('region',{name:'评论与举报'});
     const text='<b>这是纯文本</b>\n第二行';
     await section.locator('[name=body]').fill(text);
