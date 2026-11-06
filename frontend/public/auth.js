@@ -1,11 +1,12 @@
 import {quotaCards} from './quota.js';
 import {bindAiBalance} from './ai-balance.js';
+import {bindDevices} from './devices.js';
 import {bindActivity} from '/practice/shell/activity.js';
 
 function practiceReturn() {
   const raw=new URLSearchParams(location.search).get('returnTo');
   if(!raw)return null;
-  try{const target=new URL(raw,location.origin);return target.origin===location.origin&&(target.pathname.startsWith('/practice/')||target.pathname==='/library/'||target.pathname==='/plaza/')?target.pathname+target.search+target.hash:null;}catch{return null;}
+  try{const target=new URL(raw,location.origin);return target.origin===location.origin&&(target.pathname.startsWith('/practice/')||target.pathname==='/library/'||target.pathname==='/plaza/'||target.pathname==='/connect/authorize')?target.pathname+target.search+target.hash:null;}catch{return null;}
 }
 const byId = (id) => document.getElementById(id);
 const loginForm = byId('login-form');
@@ -407,6 +408,7 @@ function showAccount(data) {
   for (const form of [loginForm, registerForm, resetForm, contactForm]) form.reset();
   void loadQuota();
   void refreshAi();
+  void refreshDevices();
 }
 
 async function loadQuota() {
@@ -433,6 +435,7 @@ async function loadQuota() {
 
 byId('quota-refresh').addEventListener('click', () => { if (!pending) void loadQuota(); });
 const refreshAi = bindAiBalance(request);
+const refreshDevices = bindDevices(request);
 byId('contact-section').addEventListener('toggle', () => {
   if (byId('contact-section').open) {
     void refreshConfig().then(() => syncCaptcha(contactForm));

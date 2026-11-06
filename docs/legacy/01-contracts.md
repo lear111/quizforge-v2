@@ -306,7 +306,7 @@
 | `stream` 字段 | `HUB_CONNECT_AI.md` 第 6 节：拒绝 | 接受 `stream:false`，拒绝其他值；客户端都发送 `stream:false`（**不接受就全部失败**） |
 | 确认授权的结果 | 3.2：302 重定向 | 200 JSON `{redirect}`，由页面跳转 |
 | 全站并发 | 第 6 节：8 | 配置 `AI_SITE_CONCURRENCY`，默认 2、最大 8 |
-| 请求大小 | 第 6 节：12 MiB | 13 MiB（图片单独按 12 MiB 限制） |
+| 请求大小 | 第 6 节：12 MiB | 13 MiB（图片单独按 12 MiB 限制；base64 编码后图片合计最多约 9.7 MiB 就会先触发请求体上限，客户端自己把请求限制在 12 MiB 以内） |
 | `ai` 字段 | 第 5 节含 `pricePerMillion`、`model:"通义千问 qwen-vl-plus"` | 没有 `pricePerMillion`；`model` 固定为“QuizForge 官方模型” |
 | 402 响应 | 第 6.1 节 `error` 含 `balance` | 只有 `code`、`message` |
 | 计费公式 | 6.1：`total_tokens × 单价` | 按输入、输出分别计价（只有总量时取较高单价） |

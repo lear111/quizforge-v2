@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cloud.treenewbee.quizforge.client.application.ClientSettings;
 import cloud.treenewbee.quizforge.identity.application.AuthPolicyService;
 import cloud.treenewbee.quizforge.identity.verification.CaptchaVerifier;
 
@@ -18,10 +19,12 @@ public class ConfigController {
 
     private final AuthPolicyService policies;
     private final CaptchaVerifier captcha;
+    private final ClientSettings client;
 
-    public ConfigController(AuthPolicyService policies, CaptchaVerifier captcha) {
+    public ConfigController(AuthPolicyService policies, CaptchaVerifier captcha, ClientSettings client) {
         this.policies = policies;
         this.captcha = captcha;
+        this.client = client;
     }
 
     @GetMapping("/api/config")
@@ -54,6 +57,13 @@ public class ConfigController {
         result.put("captchaReady", capabilities.captchaAvailable());
         result.put("captchaProvider", captcha.provider());
         result.put("turnstileSiteKey", captcha.siteKey());
+        // 遗留契约 C-05 第 15 节：客户端兼容能力（练习与后台都在本站，没有独立来源）。
+        result.put("maxArchiveMB", 64);
+        result.put("cloudEnabled", true);
+        result.put("practiceOrigin", "");
+        result.put("adminEnabled", true);
+        result.put("localImport", Map.of("enabled", client.localImportEnabled(), "protocolVersion", 1, "scheme", "quizforge"));
+        result.put("officialAi", Map.of("enabled", client.connectEnabled(), "protocolVersion", 1));
         return result;
     }
 }

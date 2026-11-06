@@ -250,7 +250,27 @@ SSE 事件：`message`（`{userMessageId}`，请求已接受）→ 若干 `delta
 | `GET /api/packs/{id}/local-import`、`GET /api/packs/{id}/download?revision=&sha256=` | 固定版本导入清单与下载 |
 | `GET /download`、`GET /api/downloads`、`GET\|HEAD /download/files/{name}` | 软件下载 |
 
-实现前须从旧源码逐个整理请求与响应字段（遗留契约 V-1），并用**录制的旧接口响应**作为契约测试的期望值：同一请求发给 V2，响应结构必须一致。
+请求与响应字段见[遗留契约 C-05](../legacy/01-contracts.md)（V-1，2026-11-05 补全）。契约测试 `ClientContractIntegrationTest`（接口）与 `client-compat.spec.mjs`（经过 Nginx）以它为准；没有录制旧服务的响应（不连接旧平台），期望值来自旧 Hub 与旧客户端的源码和测试。
+
+实现说明（L6，模块 `client`）：
+
+- **认证：** `/api/connect/{token,me,redeem,logout}`、AI 网关只看 `Authorization` 头，Cookie 无效，不做 Origin 校验；确认授权与设备列表只认浏览器会话并校验 Origin；其他网页接口不识别设备令牌。
+- **授权请求**保存在 `auth_connect_request`（旧平台在内存中），重启后仍然有效。
+- **AI 网关**复用 `AiGateway`：L5.2 的错误码映射回旧契约（`AI_UNAVAILABLE`、`AI_KEY_REJECTED` → 503 `AI_DISABLED`；`AI_SITE_BUSY`、`AI_UPSTREAM_BUSY` → 429 `AI_BUSY`；`AI_UPSTREAM_REJECTED` → 502 `AI_UPSTREAM_FAILED`；`AI_REQUEST_INVALID` → 400 `AI_REQUEST_UNSUPPORTED`）。
+- **固定版本下载**走 `X-Accel-Redirect`，客户端看到的仍是 200 与原始字节；匿名流量预算记在 `client_download_traffic`。
+
+与旧平台的差异（已知且不影响已发布客户端的判断逻辑）：
+
+| 项目 | 旧平台 | V2 |
+| --- | --- | --- |
+| 余额 | 扣到 0 为止，`cost` 是实际扣的数 | 按用量如实扣费，余额可为负（设计 08 第 1.2 节）；客户端接口把负余额显示为 0，`cost` 是实际费用 |
+| 上游超时 | 每个 Key 90 秒 | `qf.ai.call-timeout`（默认 40 秒） |
+| `response_format: json_schema` | 原样转发 | 按 JSON 输出处理，不把 schema 发给上游（官方额度的客户端只用 `json_object`） |
+| 响应 `choices` | 上游原样 | 由模型回复重新组装（`index`、`message`、`finish_reason`） |
+| 图片 | 任何角色的消息都转发 | 只接受 user 消息中的图片（已发布客户端只这样发送） |
+| 封禁 | 封禁期间令牌失效，解封后恢复 | 封禁时撤销（L4），解封后需要重新授权 |
+| 未登录的授权页 | 303 到 `/manage/#connect-login/<key>` | 303 到 `/?returnTo=…`（由浏览器跟随，客户端看不到） |
+| 浏览器写接口的来源错误 | 403 `CONNECT_REQUEST_REJECTED` | 403 `ORIGIN_REJECTED`（只有本站页面调用） |
 
 ---
 

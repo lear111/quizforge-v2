@@ -63,6 +63,9 @@ public class SecurityConfig {
                                 "/api/auth/register", "/api/auth/login", "/api/auth/logout",
                                 "/api/auth/email-code", "/api/auth/phone-code", "/api/auth/login-code",
                                 "/api/auth/password-reset-code", "/api/auth/password-reset").permitAll()
+                        // 客户端兼容接口（遗留契约 C-05）：由控制器检查设备令牌或会话，返回旧契约规定的错误码；固定版本导入匿名。
+                        .requestMatchers("/connect/authorize", "/api/connect/**", "/api/ai/v1/chat/completions",
+                                "/api/packs/*/local-import", "/api/packs/*/download", "/api/java/capabilities").permitAll()
                         // 所有后台接口统一检查：会话用户必须是未被封禁的管理员（只从会话取身份）。
                         .requestMatchers("/api/admin/**").access((authentication, context) ->
                                 new AuthorizationDecision(isAdmin(authentication.get(), admins)))
