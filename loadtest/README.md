@@ -32,7 +32,7 @@ python loadtest/seed/seed.py --project $project --base-url http://localhost:8099
 # 只做连通性检查可先用 --users 1
 ```
 
-脚本通过 HTTP 登录/注册，上传 `samples/basic-types.qbank`，再用同一 Compose 项目的 MySQL 执行样例拓展审批 SQL（reviewer=loadtest-fixture）。只批准这些实例引用的摘要；这是压测白名单夹具，不是审核流程。脚本会拒绝远程 URL、HTTP 重定向、远程 Docker 连接、没有 `qf.loadtest=true` 标签的 MySQL，以及不匹配该项目 Nginx 映射端口的 URL。
+脚本通过 HTTP 登录/注册，向 `/api/library/uploads?filename=...` 上传原始样例（202），轮询资源版本的后台校验结果，再用同一 Compose 项目的 MySQL 批准该版本引用的样例拓展（reviewer=loadtest-fixture），最后向 `/api/library/packs/{id}/practice` 请求创建实例。已停止使用旧同步导入接口。只批准这些样例包引用的摘要；这是压测白名单夹具，不是审核流程。脚本会拒绝远程 URL、HTTP 重定向、远程 Docker 连接、没有 `qf.loadtest=true` 标签的 MySQL，以及不匹配该项目 Nginx 映射端口的 URL。
 
 生成 `loadtest/users.json`，格式为数组：`[{email,password,collections:[{id,title,sample,questionIds:[...],answers:{题目ID:作答对象}}]}]`。包含明文测试密码，已加入 gitignore，不上传到 PR 或制品。每个用户有五本基础题型题库和一本 `loadtest-300`（混合 300 题），共 305 道可见题。重复执行时使用文件中的账号密码，已有且仍可访问的实例不重复导入；旧版仅含五本基础题型的检查点会保留这些实例，只补导入压测题库。账号密码同时保存在同目录的 `users.seed-state.json` 检查点中（同样已忽略）；人数减少时仍保留其他账号的密码。不要删除这些文件后对同一个数据库重跑（会丢失随机密码）。从头重建时同时使用全新 Compose 项目和新 `--output` 文件，或只删除自己的隔离项目卷及造数文件。每次导入完成都会保存检查点。
 

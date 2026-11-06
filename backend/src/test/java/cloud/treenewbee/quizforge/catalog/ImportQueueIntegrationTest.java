@@ -405,6 +405,21 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
             queue.runOne();
             assertThat(review(first.packId())).isEqualTo("approved");
             assertThat(quotas.usage(admin.id()).storage().usedBytes()).isZero();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notification WHERE audience='bank' AND target_id=?",
+                    Integer.class, first.packId())).isZero();
+            // 管理员新版本由队列自动通过，同事务保留更新通知；重复调度不重复发送。
+            var update = publishing.uploadRevision(admin.id(), first.packId(),
+                    new cloud.treenewbee.quizforge.catalog.application.PackInfo(
+                            "公开验收", "简介", "说明", "其他", List.of(), "第二版更新说明"),
+                    true, path, "公开.qbank", List.of(), List.of());
+            assertThat(update.revision()).isEqualTo(2);
+            assertThat(queue.runOne()).isTrue();
+            assertThat(jdbc.queryForObject("SELECT approved_revision FROM catalog_pack WHERE id=?",
+                    Integer.class, first.packId())).isEqualTo(2);
+            queue.reconcileReviews();
+            assertThat(queue.runOne()).isFalse();
+            assertThat(jdbc.queryForList("SELECT body FROM notification WHERE audience='bank' AND target_id=?",
+                    String.class, first.packId())).singleElement().asString().contains("第二版更新说明");
             User ordinary = user(false);
             var second = publishing.publishUpload(ordinary.id(), new cloud.treenewbee.quizforge.catalog.application.PackInfo(
                     "普通公开验收", "简介", "说明", "其他", List.of(), ""), true, path, "公开.qbank", List.of());

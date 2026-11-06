@@ -168,8 +168,12 @@ class CatalogIntegrationTest extends MySqlTestBase {
     @Test
     void privateImportsRecordTheBankUuidAndFillItOnSharedContent() throws Exception {
         User owner = user();
-        HttpResponse<String> imported = privateImport(owner, archive(List.of("单选题", "判断题"), null));
-        assertThat(imported.statusCode()).as(imported.body()).isEqualTo(200);
+        HttpResponse<String> imported = privateUpload(owner, archive(List.of("单选题", "判断题"), null));
+        assertThat(imported.statusCode()).as(imported.body()).isEqualTo(202);
+        String privatePack = json(imported).path("packId").asString();
+        jdbc.update("UPDATE admin_extension_review SET status='approved'");
+        var bankIds = jdbc.queryForList("SELECT bank_uuid FROM catalog_pack_bank WHERE pack_id=?", String.class, privatePack);
+        assertThat(post(owner, "/api/library/packs/" + privatePack + "/practice", JSON.writeValueAsString(Map.of("banks", bankIds))).statusCode()).isEqualTo(200);
         assertThat(jdbc.queryForList("SELECT source_bank_uuid FROM practice_collection WHERE user_id = ?", String.class, owner.id()))
                 .containsExactlyInAnyOrder(ImportArchives.BANK_IDS.get("单选题"), ImportArchives.BANK_IDS.get("判断题"));
         assertThat(jdbc.queryForList("SELECT bank_uuid FROM content_bank", String.class))
@@ -365,8 +369,9 @@ class CatalogIntegrationTest extends MySqlTestBase {
     void privateBankAvailabilityFollowsTheWhitelistAndRevocationShowsItsImpact() throws Exception {
         User owner = user();
         User admin = admin();
-        HttpResponse<String> imported = privateImport(owner, archive(List.of("单选题"), null));
-        String bank = json(imported).path("collections").get(0).path("bankId").asString();
+        HttpResponse<String> imported = privateUpload(owner, archive(List.of("单选题"), null));
+        String privatePack = json(imported).path("packId").asString();
+        String bank = jdbc.queryForObject("SELECT bank_id FROM catalog_pack_bank WHERE pack_id=?", String.class, privatePack);
         String digest = jdbc.queryForObject("SELECT LOWER(HEX(digest)) FROM admin_extension_review", String.class);
         assertThat(availability.state(bank).message()).isEqualTo("审核中");
         assertThat(json(get(admin, "/api/admin/extensions?status=pending")).path("items")).hasSize(1);
@@ -378,15 +383,22 @@ class CatalogIntegrationTest extends MySqlTestBase {
 
         assertThat(post(admin, "/api/admin/extensions/" + digest + "/approve", null).statusCode()).isEqualTo(200);
         assertThat(availability.state(bank).available()).isTrue();
+        var bankIds = jdbc.queryForList("SELECT bank_uuid FROM catalog_pack_bank WHERE pack_id=?", String.class, privatePack);
+        assertThat(post(owner, "/api/library/packs/" + privatePack + "/practice", JSON.writeValueAsString(Map.of("banks", bankIds))).statusCode()).isEqualTo(200);
 
-        // 撤销前显示影响：私人题库数量与广场题库包。
+        // 新流程同时保留私人题库包；影响列表覆盖该资源包、练习实例和广场包。
         String pack = json(publish(owner, archive(List.of("单选题"), null), info("合集"), List.of())).path("packId").asString();
         approveEverything(pack, 1);
         JsonNode impact = json(get(admin, "/api/admin/extensions/" + digest + "/impact")).path("impact");
         assertThat(impact.path("privateCollections").asLong()).isEqualTo(1);
-        assertThat(impact.path("packs")).hasSize(1);
-        assertThat(impact.path("packs").get(0).path("packId").asString()).isEqualTo(pack);
-        assertThat(impact.path("packs").get(0).path("current").asBoolean()).isTrue();
+        assertThat(impact.path("packs")).hasSize(2);
+        assertThat(impact.path("packs")).anySatisfy(item -> {
+            assertThat(item.path("packId").asString()).isEqualTo(pack);
+            assertThat(item.path("current").asBoolean()).isTrue();
+        }).anySatisfy(item -> {
+            assertThat(item.path("packId").asString()).isEqualTo(privatePack);
+            assertThat(item.path("current").asBoolean()).isFalse();
+        });
 
         assertThat(post(admin, "/api/admin/extensions/" + digest + "/revoke", "{\"reason\":\"发现内存炸弹\"}").statusCode()).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT status FROM admin_extension_review", String.class)).isEqualTo("revoked");
@@ -394,7 +406,7 @@ class CatalogIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForList("SELECT action FROM admin_audit WHERE actor_id = ? AND module = 'admin' ORDER BY created_at, id",
                 String.class, admin.id())).containsExactly("extension-rejected", "extension-approved", "extension-revoked");
         // 再次导入相同的拓展：已有记录（已撤销）不被重置为待审核。
-        privateImport(owner, archive(List.of("单选题"), null));
+        privateUpload(owner, archive(List.of("单选题"), null));
         assertThat(jdbc.queryForObject("SELECT status FROM admin_extension_review", String.class)).isEqualTo("revoked");
     }
 
@@ -472,15 +484,13 @@ class CatalogIntegrationTest extends MySqlTestBase {
         return response;
     }
 
-    private HttpResponse<String> privateImport(User user, byte[] archive) throws Exception {
-        String boundary = "qf-" + Ids.uuidV7();
-        ByteArrayOutputStream body = new ByteArrayOutputStream();
-        file(body, boundary, "file", "test.qbank", archive);
-        body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
-        return http.send(HttpRequest.newBuilder(uri("/api/library/import")).timeout(Duration.ofSeconds(120))
-                .header("Origin", ORIGIN).header("Cookie", user.cookie())
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(), HttpResponse.BodyHandlers.ofString());
+    private HttpResponse<String> privateUpload(User user, byte[] archive) throws Exception {
+        var response = http.send(HttpRequest.newBuilder(uri("/api/library/uploads?filename=test.qbank")).timeout(Duration.ofSeconds(120))
+                .header("Origin", ORIGIN).header("Cookie", user.cookie()).header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(archive)).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(202);
+        assertThat(queue.runOne()).isTrue();
+        return response;
     }
 
     private HttpResponse<String> multipart(User user, String path, Map<String, String> fields, byte[] archive, List<byte[]> shots,
@@ -531,7 +541,7 @@ class CatalogIntegrationTest extends MySqlTestBase {
     }
 
     private static JsonNode json(HttpResponse<String> response) {
-        assertThat(response.statusCode()).as(response.body()).isBetween(200, 201);
+        assertThat(response.statusCode()).as(response.body()).isBetween(200, 202);
         return JSON.readTree(response.body());
     }
 

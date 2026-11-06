@@ -18,9 +18,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Runs after authentication, before DispatcherServlet can resolve multipart parts. */
+/** 广场发布的接收限流在 multipart 解析前执行。 */
 @Component
-@Order(0) // Boot's security chain runs at -100.
+@Order(0) // 登录鉴权先执行。
 public class ImportAdmissionFilter extends OncePerRequestFilter {
     private final Semaphore permits;
     private final int perMinute;
@@ -35,9 +35,8 @@ public class ImportAdmissionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // 私人导入与发布到题库广场走同一条导入代码，共用并发与频率限制。
-        return !request.getMethod().equals("POST") || !(request.getServletPath().equals("/api/library/import")
-                || request.getServletPath().matches("/api/catalog/packs(/[^/]+/revisions)?"));
+        // 私人上传由上传服务限流；此处只保留广场 multipart 发布入口。
+        return !request.getMethod().equals("POST") || !request.getServletPath().matches("/api/catalog/packs(/[^/]+/revisions)?");
     }
 
     @Override

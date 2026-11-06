@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {registerByApi} from './accounts.mjs';
+import {uploadAndImportFromLibrary} from './library-fixture.mjs';
 const expect=baseExpect.configure({timeout:30000});
 
 test.beforeEach(async({page})=>{
@@ -26,10 +27,7 @@ async function setup(page){
   const fixture=JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',
     [resolve('test/audio-server/fixture.py'),audioOrigin,key],{encoding:'utf8',maxBuffer:8*1024*1024}));
   const {origin}=await registerByApi(page,'audio','网络听力验收');
-  const imported=await page.request.post('/api/library/import',{headers:{Origin:origin},multipart:{file:{name:'audio.qbank',mimeType:'application/zip',buffer:Buffer.from(fixture.archive,'base64')}}});
-  expect(imported.status(),await imported.text()).toBe(200);
-  const collection=(await imported.json()).collections[0];
-  expect(collection.id).toMatch(/^[a-f0-9-]{36}$/);
+  const {collections:[collection]}=await uploadAndImportFromLibrary(page,{name:'audio.qbank',mimeType:'application/zip',buffer:Buffer.from(fixture.archive,'base64')});
   const sql=`INSERT INTO admin_extension_review (digest,extension_id,version,status) SELECT DISTINCT e.digest,e.extension_id,e.version,'approved' FROM content_extension_package e JOIN content_question q ON q.extension_digest=e.digest JOIN practice_collection c ON c.bank_id=q.bank_id WHERE c.id='${collection.id}' ON DUPLICATE KEY UPDATE status='approved';`;
   execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:sql,stdio:['pipe','pipe','pipe']});
   const base=`/api/collections/bank/${collection.id}`;

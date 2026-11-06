@@ -64,6 +64,11 @@ public class ExamService {
             throw new ApiException(HttpStatus.FORBIDDEN, "FEATURE_DISABLED", "该题库未开放考试");
         try {
             return tx.execute(status -> {
+                exams.lockCollection(user, collection).orElseThrow(ContentPages::notFound);
+                var replay = exams.creation(user, request).orElse(null);
+                if (replay != null) return creation(replay, collection, minutes);
+                if (exams.inProgress(user, collection) != 0)
+                    throw conflict("EXAM_IN_PROGRESS", "该题库已有作答中的考试，请先交卷或删除后再开始");
                 Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
                 String id = Ids.uuidV7(), context = Ids.uuidV7();
                 changed(exams.insertContext(context, user, collection, id, now));
@@ -87,6 +92,10 @@ public class ExamService {
     public JsonNode list(String user, String collection) {
         reads.collection(user, collection).orElseThrow(ContentPages::notFound);
         var result = json.createObjectNode();
+        var latest = exams.latest(user, collection).orElse(null);
+        if (latest == null) result.put("defaultDurationMinutes", 60);
+        else if (latest.durationMinutes() == null) result.putNull("defaultDurationMinutes");
+        else result.put("defaultDurationMinutes", latest.durationMinutes());
         var records = result.putArray("records");
         for (var row:exams.list(user, collection)) records.add(metadata(row));
         return result;

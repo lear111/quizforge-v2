@@ -2,6 +2,7 @@
 import argparse, ipaddress, json, os, secrets, subprocess, urllib.request, urllib.error, urllib.parse
 from pathlib import Path
 from answers import sample_banks
+from queued_import import upload_and_import
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,6 +70,11 @@ def main():
     users = []
     archives = {name: (ROOT / "samples" / name) for name in ("basic-types.qbank", "loadtest-300.qbank")}
     templates = {name: sample_banks(path) for name, path in archives.items()}
+    def approve(pack):
+        sql = ("UPDATE admin_extension_review e JOIN catalog_pack_revision r ON r.pack_id='" + pack + "' "
+               "SET e.status='approved' WHERE JSON_CONTAINS(r.extension_digests,JSON_QUOTE(LOWER(HEX(e.digest))));")
+        subprocess.run(compose + ["exec", "-T", "mysql", "sh", "-c", 'exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],
+                       input=sql, text=True, check=True, capture_output=True)
     def checkpoint():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         temp = state_file.with_suffix(".tmp")
@@ -96,11 +102,7 @@ def main():
             current = [row for row in collections if row["title"] in expected]
             if (len(current) != len(expected) or {row["title"] for row in current} != set(expected)
                     or any(request(f'/api/collections/bank/{row["id"]}', token=token)[0] not in (200, 422) for row in current)):
-                boundary = "qf-" + secrets.token_hex(16)
-                upload = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
-                          + archive.read_bytes() + f'\r\n--{boundary}--\r\n'.encode())
-                status, body, _ = request("/api/library/import", upload, token, "multipart/form-data; boundary=" + boundary)
-                require(status, body)
+                body = upload_and_import(request, archive.read_bytes(), filename, token, approve)
                 current = [{"id": row["id"], "title": row["title"]} for row in body["collections"]]
                 if {row["title"] for row in current} != set(expected):
                     raise RuntimeError("Imported sample titles do not match package")

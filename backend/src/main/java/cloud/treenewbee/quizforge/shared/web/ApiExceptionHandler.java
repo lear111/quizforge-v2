@@ -11,6 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -43,7 +44,8 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(ErrorResponse.of("VALIDATION_FAILED", "请求内容不符合要求"));
     }
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, HttpMediaTypeNotSupportedException.class})
+    @ExceptionHandler({HttpMessageNotReadableException.class, HttpMediaTypeNotSupportedException.class,
+            MissingServletRequestParameterException.class})
     ResponseEntity<ErrorResponse> handleInvalidBody(Exception error) {
         return ResponseEntity.badRequest().body(ErrorResponse.of("VALIDATION_FAILED", "请求内容不符合要求"));
     }

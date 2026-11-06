@@ -10,14 +10,12 @@ import static org.mockito.Mockito.reset;
 
 import cloud.treenewbee.quizforge.MySqlTestBase;
 import cloud.treenewbee.quizforge.content.domain.ImportArchives;
-import cloud.treenewbee.quizforge.content.domain.ImportFailure;
 import cloud.treenewbee.quizforge.identity.application.AuthService;
 import cloud.treenewbee.quizforge.rules.RulePackage;
 import cloud.treenewbee.quizforge.rules.RuleRunnerClient;
 import cloud.treenewbee.quizforge.shared.id.Ids;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.io.SequenceInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -99,8 +97,10 @@ class ImportIntegrationTest extends MySqlTestBase {
         registry.add("qf.rule-runner.default-deadline", () -> "60s");
     }
 
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
     @Autowired ImportRules rules;
+    @Autowired ImportUploadService uploads;
+    @Autowired ImportQueueJobs queue;
     @Autowired BankAvailability availability;
     @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
@@ -138,6 +138,14 @@ class ImportIntegrationTest extends MySqlTestBase {
     static void stopRunner() { RUNNER.stop(); }
 
     @Test
+    void retiredSynchronousImportHasNoHttpHandler() throws Exception {
+        var response = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/library/import"))
+                .header("Origin", ORIGIN).header("Cookie", cookie()).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}")).build(), HttpResponse.BodyHandlers.ofString());
+        assertError(response, 404, "NOT_FOUND");
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void nearEightMiBBankIsSplitUsingWholeEnvelopeByteSize() throws Exception {
         var files = ImportArchives.files(List.of("单选题"), "bank");
@@ -157,7 +165,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         for (Map<String, Object> question : questions) {
             Map<String, Object> data = (Map<String, Object>) question.get("data");
             List<Map<String, Object>> nodes = new ArrayList<>();
-            for (int n=0; n<14; n++) nodes.add(new LinkedHashMap<>(Map.of("type", "text", "text", "x".repeat(99000))));
+            for (int n=0; n<14; n++) nodes.add(new LinkedHashMap<>(Map.of("type", "text", "text", question.get("id") + "x".repeat(98990))));
             data.put("stem", Map.of("type", "doc", "content", List.of(Map.of("type", "paragraph", "content", nodes))));
         }
         byte[] bankBytes = JSON.writeValueAsBytes(bank);
@@ -202,7 +210,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM practice_collection WHERE source_pack_id IS NOT NULL", Integer.class)).isZero();
         assertThat(jdbc.queryForList("SELECT source->>'$.filename' FROM practice_collection", String.class)).containsOnly("test.qbank");
         assertThat(first.body()).doesNotContain("correctOptionId", "answerAndExplanation");
-        for (var collection : collections) assertThat(collection.path("available").asBoolean()).isFalse();
+        for (var collection : collections) assertThat(availability.isAvailable(collection.path("bankId").asString())).isTrue();
         var second = upload(cookie, archive);
         assertThat(second.statusCode()).isEqualTo(200);
         assertThat(count("content_bank")).isEqualTo(5);
@@ -270,7 +278,7 @@ class ImportIntegrationTest extends MySqlTestBase {
         var files = ImportArchives.files(ImportArchives.TYPES, "group");
         files.put(ImportArchives.extension("简答题（答题区）") + "/rules.js",
                 "QF.defineType({project(){return{}},grade(){},validateQuestion(){return false}})".getBytes(StandardCharsets.UTF_8));
-        assertError(upload(cookie(), ImportArchives.zip(files)), 422, "RULE_REJECTED");
+        assertBackgroundFailure(rawUpload(cookie(), ImportArchives.zip(files)), "RULE_REJECTED");
         assertNoBusinessData();
     }
 
@@ -303,57 +311,66 @@ class ImportIntegrationTest extends MySqlTestBase {
 
     static Stream<Arguments> invalidPackages() {
         return Stream.of(
-                Arguments.of("old format", "UNSUPPORTED_LIBRARY_ARCHIVE", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, "quizforge-package.json", m -> m.put("formatVersion", 3))),
-                Arguments.of("layout", "INVALID_LIBRARY_ARCHIVE", 422, (Consumer<Map<String, byte[]>>) f -> f.put("README.txt", new byte[1])),
-                Arguments.of("resource", "UNSUPPORTED_RESOURCE_TYPE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/test.exe", new byte[8])),
-                Arguments.of("bank structure", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("questions", List.of()))),
-                Arguments.of("missing bank UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.remove("id"))),
-                Arguments.of("invalid bank UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("id", "examples"))),
-                Arguments.of("missing example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.remove("id"))),
-                Arguments.of("invalid example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", "60000000-0000-4000-8000-00000000000A"))),
-                Arguments.of("duplicate bank and example UUID", "INVALID_QUESTION_BANK", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", ImportArchives.BANK_IDS.get("单选题")))),
-                Arguments.of("manifest", "INVALID_EXTENSION", 422, (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/manifest.json", m -> m.remove("rules"))),
-                Arguments.of("entry limit", "LIBRARY_ARCHIVE_LIMIT", 413, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/big.png", new byte[33*1024*1024])),
-                Arguments.of("rule rejection", "RULE_REJECTED", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){return false}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("rule timeout", "RULE_TIMEOUT", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){while(true){}}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("invalid outline", "INVALID_OUTLINE_ITEMS", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{maxScore:1}},grade(){},getOutlineItems(){return[{id:'x',label:'a'},{id:'x',label:'b'}]}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("invalid outline state", "INVALID_OUTLINE_STATES", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){throw Object.assign(Error('invalid'),{code:'INVALID_OUTLINE_STATES'})}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("score range", "SCORE_UNAVAILABLE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:100000000}}})".getBytes(StandardCharsets.UTF_8))),
-                Arguments.of("score precision", "SCORE_UNAVAILABLE", 422, (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:1.23456}}})".getBytes(StandardCharsets.UTF_8)))
+                Arguments.of("old format", "UNSUPPORTED_LIBRARY_ARCHIVE", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, "quizforge-package.json", m -> m.put("formatVersion", 3))),
+                Arguments.of("layout", "INVALID_LIBRARY_ARCHIVE", (Consumer<Map<String, byte[]>>) f -> f.put("README.txt", new byte[1])),
+                Arguments.of("resource", "UNSUPPORTED_RESOURCE_TYPE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/test.exe", new byte[8])),
+                Arguments.of("bank structure", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("questions", List.of()))),
+                Arguments.of("missing bank UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.remove("id"))),
+                Arguments.of("invalid bank UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.bank("单选题") + "/bank.json", m -> m.put("id", "examples"))),
+                Arguments.of("missing example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.remove("id"))),
+                Arguments.of("invalid example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", "60000000-0000-4000-8000-00000000000A"))),
+                Arguments.of("duplicate bank and example UUID", "INVALID_QUESTION_BANK", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/examples/bank.json", m -> m.put("id", ImportArchives.BANK_IDS.get("单选题")))),
+                Arguments.of("manifest", "INVALID_EXTENSION", (Consumer<Map<String, byte[]>>) f -> ImportArchives.edit(f, ImportArchives.extension("单选题") + "/manifest.json", m -> m.remove("rules"))),
+                Arguments.of("entry limit", "LIBRARY_ARCHIVE_LIMIT", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.bank("单选题") + "/assets/big.png", new byte[33*1024*1024])),
+                Arguments.of("rule rejection", "RULE_REJECTED", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){return false}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("rule timeout", "RULE_TIMEOUT", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},validateQuestion(){while(true){}}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("invalid outline", "INVALID_OUTLINE_ITEMS", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{maxScore:1}},grade(){},getOutlineItems(){return[{id:'x',label:'a'},{id:'x',label:'b'}]}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("invalid outline state", "INVALID_OUTLINE_STATES", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){throw Object.assign(Error('invalid'),{code:'INVALID_OUTLINE_STATES'})}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("score range", "SCORE_UNAVAILABLE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:100000000}}})".getBytes(StandardCharsets.UTF_8))),
+                Arguments.of("score precision", "SCORE_UNAVAILABLE", (Consumer<Map<String, byte[]>>) f -> f.put(ImportArchives.extension("单选题") + "/rules.js", "QF.defineType({project(){return{}},grade(){},getScore(){return{score:0,maxScore:1.23456}}})".getBytes(StandardCharsets.UTF_8)))
         );
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidPackages")
-    void everyFailureHasCorrectHttpCodeAndNoBusinessResidue(String name, String code, int status, Consumer<Map<String, byte[]>> mutate) throws Exception {
+    void everyFailureHasCorrectQueueCodeAndNoBusinessResidue(String name, String code, Consumer<Map<String, byte[]>> mutate) throws Exception {
         var files = ImportArchives.files(List.of("单选题"), "bank"); mutate.accept(files);
-        assertError(upload(cookie(), ImportArchives.zip(files)), status, code);
+        var accepted = rawUpload(cookie(), ImportArchives.zip(files));
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(202);
+        assertBackgroundFailure(accepted, code);
         assertNoBusinessData();
     }
 
     @Test
-    void nonZipAndMissingMultipartPartReturnControlledErrors() throws Exception {
-        assertError(upload(cookie(), new byte[] {1,2,3}), 422, "INVALID_LIBRARY_ARCHIVE");
-        var response = http.send(HttpRequest.newBuilder(url()).header("Origin", ORIGIN).header("Cookie", cookie())
-                .header("Content-Type", "multipart/form-data; boundary=empty").POST(HttpRequest.BodyPublishers.ofString("--empty--\r\n")).build(), HttpResponse.BodyHandlers.ofString());
-        assertError(response, 400, "VALIDATION_FAILED"); assertNoBusinessData();
+    void nonZipIsRejectedByQueueAndUploadRequiresFilename() throws Exception {
+        assertBackgroundFailure(rawUpload(cookie(), new byte[] {1,2,3}), "INVALID_LIBRARY_ARCHIVE");
+        var response = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/library/uploads"))
+                .header("Origin", ORIGIN).header("Cookie", cookie()).header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(new byte[]{1})).build(), HttpResponse.BodyHandlers.ofString());
+        assertError(response, 400, "VALIDATION_FAILED");
+        assertNoBusinessData();
     }
 
     @Test
     void databaseFailureRollsBackAllBanksExtensionsQuestionsAssetsAndInstances() throws Exception {
-        jdbc.execute("ALTER TABLE practice_collection ADD CONSTRAINT import_test_failure CHECK (title <> '单选题')");
-        try { assertError(upload(cookie(), archive(ImportArchives.TYPES, "group")), 500, "INTERNAL_ERROR"); }
-        finally { jdbc.execute("ALTER TABLE practice_collection DROP CHECK import_test_failure"); }
+        jdbc.execute("ALTER TABLE content_bank ADD CONSTRAINT import_test_failure CHECK (source_title <> '单选题')");
+        try { assertBackgroundFailure(rawUpload(cookie(), archive(ImportArchives.TYPES, "group")), "PROCESSING_FAILED"); }
+        finally { jdbc.execute("ALTER TABLE content_bank DROP CHECK import_test_failure"); }
         assertNoBusinessData();
     }
 
     @Test
-    void approvalIsNotRequiredForImportAndAvailabilityTracksEveryStatusLive() throws Exception {
-        var response = upload(cookie(), archive(List.of("单选题"), "bank"));
-        assertThat(response.statusCode()).isEqualTo(200);
-        String bank = body(response).path("collections").get(0).path("bankId").asString();
+    void uploadNeedsNoApprovalButPracticeImportWaitsForApprovalAndAvailabilityTracksRevocations() throws Exception {
+        String cookie = cookie();
+        var accepted = rawUpload(cookie, archive(List.of("单选题"), "bank"));
+        assertThat(accepted.statusCode()).isEqualTo(202);
+        var receipt = body(accepted);
+        imports.validate(new ImportUploadService.Accepted(receipt.path("packId").asString(), 1));
+        String bank = jdbc.queryForObject("SELECT bank_id FROM catalog_pack_bank WHERE pack_id=?", String.class, receipt.path("packId").asString());
         assertThat(availability.isAvailable(bank)).isFalse();
-        jdbc.update("UPDATE admin_extension_review SET status='approved'");
+        assertError(create(cookie, receipt), 409, "PACK_NOT_APPROVED");
+        imports.approve(receipt.path("packId").asString());
+        assertThat(create(cookie, receipt).statusCode()).isEqualTo(200);
         assertThat(availability.isAvailable(bank)).isTrue();
         for (String status : List.of("revoked", "pending", "rejected")) {
             jdbc.update("UPDATE admin_extension_review SET status=?", status);
@@ -368,66 +385,48 @@ class ImportIntegrationTest extends MySqlTestBase {
         var docker = DockerClientFactory.instance().client();
         docker.stopContainerCmd(RUNNER.getContainerId()).exec();
         // This final test owns shutdown. Docker Desktop may change an ephemeral port on restart.
-        assertError(upload(cookie(), archive(List.of("单选题"), "bank")), 503, "RULE_UNAVAILABLE");
+        assertBackgroundFailure(rawUpload(cookie(), archive(List.of("单选题"), "bank")), "RULE_UNAVAILABLE");
         assertNoBusinessData();
     }
 
     @Test
-    void oversizedChunkedMultipartAndServiceStreamsAreCountedWithoutLargeHeapBuffers() throws Exception {
-        String boundary = "limit-boundary";
-        byte[] header = header(boundary), end = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+    void oversizedRawChunkedUploadAndServiceStreamsAreCountedWithoutLargeHeapBuffers() throws Exception {
         var response = http.send(HttpRequest.newBuilder(url()).timeout(Duration.ofSeconds(60)).header("Cookie", cookie()).header("Origin", ORIGIN)
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new SequenceInputStream(java.util.Collections.enumeration(List.of(
-                        new ByteArrayInputStream(header), zeros(ImportService.MAX_UPLOAD_BYTES + 1024 * 1024), new ByteArrayInputStream(end)))))).build(), HttpResponse.BodyHandlers.ofString());
+                .header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> zeros(ImportService.MAX_UPLOAD_BYTES + 1024 * 1024)))
+                .build(), HttpResponse.BodyHandlers.ofString());
         assertError(response, 413, "LIBRARY_ARCHIVE_LIMIT");
-        assertThatThrownBy(() -> imports.importArchive(Ids.uuidV7(), "big.qbank", zeros(ImportService.MAX_UPLOAD_BYTES + 1)))
-                .isInstanceOf(ImportFailure.class).extracting(e -> ((ImportFailure) e).code()).isEqualTo("LIBRARY_ARCHIVE_LIMIT");
+        assertThatThrownBy(() -> uploads.receivePrivate(userId(), null, "big.qbank", -1, zeros(ImportService.MAX_UPLOAD_BYTES + 1)))
+                .isInstanceOf(cloud.treenewbee.quizforge.shared.web.ApiException.class)
+                .extracting(e -> ((cloud.treenewbee.quizforge.shared.web.ApiException) e).code()).isEqualTo("LIBRARY_ARCHIVE_LIMIT");
         assertNoBusinessData();
     }
 
     @Test
-    void importSlotsRejectImmediatelyAndRecoverAfterRepeatedFullRejections() throws Exception {
+    void concurrentUploadsReturnBeforeAnyRulesRunAndCreateIndependentQueuedEntries() throws Exception {
         byte[] archive = archive(List.of("单选题"), "bank");
         String cookie = cookie();
-        CountDownLatch entered = new CountDownLatch(2), release = new CountDownLatch(1);
-        doAnswer(call -> { entered.countDown(); assertThat(release.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
-                .when(runner).execute(anyString(), any(), anyMap());
+        CountDownLatch gate = new CountDownLatch(1);
         try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
-            var first = threads.submit(() -> upload(cookie, archive));
-            var second = threads.submit(() -> upload(cookie, archive));
-            try {
-                assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
-                for (int i=0; i<6; i++) {
-                    var rejected = threads.submit(() -> upload(cookie, archive));
-                    assertError(rejected.get(2, TimeUnit.SECONDS), 503, "IMPORT_BUSY");
-                }
-            } finally { release.countDown(); }
-            assertThat(first.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
-            assertThat(second.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
-            CountDownLatch recovered = new CountDownLatch(2), finish = new CountDownLatch(1);
-            doAnswer(call -> { recovered.countDown(); assertThat(finish.await(15, TimeUnit.SECONDS)).isTrue(); return call.callRealMethod(); })
-                    .when(runner).execute(anyString(), any(), anyMap());
-            var third = threads.submit(() -> upload(cookie, archive));
-            var fourth = threads.submit(() -> upload(cookie, archive));
-            try {
-                assertThat(recovered.await(10, TimeUnit.SECONDS)).isTrue();
-                assertError(threads.submit(() -> upload(cookie, archive)).get(2, TimeUnit.SECONDS), 503, "IMPORT_BUSY");
-            } finally { finish.countDown(); }
-            assertThat(third.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
-            assertThat(fourth.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            var first = threads.submit(() -> { gate.await(); return rawUpload(cookie, archive); });
+            var second = threads.submit(() -> { gate.await(); return rawUpload(cookie, archive); });
+            gate.countDown();
+            assertThat(first.get(15, TimeUnit.SECONDS).statusCode()).isEqualTo(202);
+            assertThat(second.get(15, TimeUnit.SECONDS).statusCode()).isEqualTo(202);
         }
-        assertThat(count("practice_collection")).isEqualTo(4);
+        assertThat(operations).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_import_job WHERE status='queued'", Integer.class)).isEqualTo(2);
+        assertNoBusinessData();
     }
 
     @Test
-    void slidingRateLimitIsPerUserAndExpiresAfterSixtySeconds() throws Exception {
-        String user = cookie(); byte[] broken = {1};
-        for (int i=0; i<5; i++) assertError(upload(user, broken), 422, "INVALID_LIBRARY_ARCHIVE");
-        assertError(upload(user, broken), 429, "RATE_LIMITED");
-        assertError(upload(cookie(), broken), 422, "INVALID_LIBRARY_ARCHIVE");
-        clock.now.updateAndGet(now -> now.plusSeconds(60));
-        assertError(upload(user, broken), 422, "INVALID_LIBRARY_ARCHIVE");
+    void dailyUploadLimitIsPerUserAndResetsOnTheNextBeijingDay() throws Exception {
+        String user = cookie();
+        for (int i=0; i<20; i++) assertThat(rawUpload(user, new byte[]{1}).statusCode()).isEqualTo(202);
+        assertError(rawUpload(user, new byte[]{1}), 429, "UPLOAD_LIMIT");
+        assertThat(rawUpload(cookie(), new byte[]{1}).statusCode()).isEqualTo(202);
+        clock.now.updateAndGet(now -> now.plus(Duration.ofDays(1)));
+        assertThat(rawUpload(user, new byte[]{1}).statusCode()).isEqualTo(202);
         assertNoBusinessData();
     }
 
@@ -466,9 +465,6 @@ class ImportIntegrationTest extends MySqlTestBase {
         String cookie = cookie(); var response = upload(cookie, ImportArchives.zip(files));
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         JsonNode imported = body(response).path("collections").get(0);
-        assertThat(imported.path("warnings").get(0).path("count").asInt()).isEqualTo(1);
-        assertThat(imported.path("warnings").get(0).path("questionIds").toString()).isEqualTo("[\"q4\"]");
-        assertThat(imported.path("warnings").get(0).path("message").asString()).contains("1 道题", "不会显示");
         assertThat(jdbc.queryForList("SELECT question_id FROM content_question ORDER BY position", String.class)).containsExactly("q3", "q1", "q2");
         assertThat(jdbc.queryForList("SELECT outline_group_index FROM content_question ORDER BY position", Integer.class)).containsExactly(0, 1, 2);
         assertThat(jdbc.queryForList("SELECT outline_group_name FROM content_question ORDER BY position", String.class)).containsExactly("作者分组", "作者分组", null);
@@ -534,8 +530,13 @@ class ImportIntegrationTest extends MySqlTestBase {
             default -> "";
         };
         if(!hook.isEmpty())files.put(path,("QF.defineType({"+hook+"project(){return {maxScore:1}},grade(){return {}}})").getBytes(StandardCharsets.UTF_8));
-        var response=upload(cookie(),ImportArchives.zip(files));
-        assertThat(response.statusCode()).as(response.body()).isEqualTo(422);assertNoBusinessData();
+        var response=rawUpload(cookie(),ImportArchives.zip(files));
+        assertBackgroundFailure(response, switch (failure) {
+            case "score" -> "SCORE_UNAVAILABLE";
+            case "outline" -> "INVALID_OUTLINE_ITEMS";
+            default -> "RULE_REJECTED";
+        });
+        assertNoBusinessData();
     }
 
     @Test
@@ -557,7 +558,6 @@ class ImportIntegrationTest extends MySqlTestBase {
         assertThat(second.bankId()).isNotEqualTo(first.bankId());
         assertThat(jdbc.queryForList("SELECT DISTINCT HEX(content_sha256) FROM content_question",String.class)).hasSize(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM content_question WHERE question_id='unused'",Integer.class)).isZero();
-        assertThat(second.warnings().getFirst().questionIds()).containsExactly("unused");
     }
 
     private HttpResponse<String> get(String cookie,String path) throws Exception {
@@ -566,17 +566,43 @@ class ImportIntegrationTest extends MySqlTestBase {
 
     private String userId() { return auth.register(Ids.uuidV7()+"@example.test", "导入测试", "pass12345", null).userId(); }
     private String cookie() { return "__Host-qf_session=" + auth.register(Ids.uuidV7()+"@example.test", "导入测试", "pass12345", null).token(); }
-    private URI url() { return URI.create("http://127.0.0.1:" + port + "/api/library/import"); }
+    private URI url() { return URI.create("http://127.0.0.1:" + port + "/api/library/uploads?filename=test.qbank"); }
     private byte[] archive(List<String> types, String scope) throws Exception { return ImportArchives.zip(ImportArchives.files(types, scope)); }
-    private HttpResponse<String> upload(String cookie, byte[] archive) throws Exception {
-        String boundary = "qbank-boundary";
-        byte[] tail = ("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8);
+
+    private HttpResponse<String> rawUpload(String cookie, byte[] archive) throws Exception {
         return http.send(HttpRequest.newBuilder(url()).timeout(Duration.ofSeconds(120)).header("Origin", ORIGIN).header("Cookie", cookie)
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(HttpRequest.BodyPublishers.concat(HttpRequest.BodyPublishers.ofByteArray(header(boundary)),
-                        HttpRequest.BodyPublishers.ofByteArray(archive), HttpRequest.BodyPublishers.ofByteArray(tail))).build(), HttpResponse.BodyHandlers.ofString());
+                .header("Content-Type", "application/octet-stream").POST(HttpRequest.BodyPublishers.ofByteArray(archive)).build(), HttpResponse.BodyHandlers.ofString());
     }
-    private static byte[] header(String boundary) { return ("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.qbank\"\r\nContent-Type: application/vnd.quizforge.qbank\r\n\r\n").getBytes(StandardCharsets.UTF_8); }
+
+    private HttpResponse<String> upload(String cookie, byte[] archive) throws Exception {
+        var response = rawUpload(cookie, archive);
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(202);
+        var accepted = body(response);
+        String pack = accepted.path("packId").asString();
+        imports.validate(new ImportUploadService.Accepted(pack, accepted.path("revision").asInt()));
+        imports.approve(pack);
+        return create(cookie, accepted);
+    }
+
+    private HttpResponse<String> create(String cookie, JsonNode accepted) throws Exception {
+        String pack = accepted.path("packId").asString();
+        var banks = jdbc.queryForList("SELECT bank_uuid FROM catalog_pack_bank WHERE pack_id=? AND revision=? ORDER BY position", String.class,
+                pack, accepted.path("revision").asInt());
+        return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/library/packs/" + pack + "/practice"))
+                .header("Origin", ORIGIN).header("Cookie", cookie).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(Map.of("revision", accepted.path("revision").asInt(), "banks", banks))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void assertBackgroundFailure(HttpResponse<String> accepted, String code) {
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(202);
+        String pack = body(accepted).path("packId").asString();
+        assertThat(queue.runOne()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT failure_code FROM content_import_job WHERE pack_id=?", String.class, pack)).isEqualTo(code);
+        assertThat(jdbc.queryForObject("SELECT validation_status FROM catalog_pack_revision WHERE pack_id=?", String.class, pack))
+                .isEqualTo(List.of("PROCESSING_FAILED", "RULE_UNAVAILABLE", "RULE_TIMEOUT").contains(code) ? "queued" : "rejected");
+    }
+
     private static InputStream zeros(long size) {
         return new InputStream() {
             long remaining = size;
@@ -591,7 +617,12 @@ class ImportIntegrationTest extends MySqlTestBase {
     }
     private int count(String table) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class); }
     private void assertNoBusinessData() { for(String table : tables()) assertThat(count(table)).as(table).isZero(); }
-    private void clearBusiness() { for (String table : tables()) jdbc.update("DELETE FROM " + table); }
+    private void clearBusiness() {
+        for (String table : List.of("content_import_job", "content_validation_cache", "catalog_pack_bank", "catalog_pack_file", "catalog_pack_event", "catalog_pack_revision", "catalog_pack"))
+            jdbc.update("DELETE FROM " + table);
+        jdbc.update("UPDATE content_import_slot SET job_id=NULL,lease_until=NULL");
+        for (String table : tables()) jdbc.update("DELETE FROM " + table);
+    }
     private List<String> tables() { return List.of("practice_collection", "content_question", "content_bank_asset", "content_bank", "content_extension_file", "content_extension_package", "admin_extension_review"); }
     private static Path temporary() { try { return Files.createTempDirectory("qf-import-test-").toRealPath(); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }
     private static Path directory(String name) { try { return Files.createDirectories(ROOT.resolve(name)); } catch(Exception error) { throw new ExceptionInInitializerError(error); } }

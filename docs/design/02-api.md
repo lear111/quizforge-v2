@@ -94,7 +94,7 @@
 - `GET /api/admin/import-jobs` 返回待处理、正在处理及处理失败的任务；`POST /api/admin/import-jobs/{id}/retry` 重试仍属于最新有效版本的失败任务。只允许未封禁管理员。
 - 后台规则调用携带低优先级并保留前台舱壁名额；本实例检测到前台规则调用时，及其结束后 250 ms 内，暂缓领取/推进导入。规则批次之间与业务落库前再次检查，让行不消耗基础设施重试次数。持续的前台负载可能延长排队时间。
 - 默认单包 128 MiB、每用户每日接收尝试 20 次；日期按北京时间计算。中断尝试计次数，不建立条目、不占配额；超过次数返回 `429 UPLOAD_LIMIT`，提示“请稍后再试”。私人包按原文件大小预留个人配额，公开包不计个人配额（作者确认，2026-11-02）；配额与版本、任务在同一短事务内写入，超额全部回滚。
-- 主页 `/library/` 为“我的题库”，练习空间删除上传入口，提示从资源库导入。旧 `POST /api/library/import` 暂留给既有测试/脚本兼容，由 practice 模块实现；新界面不调用它。
+- 主页 `/library/` 为“我的题库”，练习空间删除上传入口，提示从资源库导入。旧同步 `POST /api/library/import` 已退役；脚本与测试同样通过原文件上传（202）→后台队列→审核通过→创建练习实例，不再提供兼容入口。
 
 ### 我的题库与导入练习空间（第二切片）
 
@@ -133,7 +133,6 @@
 | --- | --- | --- | --- |
 | `GET /api/catalog` | 我的题库列表 | `practice_collection`、`content_bank` | 只返回当前用户的实例；`extensions` 返回空列表，不列出拓展示例 |
 | `GET /api/library/index` | 题库分组视图 | 同上 | |
-| `POST /api/library/import` | `multipart/form-data` 上传 `.qbank`，文件字段为 `file` | `content_*`、`practice_collection` | 未审核拓展不阻止导入；可用性按设计 04 第 6.2 节实时推算。M2 暂不创建私人 catalog_pack，source_pack_id 为 NULL |
 | `POST /api/library/manage` | 改名、移动分组、删除题库实例 | `practice_collection` | 实例软删除并清除作答、历史、笔记和后台任务，释放私人导入配额；不进入回收站流程 |
 | `GET /api/collections/{kind}/{id}` | 集合概览：题目列表、各题状态 | `content_question`、`practice_question_state` | 增加 `update` 字段；没有进行中的作答时先切换到新版本（FR-10 v1.6） |
 | `GET /api/collections/{kind}/{id}/questions/{qid}` | 读题（投影 + 状态 + 白板 + 版本戳） | `content_question`、`practice_question_state`、`practice_whiteboard` | 投影走缓存（数据库设计 4.2 节） |
@@ -166,7 +165,8 @@
 
 个人模拟考试（L2）使用 `practice_context.kind=exam`，开考时冻结 `bank_id` 与显示标题，普通练习与各场考试的作答、白板完全独立。`features.exam=false` 返回 403 `FEATURE_DISABLED`。时长为整数 1～1440，省略或 null 为不限时。
 
-- 考试元数据使用 `status: in-progress / grading / completed`，包含 `id`、`bankKind:bank`、`bankId`（来源实例 ID）、`startedAt`、`deadline`（可空）、`serverTime`、`durationMinutes`、`version`、`historyId`、后台任务进度与 `gradingErrors`。概览在 `exam` 中附带同一结构；列表 `{records:[...]}` 只列进行中和待处理评分的考试。
+- 同一用户的同一题库实例至多有一场 `in_progress` 考试；创建时锁定已有且归属匹配的实例行，在锁内重查 requestId 与进行中考试。不同 requestId 并发创建只有一个成功，其余返回 409 `EXAM_IN_PROGRESS`（中文提示）；同一 requestId 仍幂等重放。评分中考试不阻止开始新场。
+- 考试元数据使用 `status: in-progress / grading / completed`，包含 `id`、`bankKind:bank`、`bankId`（来源实例 ID）、`startedAt`、`deadline`（可空）、`serverTime`、`durationMinutes`、`version`、`historyId`、后台任务进度与 `gradingErrors`。概览在 `exam` 中附带同一结构；列表 `{records:[...], defaultDurationMinutes}` 只列进行中和待处理评分的考试；默认时长取本题库最近一次考试（包括已完成或已删除），`null` 表示不限时，没有考试记录时为 60 分钟。
 - `POST E/exam {requestId}` 只登记后台任务，规则判分不占用请求线程或数据库事务。用户交卷与到期扫描共用 context 锁和带 status/version 的条件更新；重复交卷不创建第二个任务或轮次。评分失败保留固定答案，使用新 requestId 重试；重放旧 requestId 返回原回执。
 - 作答中仅允许 draft/whiteboard；单题 submit/retry/review/AI 返回 409 `EXAM_ACTION_FORBIDDEN`。已交卷后草稿、白板、上传返回 409 `EXAM_LOCKED`；截止后写入返回 409 `EXAM_DEADLINE_PASSED`。归属及截止检查均在短事务锁定 context 后复查，不能通过普通 bank 路由传考试 ID 绕过限制。
 - 交卷后可人工评分；任务正在修改状态时返回现有 `PRACTICE_BUSY`，待任务结束后可重试。**已完成考试也可人工改分**，与题目状态、冻结单题快照及历史汇总在同一事务更新（作者确认，覆盖旧版已完成考试全部只读的规则）。历史详情附 `examId`，页面提供“核对考试评分”入口。AI 能力保持关闭，预留操作返回 501。

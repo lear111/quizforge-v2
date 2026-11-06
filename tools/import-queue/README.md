@@ -11,7 +11,6 @@
 ```powershell
 python -B -m unittest discover -s tools/import-queue -p 'test_*.py'
 python -B tools/import-queue/benchmark.py --mode fixture
-python -B tools/import-queue/benchmark.py --mode baseline --repeats 3
 python -B tools/import-queue/benchmark.py --mode queued --repeats 3
 python -B tools/import-queue/benchmark.py --mode cache --repeats 3
 python -B tools/import-queue/benchmark.py --mode upload
@@ -22,7 +21,7 @@ python -B tools/import-queue/benchmark.py --mode foreground
 
 ## 指标口径
 
-- `baseline`：旧同步导入接口，逐本处理，测量整个 HTTP 请求耗时；不会写入新校验缓存。
+- 旧同步导入接口已退役，当前脚本不再提供 `baseline` 模式。历史对照仅能在退役前的独立检出上运行当时的脚本，不向当前服务发送旧接口请求。
 - `queued`：新接收接口的 HTTP 耗时，以及任务 `started_at` 至完成的数据库时间差。每次先清空本项目的校验缓存。将 `QF_IMPORT_EXTENSION_CONCURRENCY` 设为 1/2 并重建 app，可分别测量归组串行与归组并发；其他配置保持一致。
 - `cache`：保留上一步服务器写入的校验缓存，再上传同一个包。
 - `lruStops`：本次前后 runner Prometheus 指标中 `reason="lru"` 的停止计数差值。

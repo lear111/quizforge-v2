@@ -66,7 +66,7 @@ class PracticeReadIntegrationTest extends MySqlTestBase {
     }
 
     @Autowired AuthService auth;
-    @Autowired cloud.treenewbee.quizforge.practice.application.LegacyPracticeImportService imports;
+    @Autowired cloud.treenewbee.quizforge.testsupport.QueuedPracticeImports imports;
     @Autowired PracticeReadService reads;
     @Autowired JdbcTemplate jdbc;
     @Autowired ContextInsertGate insertGate;

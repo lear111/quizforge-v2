@@ -97,12 +97,26 @@ public interface ImportQueueMapper {
             """)
     int cancel(@Param("packId") String packId, @Param("now") Instant now);
 
+    // 先无锁查候选，再逐个按主键锁定；不持有租约索引的范围锁等待工作线程。
+    @Select("""
+            SELECT id FROM content_import_job WHERE status='running' AND lease_until <= #{now}
+             ORDER BY lease_until,id LIMIT 20
+            """)
+    List<String> expired(@Param("now") Instant now);
+
+    @Select("""
+            SELECT id FROM content_import_job WHERE id=#{id} AND status='running' AND lease_until <= #{now}
+             FOR UPDATE SKIP LOCKED
+            """)
+    Optional<String> lockExpired(@Param("id") String id, @Param("now") Instant now);
+
     @Update("""
             UPDATE content_import_job SET status=IF(attempts < 4,'queued','failed'), generation=generation+1,
-                failure_code='WORKER_RESTARTED', available_at=TIMESTAMPADD(SECOND,5*attempts*attempts,#{now}), updated_at=#{now}
-             WHERE status='running' AND lease_until <= #{now} LIMIT 20
+                failure_code='WORKER_RESTARTED', available_at=TIMESTAMPADD(SECOND,5*attempts*attempts,#{now}),
+                lease_owner=NULL,lease_until=NULL,updated_at=#{now}
+             WHERE id=#{id} AND status='running' AND lease_until <= #{now}
             """)
-    int recover(@Param("now") Instant now);
+    int recover(@Param("id") String id, @Param("now") Instant now);
 
     @Insert("""
             INSERT INTO content_upload_day(user_id,upload_day) VALUES(#{user},#{day})
