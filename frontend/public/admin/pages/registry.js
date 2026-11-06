@@ -12,6 +12,7 @@ export const pages = Object.freeze([
   { id: 'authentication', label: '登录与注册设置', group: '用户与账号', load: () => import('./authentication.js') },
   { id: 'invitations', label: '邀请码', group: '用户与账号', load: () => import('./invitations.js') },
   { id: 'pack-reviews', label: '题库审核', group: '题库与拓展', load: () => import('./pack-reviews.js') },
+  { id: 'reports', label: '举报处理', group: '题库与拓展', load: () => import('./reports.js') },
   { id: 'import-jobs', label: '导入校验队列', group: '题库与拓展', load: () => import('./import-jobs.js') },
   { id: 'extensions', label: '拓展审核', group: '题库与拓展', load: () => import('./extensions.js') },
   { id: 'notifications', label: '站内通知', group: '运营', load: () => import('./notifications.js') },

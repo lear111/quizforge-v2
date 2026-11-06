@@ -13,3 +13,9 @@
 #detail p { line-height:1.7; }
 #feedback { margin:20px 0; color:#4d377c; }
 @media(max-width:600px) { #search{flex-direction:column;align-items:stretch} #search label{width:100%;min-width:0} #search button{align-self:flex-start} #detail{padding:18px} .site-header nav{display:flex;flex-direction:column;gap:10px} }
+.plaza-feedback { margin-top:2rem; border-top:1px solid var(--border,#ddd); padding-top:1rem; }
+.plaza-feedback form { display:grid; gap:.75rem; margin:1rem 0; }
+.plaza-feedback label { display:grid; gap:.4rem; }
+.plaza-feedback textarea { box-sizing:border-box; width:100%; max-width:100%; resize:vertical; }
+.plaza-comment { border-bottom:1px solid var(--border,#ddd); padding:.75rem 0; overflow-wrap:anywhere; }
+.plaza-comment-body { white-space:pre-wrap; }
