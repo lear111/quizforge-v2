@@ -31,9 +31,12 @@ test('administrators manage users, invitations and see the audit log; others see
   await expect(page.locator('#admin-nav .qa-nav')).toHaveText(['概况','用户管理','登录与注册设置','邀请码','题库审核','举报处理','导入校验队列','拓展审核','站内通知','兑换码','AI 服务','操作日志']);
   // 概况包含今日上传统计；队列页使用同一管理员权限。
   await expect(page.getByRole('heading',{name:'概况'})).toBeVisible();
-  await expect(page.locator('.qa-card')).toHaveCount(5);
+  await expect(page.locator('.qa-card')).toHaveCount(10);
   await expect(page.locator('.qa-card[data-metric="当前在线"] strong')).not.toHaveText('0');
   await expect(page.locator('.qa-card[data-metric="今日上传次数"]')).toBeVisible();
+  for (const label of ['公开题库包数', '待审核版本数', '近 7 天下载次数', '未处理举报数', '导入队列长度']) {
+    await expect(page.locator(`.qa-card[data-metric="${label}"] strong`)).toHaveText(/^\d+$/);
+  }
   await expect(page.getByRole('heading',{name:'今日上传最多的用户（前 5）'})).toBeVisible();
   await page.locator('#admin-nav').getByRole('link',{name:'导入校验队列'}).click();
   await expect(page.getByRole('heading',{name:'导入校验队列'})).toBeVisible();

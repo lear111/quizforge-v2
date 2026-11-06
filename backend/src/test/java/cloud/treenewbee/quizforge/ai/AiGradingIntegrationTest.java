@@ -508,10 +508,12 @@ class AiGradingIntegrationTest extends MySqlTestBase {
     }
 
     /**
-     * 题库广场 3/4：模型调用期间完成练习并“再练一次”，归档事务清空作答并切换到新版本（PracticeUpdates.afterRestart）。
-     * 旧任务回来时题目已属于新版本、作答已清空，不得把旧版本题目的 AI 结果写到新版本题目上。
+     * 完成练习并再练一次后切换版本；旧版本排队任务应取消，运行中任务的结果应丢弃。
+     * 新版复用同一题目 ID 并保存了新草稿，旧任务不得改写这一行。
      */
-    @Test void restartSwitchingToNewVersionDiscardsRunningAiTaskOfOldVersion() throws Exception {
+    @ParameterizedTest(name = "旧版本 AI 任务 running={0}，切换后不能改写新版草稿")
+    @ValueSource(booleans = {false, true})
+    void restartSwitchingToNewVersionDiscardsQueuedOrRunningAiTaskOfOldVersion(boolean running) throws Exception {
         var original = samples.get("简答题");
         var q = original.question();
         var source = banks.findById(q.bankId()).orElseThrow();
@@ -534,11 +536,15 @@ class AiGradingIntegrationTest extends MySqlTestBase {
                 .when(versions).latest(org.mockito.ArgumentMatchers.<Collection<String>>argThat(ids -> ids != null && ids.contains(pack)), anyCollection());
 
         var sample = submitted("简答题");
-        String task = enqueue(sample); UPSTREAM.holdGrading = true;
+        String task = enqueue(sample);
+        UPSTREAM.holdGrading = running;
         try (var worker = Executors.newVirtualThreadPerTaskExecutor()) {
-            var claimed = aiJobs.claim().orElseThrow();
-            var work = worker.submit(() -> aiJobs.run(claimed));
-            assertThat(UPSTREAM.holdArrived.tryAcquire(20, TimeUnit.SECONDS)).isTrue();
+            Future<?> work = null;
+            if (running) {
+                var claimed = aiJobs.claim().orElseThrow();
+                work = worker.submit(() -> aiJobs.run(claimed));
+                assertThat(UPSTREAM.holdArrived.tryAcquire(20, TimeUnit.SECONDS)).isTrue();
+            }
             var finishing = summaries.summary(user, sample.collection());
             jobs.begin(user, sample.collection(), "finish-v1", finishing.path("roundId").asString(),
                     finishing.path("summaryVersion").asString(), "finish");
@@ -549,10 +555,19 @@ class AiGradingIntegrationTest extends MySqlTestBase {
                     finished.path("summaryVersion").asString(), "archive");
             for (int n = 0; n < 8 && jobs.tick(); n++) { /* 门控推进归档任务 */ }
             assertThat(jdbc.queryForObject("SELECT bank_id FROM practice_collection WHERE id=?", String.class, sample.collection())).isEqualTo(v2);
-            UPSTREAM.holdRelease.countDown(); work.get(30, TimeUnit.SECONDS);
+            // 新版仍使用相同题目 ID；保存新草稿后再放回旧结果，覆盖最容易误写的场景。
+            var current = JSON.valueToTree(reads.question(user, sample.collection(), q.questionId(), null));
+            drafts.save(user, sample.collection(), q.questionId(), "new-version-draft",
+                    current.path("state").path("revision").asLong(), answer("简答题"), null);
+            var before = jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=? AND question_id=?", user, q.questionId());
+            UPSTREAM.holdRelease.countDown();
+            if (work != null) work.get(30, TimeUnit.SECONDS);
+            assertThat(jdbc.queryForMap("SELECT * FROM practice_question_state WHERE user_id=? AND question_id=?", user, q.questionId()))
+                    .usingRecursiveComparison().isEqualTo(before);
         }
         assertThat(aiMapper.find(user, task).orElseThrow().status()).isEqualTo("superseded");
-        // 新一轮中本题没有任何作答，更没有来自旧任务的 AI 结果。
+        assertThat(UPSTREAM.calls(key)).isEqualTo(running ? 1 : 0);
+        // 新一轮的草稿不能带有旧任务的 AI 结果。
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM practice_question_state WHERE user_id=? AND question_id=?
                    AND (status='submitted' OR grading_source='ai' OR result IS NOT NULL)""",

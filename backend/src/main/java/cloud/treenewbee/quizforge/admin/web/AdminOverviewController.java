@@ -14,13 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import cloud.treenewbee.quizforge.activity.application.ActivityTracker;
 import cloud.treenewbee.quizforge.activity.infrastructure.ActivityMapper;
+import cloud.treenewbee.quizforge.admin.infrastructure.CatalogOverviewMapper;
+import cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper;
 import cloud.treenewbee.quizforge.identity.application.AccountAdminService;
 import cloud.treenewbee.quizforge.identity.infrastructure.UserAdminMapper;
 import cloud.treenewbee.quizforge.quota.application.QuotaService;
 
 /**
  * 后台概况：用户总数、近 7 天新注册、当前在线、存储总用量，以及近 7 天（北京时间）的注册与活跃趋势。
- * 题库相关的统计等题库广场完成后再加（响应中 banks 留空）。
+ * 题库统计只计广场可见包，下载窗口与用户趋势使用相同的北京时间日期。
  */
 @RestController
 public class AdminOverviewController {
@@ -33,24 +35,32 @@ public class AdminOverviewController {
     public record Day(LocalDate day, long registered, long active, long practiced) {
     }
 
+    public record Uploads(long today, List<ImportOverviewMapper.Uploader> topUsers) {
+    }
+
+    public record Banks(long publicPacks, long pendingVersions, long downloadsLast7Days,
+                        long pendingReports, long importQueueLength) {
+    }
+
     /** online 只统计本实例（ActivityTracker 的单实例限制）。 */
-    public record Uploads(long today, List<cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper.Uploader> topUsers) {}
-    public record Overview(Users users, long online, long storageUsedBytes, List<Day> trend, Object banks, Uploads uploads) {
+    public record Overview(Users users, long online, long storageUsedBytes, List<Day> trend, Banks banks, Uploads uploads) {
     }
 
     private final AccountAdminService accounts;
     private final ActivityTracker activity;
     private final QuotaService quotas;
     private final Clock clock;
-    private final cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper imports;
+    private final ImportOverviewMapper imports;
+    private final CatalogOverviewMapper catalog;
 
     public AdminOverviewController(AccountAdminService accounts, ActivityTracker activity, QuotaService quotas,
-                                   Clock clock, cloud.treenewbee.quizforge.admin.infrastructure.ImportOverviewMapper imports) {
+                                   Clock clock, ImportOverviewMapper imports, CatalogOverviewMapper catalog) {
         this.accounts = accounts;
         this.activity = activity;
         this.quotas = quotas;
         this.clock = clock;
         this.imports = imports;
+        this.catalog = catalog;
     }
 
     @GetMapping("/api/admin/overview")
@@ -74,7 +84,10 @@ public class AdminOverviewController {
         }
         long newUsers = trend.stream().mapToLong(Day::registered).sum();
         var body = new Overview(new Users(accounts.userCount(), newUsers), activity.online(),
-                quotas.totalStorageUsed(), trend, null, new Uploads(imports.uploads(today), imports.top(today)));
+                quotas.totalStorageUsed(), trend,
+                new Banks(catalog.publicPacks(), catalog.pendingVersions(), catalog.downloads(first, today.plusDays(1)),
+                        catalog.pendingReports(), imports.queue().queued()),
+                new Uploads(imports.uploads(today), imports.top(today)));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }
 }
