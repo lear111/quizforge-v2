@@ -1,0 +1,54 @@
+# 生产入口（HTTPS）。Nginx 镜像启动时用 envsubst 替换 ${QF_*} 后写入 conf.d/default.conf；路由在 qf/routes.conf。
+# 证书路径由 deploy/prod.env 配置，Let's Encrypt 与自备证书的做法见 docs/ops/01-deploy.md。
+
+include /etc/nginx/qf/maps.conf;
+
+# 容器健康检查：只监听回环地址，不依赖证书和域名。
+server {
+    listen 127.0.0.1:8081;
+    access_log off;
+    location = /nginx-health { return 200 "ok\n"; }
+    location / { return 404; }
+}
+
+# 不是本站域名的请求直接断开（扫描器、用 IP 访问）。
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 80;
+    server_name ${QF_SERVER_NAME};
+
+    # Let's Encrypt 的 HTTP-01 验证。
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        default_type text/plain;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${QF_SERVER_NAME};
+
+    ssl_certificate     /etc/nginx/tls/${QF_TLS_CERT};
+    ssl_certificate_key /etc/nginx/tls/${QF_TLS_KEY};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:qf_tls:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    include /etc/nginx/qf/routes.conf;
+}

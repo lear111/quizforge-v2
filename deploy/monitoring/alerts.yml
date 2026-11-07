@@ -1,0 +1,87 @@
+# 告警规则。阈值是起始值：真实服务器复测（loadtest/CAPACITY.md）后按基线调整。每条的处理方法见 docs/ops/01-deploy.md 第 7 节。
+groups:
+  - name: availability
+    rules:
+      - alert: AppDown
+        expr: up{job="quizforge"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "应用无法抓取指标：网站可能不可用"}
+      - alert: RuleRunnerDown
+        expr: up{job="rule-runner"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "rule-runner 不可用：服务器判分、导入校验会失败"}
+      - alert: MySqlDown
+        expr: mysql_up == 0 or up{job="mysql"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "MySQL 不可用"}
+
+  - name: application
+    rules:
+      - alert: High5xxRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m])) > 0.01
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "5xx 超过 1%"}
+      - alert: SubmitSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~".*/actions",method="POST"}[5m]))) > 1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "保存与提交 P95 超过 1 秒（M3 基线 100 毫秒）"}
+      - alert: DbPoolExhausted
+        expr: hikaricp_connections_pending > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "有请求在等待数据库连接"}
+      - alert: JvmHeapHigh
+        expr: |
+          sum(jvm_memory_used_bytes{area="heap"}) / sum(jvm_memory_max_bytes{area="heap"}) > 0.9
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "JVM 堆使用超过 90%"}
+
+  - name: rules-and-queues
+    rules:
+      - alert: RuleRunnerRejecting
+        expr: rate(qf_rule_runner_bulkhead_rejected_total[5m]) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "规则调用被舱壁拒绝：并发达到上限"}
+      - alert: RuleRunnerTimeouts
+        expr: sum(rate(qf_rule_runner_timeouts_total[5m])) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "规则调用持续超时"}
+      - alert: ImportQueueBacklog
+        expr: qf_import_queue_length{status="queued"} > 20
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "导入队列积压超过 20 个"}
+      - alert: ImportJobsFailing
+        expr: qf_import_jobs_failed_recent > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "最近 1 小时导入失败超过 5 个"}
+      - alert: AiTasksFailing
+        expr: qf_ai_tasks_failed_recent > 10
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "最近 1 小时 AI 评分任务失败超过 10 个：检查 Key 与上游"}
+
+  - name: capacity
+    rules:
+      - alert: DiskSpaceLow
+        expr: disk_free_bytes / disk_total_bytes < 0.15
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "数据卷剩余空间不足 15%"}
+      - alert: DiskSpaceCritical
+        expr: disk_free_bytes / disk_total_bytes < 0.05
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "数据卷剩余空间不足 5%：上传与数据库写入即将失败"}

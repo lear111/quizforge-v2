@@ -1,0 +1,2 @@
+# 在容器或 Linux 服务器上执行的脚本必须是 LF（Windows 检出时也不转换）
+*.sh text eol=lf

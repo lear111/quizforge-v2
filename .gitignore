@@ -37,6 +37,11 @@ tools/qbank-upgrade/**/__pycache__/
 tools/migration/local/
 tools/migration/target/
 
+# 生产配置与证书验证目录只放在服务器上（模板：deploy/prod.env.example、deploy/monitoring/alertmanager.yml.example）
+deploy/prod.env
+deploy/acme/
+deploy/monitoring/alertmanager.yml
+
 # 客户端安装包只放在服务器或本机，不进入仓库
 deploy/downloads/*
 !deploy/downloads/.gitkeep
