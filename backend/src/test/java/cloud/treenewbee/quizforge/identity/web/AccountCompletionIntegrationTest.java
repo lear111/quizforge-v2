@@ -391,11 +391,24 @@ class AccountCompletionIntegrationTest extends MySqlTestBase {
         assertThat(fake.sent()).hasSize(1);
 
         String code = fake.lastCode(normalized(identifier));
+        String owner = JSON.readTree(get("/api/me", cookie).body()).path("user").path("id").asString();
+        String other = registerOk(email());
+        for (String id : List.of(owner, other)) {
+            jdbc.update("INSERT INTO auth_device(id,user_id,token_hash,name,client,created_at,last_used_at) "
+                    + "VALUES(UUID(),?,UNHEX(SHA2(?,256)),'测试设备','web',?,?)", id, id, START, START);
+            jdbc.update("INSERT INTO auth_connect_code(code_hash,user_id,client,redirect_uri,challenge,device_name,expires_at) "
+                    + "VALUES(UNHEX(SHA2(?,256)),?,'web','http://127.0.0.1:8787/hub/connect/callback',?, '测试设备',?)",
+                    id, id, "a".repeat(43), START.plusSeconds(120));
+        }
         assertError(post("/api/auth/password-reset", Map.of("identifier", identifier, "code", code,
                 "password", "short"), null), 400, "VALIDATION_FAILED");
         assertThat(post("/api/auth/password-reset", Map.of("identifier", identifier, "code", code,
                 "password", "brand-new-pass"), null).statusCode()).isEqualTo(204);
         assertThat(get("/api/me", cookie).statusCode()).isEqualTo(401);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auth_device WHERE user_id=? AND revoked_at IS NULL", Integer.class, owner)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auth_connect_code WHERE user_id=?", Integer.class, owner)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auth_device WHERE user_id=? AND revoked_at IS NULL", Integer.class, other)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM auth_connect_code WHERE user_id=?", Integer.class, other)).isEqualTo(1);
         assertError(login(identifier, PASSWORD, null, null), 401, "INVALID_CREDENTIALS");
         assertOk(login(identifier, "brand-new-pass", null, null));
     }

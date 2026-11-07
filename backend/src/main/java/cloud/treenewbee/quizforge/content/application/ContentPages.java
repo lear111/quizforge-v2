@@ -86,9 +86,13 @@ public class ContentPages {
         } catch (java.nio.charset.CharacterCodingException invalid) { throw invalidPage(); }
     }
 
+    public boolean canExecute(String userId, byte[] digest) {
+        return access.extension(userId, digest);
+    }
+
     public Map<String, Object> page(String userId, String pageId, String version) throws IOException {
         byte[] digest = hash(pageId);
-        if (!access.extension(userId, digest)) throw notFound();
+        if (!canExecute(userId, digest)) throw notFound();
         ExtensionPackageRow extension = extension(digest);
         if (!extension.version().equals(version)) throw notFound();
         JsonNode manifest = json.readTree(extension.manifest());

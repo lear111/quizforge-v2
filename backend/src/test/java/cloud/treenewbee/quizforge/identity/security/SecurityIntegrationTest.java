@@ -61,6 +61,11 @@ class SecurityIntegrationTest extends MySqlTestBase {
     @Autowired JdbcTemplate jdbc;
     @Autowired Clock clock;
     @Autowired ApplicationContext context;
+
+    @Test
+    void noGeneratedPasswordUserIsRegistered() {
+        assertThat(context.getBeansOfType(org.springframework.security.core.userdetails.UserDetailsService.class)).isEmpty();
+    }
     @Autowired
     @org.springframework.beans.factory.annotation.Qualifier("securityFilterChain")
     SecurityFilterChain securityChain;

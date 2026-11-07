@@ -2,6 +2,7 @@ package cloud.treenewbee.quizforge;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 import cloud.treenewbee.quizforge.identity.maintenance.MaintenanceCommand;
@@ -13,7 +14,8 @@ import cloud.treenewbee.quizforge.identity.maintenance.MaintenanceCommand;
  * identity, content, catalog, practice, exam, resource, ai, admin, plus {@code shared}
  * for cross-cutting utilities without business logic.
  */
-@SpringBootApplication
+// 仅使用会话/设备认证，不创建或记录未使用的默认用户密码。
+@SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 @ConfigurationPropertiesScan
 public class QuizForgeApplication {
 

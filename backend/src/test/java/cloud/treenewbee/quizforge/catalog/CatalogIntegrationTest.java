@@ -232,6 +232,13 @@ class CatalogIntegrationTest extends MySqlTestBase {
                 admin.id())).containsExactly("extension-approved", "extension-approved", "pack-revision-approved");
         // 通过后公开：截图对所有登录用户可见。
         assertThat(get(user(), "/api/catalog/files/" + shot).statusCode()).isEqualTo(200);
+        // 实时版本状态必须参与 SQL 授权，不能仅凭 approved_revision 指针继续公开截图。
+        jdbc.update("UPDATE catalog_pack_revision SET review_status='pending' WHERE pack_id=? AND revision=1", pack);
+        assertThat(get(user(), "/api/catalog/files/" + shot).statusCode()).isEqualTo(404);
+        assertThat(get(owner, "/api/catalog/files/" + shot).statusCode()).isEqualTo(200);
+        jdbc.update("UPDATE catalog_pack_revision SET review_status='approved' WHERE pack_id=? AND revision=1", pack);
+        jdbc.update("UPDATE catalog_pack SET visibility='private' WHERE id=?", pack);
+        assertThat(get(user(), "/api/catalog/files/" + shot).statusCode()).isEqualTo(404);
     }
 
     @Test

@@ -15,6 +15,7 @@ import cloud.treenewbee.quizforge.content.domain.QbankPackageParser.ParsedBank;
 import cloud.treenewbee.quizforge.content.domain.QbankPackageParser.ParsedExtension;
 import cloud.treenewbee.quizforge.content.domain.RuleInputHash;
 import cloud.treenewbee.quizforge.content.infrastructure.ImportQueueMapper;
+import cloud.treenewbee.quizforge.admin.infrastructure.ExtensionReviewMapper;
 import cloud.treenewbee.quizforge.rules.RuleRunnerClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -27,18 +28,20 @@ public class QueuedImportValidation {
     private final ImportRules rules;
     private final RuleRunnerClient runner;
     private final ImportQueueMapper cache;
+    private final ExtensionReviewMapper reviews;
     private final JsonMapper json;
     private final Clock clock;
     private final int parallelism;
     private final java.util.concurrent.ExecutorService executor;
 
-    public QueuedImportValidation(ImportRules rules, RuleRunnerClient runner, ImportQueueMapper cache,
+    public QueuedImportValidation(ImportRules rules, RuleRunnerClient runner, ImportQueueMapper cache, ExtensionReviewMapper reviews,
             JsonMapper json, Clock clock, @Value("${qf.import.extension-concurrency:2}") int concurrency,
             @Value("${qf.import.runner-worker-limit:8}") int workerLimit) {
         if (concurrency < 1 || workerLimit < 1) throw new IllegalArgumentException("导入规则并发必须为正数");
         this.rules = rules;
         this.runner = runner;
         this.cache = cache;
+        this.reviews = reviews;
         this.json = json;
         this.clock = clock;
         this.parallelism = Math.min(concurrency, Math.max(1, workerLimit / 2));
@@ -50,6 +53,7 @@ public class QueuedImportValidation {
 
     @SuppressWarnings("unchecked")
     public Map<String, Validated> validate(List<ParsedExtension> extensions, List<ParsedBank> banks, Runnable guard) {
+        extensions.forEach(this::requireNotStopped);
         Map<String, LinkedHashMap<String, Input>> groups = new LinkedHashMap<>();
         for (ParsedExtension extension : extensions) groups.put(extension.path(), new LinkedHashMap<>());
         for (ParsedBank bank : banks) {
@@ -72,7 +76,10 @@ public class QueuedImportValidation {
         {
             Map<String, java.util.concurrent.Future<Validated>> futures = new LinkedHashMap<>();
             for (var extension : extensions) {
-                futures.put(extension.path(), executor.submit(() -> runner.background(() -> rules.guarded(guard,
+                futures.put(extension.path(), executor.submit(() -> runner.background(() -> rules.guarded(() -> {
+                    guard.run();
+                    requireNotStopped(extension);
+                },
                         () -> validateExtension(extension, groups.get(extension.path()))))));
             }
             Map<String, Validated> result = new LinkedHashMap<>();
@@ -165,6 +172,14 @@ public class QueuedImportValidation {
             }
         }
         return new Validated(capabilities, Map.copyOf(result));
+    }
+
+    private void requireNotStopped(ParsedExtension extension) {
+        reviews.findByDigest(HexFormat.of().parseHex(extension.digest())).ifPresent(review -> {
+            if (List.of("revoked", "rejected").contains(review.status())) {
+                throw new ImportFailure("INVALID_EXTENSION", "拓展「" + extension.path() + "」已被管理员停用或拒绝，无法校验");
+            }
+        });
     }
 
     private static byte[] hex(String value) {

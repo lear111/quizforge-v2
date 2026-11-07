@@ -1,4 +1,5 @@
 import {waitLifecycleJob} from './practice/lifecycle-jobs.js';
+import {mountUnavailableQuestion} from './history/unavailable-question.js';
 import {gradeTicket,gradePending} from './grading/browser-grading.js';
 import {loadLibraryIndex} from './shared/online.js';
 import {createListeningPlayer} from './listening/listening-player.js';
@@ -463,10 +464,10 @@ async function showHistoryQuestion(pane,qid,{historyEntry=pane.historyEntry,hist
   pane.loading=true;
   let candidateHost=null,candidatePlugin=null;
   try{
-    const assets=await prepareAssets(entry.page);
+    const assets=entry.page.unavailable?entry.page:await prepareAssets(entry.page);
     const historyQuestion={...entry,page:assets},next={...pane,view:'history',historyEntry,historyView,historyDraftMode,historyQuestion,historyQuestionId:qid,summaryShown:false};
     candidateHost=el('div','question-frame-candidate');pane.frameHost.append(candidateHost);
-    candidatePlugin=mountExtension(candidateHost,assets,contextFor(next),{onLayout:(options,frame)=>setFrameLayout(pane,options,frame),onRequest:(method,args)=>pageRequest(pane.plugin===candidatePlugin?pane:next,method,args),onError:message=>{if(active()===pane&&pane.plugin===candidatePlugin)notice(message);}});
+    candidatePlugin=assets.unavailable?mountUnavailableQuestion(candidateHost,assets.message):mountExtension(candidateHost,assets,contextFor(next),{onLayout:(options,frame)=>setFrameLayout(pane,options,frame),onRequest:(method,args)=>pageRequest(pane.plugin===candidatePlugin?pane:next,method,args),onError:message=>{if(active()===pane&&pane.plugin===candidatePlugin)notice(message);}});
     await candidatePlugin.ready;
     if(pane.closed)throw new Error('题库页面已关闭');
 
@@ -476,7 +477,7 @@ async function showHistoryQuestion(pane,qid,{historyEntry=pane.historyEntry,hist
     pane.view='history';pane.historyEntry=historyEntry;pane.historyView=historyView;pane.historyDraftMode=historyDraftMode;pane.editState=null;pane.historyQuestion=historyQuestion;pane.historyQuestionId=qid;pane.outlineItemId=null;
     const draft=draftViewActive(pane);
     pane.node.classList.remove('is-edit');pane.node.classList.toggle('is-draft',draft);pane.tools.hidden=!draft;pane.viewport.scrollTop=0;pane.viewport.scrollLeft=0;
-    pane.whiteboardLayer='notes';(pane.boardVersions??=new Map()).set(qid,entry.payload.whiteboard?.revision||0);pane.whiteboard.load(layerDocument(entry.payload.whiteboard,'notes'));configureBoardLayer(pane);pane.whiteboard.setMode(draft?'draft':'practice');
+    pane.whiteboardLayer='notes';(pane.boardVersions??=new Map()).set(qid,entry.payload.whiteboard?.revision||0);pane.whiteboard.load(layerDocument(assets.unavailable?null:entry.payload.whiteboard,'notes'));configureBoardLayer(pane);pane.whiteboard.setMode(draft?'draft':'practice');
     pane.plugin=candidatePlugin;syncPracticeCamera(pane);saveStatus('只读快照');renderOutline();
   }catch(error){if(pane.plugin!==candidatePlugin){candidatePlugin?.destroy();candidateHost?.remove();}throw error;
   }finally{pane.loading=false;updateChrome();}
@@ -527,7 +528,7 @@ function configureBoardLayer(pane){
   pane.whiteboard.protectStrokes(protectedInk(board,layer));
   pane.whiteboard.setAppendOnly(false);
   pane.whiteboard.setAnswerInkEnabled(pane.view!=='history'&&layer==='draft'&&!board?.draftLocked);
-  pane.whiteboard.setReadOnly(!!pane.submitting||!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
+  pane.whiteboard.setReadOnly(!!pane.submitting||pane.view==='history'&&pane.historyQuestion?.page?.unavailable===true||!!pane.exam&&!examActive(pane)||layer==='draft'&&(pane.view==='history'||board?.draftLocked===true));
 }
 function attachRuntime(pane){
   if(pane.whiteboard)return;

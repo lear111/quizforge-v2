@@ -84,7 +84,7 @@ public class CatalogPublishService {
     public Submitted uploadRevision(String userId, String packId, PackInfo info, boolean rights, Path archive, String filename,
                                     List<Screenshot> screenshots, List<String> keepScreenshots) {
         requireRights(rights);
-        PackRow pack = mapper.pack(packId).filter(row -> row.ownerId().equals(userId) && "active".equals(row.status()))
+        PackRow pack = mapper.ownedActive(packId, userId)
                 .orElseThrow(CatalogPublishService::packNotFound);
         List<String> keep = keepScreenshots == null ? List.of() : List.copyOf(new java.util.LinkedHashSet<>(keepScreenshots));
         List<FileRow> shots = storeScreenshots(screenshots, keep.size());
@@ -132,13 +132,7 @@ public class CatalogPublishService {
 
     /** 截图读取权限：所有者、管理员，或当前公开（已审核且未删除）的版本。 */
     public FileRow file(String userId, boolean admin, String fileId) {
-        FileRow file = mapper.file(fileId).orElseThrow(CatalogPublishService::fileNotFound);
-        PackRow pack = mapper.pack(file.packId()).orElseThrow(CatalogPublishService::fileNotFound);
-        boolean visible = admin || pack.ownerId().equals(userId)
-                || "active".equals(pack.status()) && pack.approvedRevision() != null && pack.approvedRevision() == file.revision()
-                    && uploads.isPublic(pack.id(), pack.ownerId(), file.revision());
-        if (!visible) throw fileNotFound();
-        return file;
+        return mapper.visibleFile(fileId, userId, admin).orElseThrow(CatalogPublishService::fileNotFound);
     }
 
     // ---------------------------------------------------------------- 内部

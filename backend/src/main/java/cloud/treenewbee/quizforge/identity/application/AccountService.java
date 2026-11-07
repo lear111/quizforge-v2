@@ -143,6 +143,9 @@ public class AccountService {
                 throw stateChanged();
             }
             sessions.deleteByUserId(target.id());
+            // 找回密码同时终止设备授权，防止旧令牌或未兑换授权码重新取得访问权。
+            accounts.revokeDevices(target.id(), clock.instant());
+            accounts.deleteConnectCodes(target.id());
             auth.markVerified(target.id(), contact, clock.instant());
             return null;
         });

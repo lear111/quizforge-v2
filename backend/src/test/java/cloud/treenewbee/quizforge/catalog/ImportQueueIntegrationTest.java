@@ -162,10 +162,13 @@ class ImportQueueIntegrationTest extends MySqlTestBase {
         queue.runOne();
         for (String status : List.of("revoked", "rejected")) {
             jdbc.update("UPDATE admin_extension_review SET status=?", status);
+            jdbc.update("DELETE FROM content_validation_cache");
+            clearInvocations(runner);
             var accepted = receive(user(true), archive());
             queue.runOne();
             assertThat(jdbc.queryForObject("SELECT status FROM admin_extension_review", String.class)).isEqualTo(status);
-            assertThat(review(accepted.packId())).isEqualTo("pending");
+            assertThat(review(accepted.packId())).isEqualTo("rejected");
+            verify(runner, never()).execute(anyString(), any(), anyMap());
         }
     }
 
