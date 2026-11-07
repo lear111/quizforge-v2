@@ -1,0 +1,12 @@
+# 仅用于本机演练生产配置（叠加在 docker-compose.prod.yml 之后），不要用于服务器。
+# 本机没有真实的邮件、短信服务：改用假验证码（只允许本机或 .test 来源），其余与生产相同（HTTPS、响应头、内存上限、健康检查）。
+# 服务器判分让演练不依赖浏览器。
+services:
+  app:
+    environment:
+      QF_VERIFICATION_MODE: fake
+      QF_GRADING_MODE: server
+      QF_AUTH_RATE_LIMIT_PER_MINUTE: "1000"
+      QF_VERIFICATION_IP_LIMIT_10MIN: "1000"
+      QF_VERIFICATION_IP_LIMIT_DAILY: "10000"
+      QF_EMAIL_DAILY_LIMIT: "10000"

@@ -1,0 +1,18 @@
+# 复制为 deploy/monitoring/alertmanager.yml 并填写（已被 git 忽略，不要提交）。
+# 下面是邮件的写法；也可以换成 webhook_configs，把告警发到自己的通知服务。
+route:
+  receiver: owner
+  group_by: [alertname]
+  group_wait: 1m
+  group_interval: 10m
+  repeat_interval: 6h
+
+receivers:
+  - name: owner
+    email_configs:
+      - to: <接收告警的邮箱>
+        from: <发件地址>
+        smarthost: <SMTP 服务器:端口>
+        auth_username: <SMTP 账号>
+        auth_password: <SMTP 密码>
+        send_resolved: true
