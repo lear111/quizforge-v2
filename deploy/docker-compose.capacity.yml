@@ -1,0 +1,51 @@
+# 上线前容量复测（loadtest/CAPACITY.md），叠加在 docker-compose.prod.yml 之后，只用于一次性的 qf-loadtest-* 项目。
+#
+#   docker compose -p qf-loadtest-prod --env-file loadtest/capacity.env \
+#     -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml -f deploy/docker-compose.capacity.yml up -d --build --wait
+#
+# 与生产完全相同：内存上限、JVM 堆、rule-runner 进程数、连接池、浏览器判分、没有 CPU 配额。
+# 只改了让造数与 k6 能在服务器本机运行的部分：
+#   - Nginx 使用开发配置（HTTP，只绑定 127.0.0.1:8099，响应头相同）：seed.py 与 k6 只允许本机回环地址；TLS 的开销不在这次测量范围内
+#   - 假验证码与放宽的频率限制：100 个压测账号的注册不经过真实短信 / 邮件
+#   - MySQL 带 qf.loadtest 标签：seed.py 只对带这个标签的数据库批准样例拓展
+services:
+  app:
+    environment:
+      QF_VERIFICATION_MODE: fake
+      QF_AUTH_RATE_LIMIT_PER_MINUTE: "10000"
+      QF_VERIFICATION_IP_LIMIT_10MIN: "10000"
+      QF_VERIFICATION_IP_LIMIT_DAILY: "10000"
+      QF_EMAIL_DAILY_LIMIT: "10000"
+      QF_IMPORT_DAILY_UPLOAD_LIMIT: "10000"
+      QF_MANAGEMENT_ADDRESS: 0.0.0.0
+
+  mysql:
+    labels:
+      qf.loadtest: "true"
+
+  nginx:
+    ports: !override
+      - "127.0.0.1:${QF_HTTP_PORT:-8099}:80"
+    volumes: !override
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/qf:/etc/nginx/qf:ro
+      - blobs:/data/blobs:ro
+    environment: !override {}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+
+  # 负载生成器与被测服务在同一台机器上：限制为 0.5 核，复测记录中单独写出它的 CPU 占用。
+  k6:
+    image: grafana/k6:1.2.3
+    profiles: [tools]
+    working_dir: /work
+    volumes:
+      - ../loadtest:/work:ro
+      - ../samples:/samples:ro
+    environment:
+      K6_NO_USAGE_REPORT: "true"
+      BASE_URL: http://nginx
+      ORIGIN: ${QF_PUBLIC_ORIGIN}
+    networks: [internal]
+    cpus: 0.5
+    mem_limit: 512m
