@@ -1,0 +1,8 @@
+.upload-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.upload-fields .dropzone { width: 100%; font: inherit; }
+.upload-rights { display: flex; align-items: flex-start; gap: 9px; margin-top: 24px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.upload-rights input { margin-top: 5px; accent-color: var(--accent); }
+.upload-progress { width: 100%; height: 8px; accent-color: var(--accent); }
+[data-tags] { display: contents; }
+.mine-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.mine-status button[aria-pressed=true] { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
