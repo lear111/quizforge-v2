@@ -103,6 +103,8 @@ Windows / Android 客户端调用的 Hub 接口：设备授权（客户端重新
 
 生产 compose 与 HTTPS、密钥与令牌缺省值启动即失败、数据库与文件备份及恢复演练、日志与监控告警、在真实 4 核 8G 上复测、切换与回退方案。
 
+部署与运维见 [docs/ops/01-deploy.md](../ops/01-deploy.md)（含上线前检查清单），切换与回退见 [docs/ops/02-cutover.md](../ops/02-cutover.md)，真实服务器上的容量复测见 `loadtest/CAPACITY.md`。
+
 ## 4. 需要尽早准备的外部条件
 
 这些不依赖代码，越早准备越不会卡住后面的里程碑：
