@@ -53,10 +53,10 @@ groups:
         labels: {severity: warning}
         annotations: {summary: "规则调用被舱壁拒绝：并发达到上限"}
       - alert: RuleRunnerTimeouts
-        expr: sum(rate(qf_rule_runner_timeouts_total[5m])) > 0.1
+        expr: sum(rate(qf_runner_worker_stops_total{reason="timeout"}[5m])) > 0.1
         for: 10m
         labels: {severity: warning}
-        annotations: {summary: "规则调用持续超时"}
+        annotations: {summary: "规则调用持续超时（超时的工作进程被终止并重启）"}
       - alert: ImportQueueBacklog
         expr: qf_import_queue_length{status="queued"} > 20
         for: 15m

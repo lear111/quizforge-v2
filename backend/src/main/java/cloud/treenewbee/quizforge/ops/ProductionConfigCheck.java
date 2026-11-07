@@ -21,6 +21,9 @@ import org.springframework.core.env.Environment;
  *
  * <p>在其他 Bean 创建之前运行（BeanFactoryPostProcessor），所以报告不会被某个 Bean 自己的检查提前打断；
  * 维护命令（promote 等）使用同一配置，也同样检查。
+ *
+ * <p>包含 #123 安全审查的开发默认凭据检查（原 {@code DeploymentSecrets}）：只有 fake 模式且来源是本机 / .localhost / .test
+ * 时才允许仓库中的开发默认 runner 令牌与数据库密码，其余配置一律拒绝空白值与默认值。
  */
 @Configuration
 public class ProductionConfigCheck {
@@ -51,7 +54,7 @@ public class ProductionConfigCheck {
         };
     }
 
-    /** 本机开发与测试（fake 模式且来源是本机或 .test）不检查。 */
+    /** 本机开发与测试（fake 模式且来源是本机、.localhost 或 .test）不检查。 */
     static boolean productionLike(String mode, String origin) {
         return !"fake".equals(mode) || !localOrTest(origin);
     }
@@ -150,7 +153,8 @@ public class ProductionConfigCheck {
     private static boolean localOrTest(String origin) {
         try {
             String host = URI.create(origin).getHost();
-            return host != null && (host.equals("localhost") || host.equals("127.0.0.1") || host.endsWith(".test"));
+            return host != null && (host.equals("localhost") || host.equals("127.0.0.1")
+                    || host.endsWith(".localhost") || host.endsWith(".test"));
         } catch (RuntimeException error) {
             return false;
         }

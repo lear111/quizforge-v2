@@ -42,7 +42,8 @@ latest="$(find "$backups" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*-[0-9]*' 
 
 # 5. 证书有效期。
 host="$(printf '%s' "$url" | sed -E 's#^https?://([^/:]+).*#\1#')"
-if end="$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" && [ -n "$end" ]; then
+port="$(printf '%s' "$url" | sed -nE 's#^https?://[^/:]+:([0-9]+).*#\1#p')"
+if end="$(echo | openssl s_client -servername "$host" -connect "$host:${port:-443}" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" && [ -n "$end" ]; then
   days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
   [ "$days" -ge "$min_cert_days" ] || problem "证书还有 $days 天过期"
 else

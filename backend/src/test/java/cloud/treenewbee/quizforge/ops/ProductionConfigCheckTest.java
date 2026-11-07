@@ -54,8 +54,41 @@ class ProductionConfigCheckTest {
 
     @Test
     void localDevelopmentWithFakeVerificationIsNotChecked() {
-        for (String origin : List.of("http://localhost:8088", "http://127.0.0.1:8099", "https://audio.qf.test")) {
+        for (String origin : List.of("http://localhost:8088", "http://127.0.0.1:8099", "http://app.localhost:8088", "https://audio.qf.test")) {
             assertThat(check(Map.of("qf.verification.mode", "fake", "qf.security.allowed-origin", origin))).isEmpty();
+            // 开发默认凭据只在这里允许（#123）。
+            assertThat(check(Map.of("qf.verification.mode", "fake", "qf.security.allowed-origin", origin,
+                    "qf.rule-runner.token", "quizforge-local-rule-token", "spring.datasource.password", "quizforge"))).isEmpty();
+        }
+    }
+
+    /** 由 #123 的 DeploymentSecretsTest 合并而来：默认凭据只允许 fake 模式加本机来源。 */
+    @Test
+    void developmentCredentialsRequireFakeModeAndLocalOrigin() {
+        for (String mode : List.of("fake", "provider")) {
+            Map<String, String> values = complete();
+            values.put("qf.verification.mode", mode);
+            values.put("qf.rule-runner.token", "quizforge-local-rule-token");
+            assertThat(names(check(values))).as(mode).contains("QF_RULE_RUNNER_TOKEN");
+        }
+        Map<String, String> localProvider = complete();
+        localProvider.put("qf.security.allowed-origin", "http://localhost:8088");
+        localProvider.put("qf.rule-runner.token", "quizforge-local-rule-token");
+        localProvider.put("spring.datasource.password", "quizforge");
+        assertThat(names(check(localProvider))).containsExactlyInAnyOrder("QF_RULE_RUNNER_TOKEN", "QF_DB_PASSWORD");
+    }
+
+    @Test
+    void blankOrDefaultCredentialsAreRejected() {
+        for (String token : List.of("", " ", "quizforge-local-rule-token")) {
+            Map<String, String> values = complete();
+            values.put("qf.rule-runner.token", token);
+            assertThat(names(check(values))).as("token [%s]", token).containsExactly("QF_RULE_RUNNER_TOKEN");
+        }
+        for (String password : List.of("", " ", "quizforge")) {
+            Map<String, String> values = complete();
+            values.put("spring.datasource.password", password);
+            assertThat(names(check(values))).as("password [%s]", password).containsExactly("QF_DB_PASSWORD");
         }
     }
 
