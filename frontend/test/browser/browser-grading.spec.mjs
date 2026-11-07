@@ -10,6 +10,8 @@ test('五种基础题型在真实浏览器与服务器中判分一致，先锁�
   test.setTimeout(180000);
   const {origin}=await registerByApi(page,'browser-grade','本地判分');
   const {collections}=await uploadAndImportFromLibrary(page);
+  // 判分只在练习空间运行：在 /practice/ 下的文档中执行，使用练习空间的 CSP（docs/ops/01-deploy.md 第 4 节）。
+  await page.goto('/practice/grading/browser-rules.js');
   // 只读取仓库内的合成样例，避免把真实题库或答案写进测试产物。
   const banks=JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',['-c',
     "import json,zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(json.dumps([dict(json.loads(z.read(n)),folder=n.split('/')[-2]) for n in z.namelist() if n.endswith('/bank.json')]))",
@@ -48,7 +50,7 @@ test('五种基础题型在真实浏览器与服务器中判分一致，先锁�
 });
 
 test('规则隔离禁止宿主权限，超时和超大输出后仍能执行下一道题',async({page})=>{
-  await page.goto('/');
+  await page.goto('/practice/grading/browser-rules.js');
   const values=await page.evaluate(async()=>{
     const {executeBrowserGrade}=await import('/practice/grading/browser-rules.js');
     const run=source=>executeBrowserGrade({source,package:{apiVersion:{major:1,minor:5}},data:{},answer:{}});
