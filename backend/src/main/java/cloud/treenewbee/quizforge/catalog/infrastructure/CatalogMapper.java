@@ -159,6 +159,17 @@ public interface CatalogMapper {
     @Select("SELECT id, pack_id, revision, kind, position, name, mime, size, blob_sha256 FROM catalog_pack_file WHERE id = #{id}")
     Optional<FileRow> file(@Param("id") String id);
 
+    /** 私人和待审核截图仅对所有者或管理员可见，匿名只能读取当前已审核公开版本。 */
+    @Select("""
+            SELECT f.id,f.pack_id,f.revision,f.kind,f.position,f.name,f.mime,f.size,f.blob_sha256
+              FROM catalog_pack_file f JOIN catalog_pack p ON p.id=f.pack_id
+              JOIN catalog_pack_revision r ON r.pack_id=f.pack_id AND r.revision=f.revision
+             WHERE f.id=#{id} AND (#{admin}=TRUE OR p.owner_id=#{userId}
+               OR (p.visibility='public' AND p.status='active' AND p.approved_revision=f.revision
+                   AND r.review_status='approved' AND r.validation_status='validated'))
+            """)
+    Optional<FileRow> visibleFile(@Param("id") String id, @Param("userId") String userId, @Param("admin") boolean admin);
+
     @Insert("""
             INSERT INTO catalog_pack_event (id, pack_id, revision, actor_id, action, detail, created_at)
             VALUES (#{id}, #{packId}, #{revision}, #{actorId}, #{action}, #{detail}, #{now})

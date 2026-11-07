@@ -161,6 +161,7 @@ public class LocalImportService {
             if (plaza.download(archive.packId(), (int) archive.revision()) != 1) {
                 throw new Failure(HttpStatus.CONFLICT, "REVISION_CHANGED", "题库文件已变化，请刷新 Hub 后重新点击");
             }
+            plaza.recordDownload(today, archive.packId());
         });
         if (nextCleanup.isBefore(now)) {
             nextCleanup = now.plus(CLEANUP_INTERVAL);

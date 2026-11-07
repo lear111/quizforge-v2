@@ -91,8 +91,26 @@ test('real practice finish, frozen history, editable notes and deletion survive 
   await page.locator('#history-open').click();await expect(page.locator('.history-row')).toHaveCount(1);
   const reloadedHistory=page.waitForResponse(response=>new URL(response.url()).pathname.startsWith(`/api/collections/bank/${collection.id}/history/`));
   await page.locator('.history-row').click();
-  expect((await(await reloadedHistory).json()).questions[0].payload.whiteboard.notes.strokes).toHaveLength(1);
+  const historyRecord=await(await reloadedHistory).json();
+  expect(historyRecord.questions[0].payload.whiteboard.notes.strokes).toHaveLength(1);
   await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
+  const digest=historyRecord.questions[0].pageKey;
+  expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  const approval=status=>execFileSync('docker',['compose','-p',project,'-f',resolve('../deploy/docker-compose.yml'),'exec','-T','mysql','sh','-c','exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'],{input:`UPDATE admin_extension_review SET status='${status}' WHERE digest=UNHEX('${digest}');`,stdio:['pipe','pipe','pipe']});
+  try{
+    approval('revoked');
+    await page.locator('#history-choose').click();await page.locator('.history-row').click();
+    await expect(pane.locator('.history-unavailable-question')).toHaveText('该题的历史记录已丢失（题型拓展已被管理员停用）');
+    await expect(pane.locator('.history-unavailable-question h2, .history-unavailable-question pre, .history-unavailable-question img')).toHaveCount(0);
+    await expect(page.locator('#draft-toggle')).toBeHidden();
+    await expect(pane.locator('iframe')).toHaveCount(0);
+    await page.screenshot({path:resolve(directory,`security-${info.project.name}-revoked-history.png`),fullPage:true});
+  }finally{approval('approved');}
+  await page.locator('#history-choose').click();await page.locator('.history-row').click();
+  await expect(frame.locator('.grade-value')).toHaveText('5 / 5 分');
+  await expect(page.locator('#draft-toggle')).toBeVisible();
+  const restored=await page.request.get(`/api/collections/bank/${collection.id}/history/${historyRecord.id}`);
+  expect((await restored.json()).questions[0].payload.whiteboard.notes.strokes).toHaveLength(1);
   await page.locator('#history-choose').click();await page.locator('.history-delete').click();
   await page.locator('#history-delete-dialog').getByRole('button',{name:/删除/}).click();
   await expect(page.locator('.history-row')).toHaveCount(0);

@@ -6,7 +6,7 @@ export const canEditCollection=()=>false;
 export const practiceSaveLabel=pane=>collectionFeature(pane,'history')?'已保存':'当前会话';
 export function canViewDraft(pane){
   if(!pane||pane.summaryShown||pane.view==='practice'&&pane.payload?.capabilities?.canWhiteboard===false)return false;
-  return pane.view==='history'?!!pane.historyQuestion?.payload&&pane.historyEntry?.collection?.features?.whiteboard!==false:pane.view==='practice'&&!!pane.payload&&collectionFeature(pane,'whiteboard');
+  return pane.view==='history'?!!pane.historyQuestion?.payload&&!pane.historyQuestion?.page?.unavailable&&pane.historyEntry?.collection?.features?.whiteboard!==false:pane.view==='practice'&&!!pane.payload&&collectionFeature(pane,'whiteboard');
 }
 export function draftViewActive(pane){return canViewDraft(pane)&&!!(pane.view==='history'?pane.historyDraftMode:pane.draftMode);}
 export function visibleQuestions(pane){return pane?.view==='history-deleted'?[]:pane?.view==='history'?pane.historyView?.questions||[]:pane?.collection.questions||[];}
