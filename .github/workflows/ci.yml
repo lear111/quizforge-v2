@@ -137,6 +137,18 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps --no-shell chromium
           QF_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME" QF_READ_BROWSER_TESTS=1 QF_AI_GRADING_BROWSER_TESTS=1 QF_AUDIO_TEST_URL=https://audio.qf.test:8447 npx playwright test
+      # 固定旧 Hub 源码只供离线截图；放在仓库外，不启动旧服务或执行 hub.js。
+      - name: Compare plaza with the pinned original Hub (synthetic metadata)
+        working-directory: frontend
+        run: |
+          reference="$RUNNER_TEMP/qf-hub-plaza-reference"
+          git init "$reference"
+          git -C "$reference" remote add origin https://github.com/lear111/quizforge_hub.git
+          git -C "$reference" sparse-checkout init --cone
+          git -C "$reference" sparse-checkout set java-hub/src/main/resources/static
+          git -C "$reference" fetch --depth=1 origin 83d6dfdc5497013b7b4811f8a9c960eab6b503b6
+          git -C "$reference" checkout --detach FETCH_HEAD
+          QF_HUB_REFERENCE="$reference/java-hub/src/main/resources/static" npx playwright test plaza-appearance.spec.mjs --grep 'Hub 广场新旧'
       - name: Browser evidence
         if: always()
         uses: actions/upload-artifact@v4
