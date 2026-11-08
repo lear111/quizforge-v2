@@ -15,7 +15,7 @@
 | `frontend/public/plaza/view.js` | 安全 DOM 卡片及共用表现组件，所有用户文字使用 textContent |
 | `frontend/public/plaza/plaza.css` | V2 按本导入、收藏、加载与错误状态、手机适配 |
 | `frontend/public/plaza/plaza.js` | 将现有接口绑定到新布局；保留搜索期间导航、评论独立加载与原下载行为 |
-| `frontend/public/plaza/feedback.js` | 评论、删除和举报使用 Hub 组件样式，接口与权限不变 |
+| `frontend/public/plaza/feedback.js` | 广场评论、删除和举报使用 Hub 组件样式；后台保留原有结构，接口与权限不变 |
 | `frontend/public/404.html`、`404.css` | 不依赖脚本的中文 404 页面 |
 | `deploy/nginx/qf/routes.conf` | 静态路径不存在时返回真正的 404，不再回退登录页；API 仍返回应用的错误响应 |
 | `frontend/public/index.html`、`library/index.html`、`publish/index.html` | 页面资源改用站点绝对路径，不改页面风格 |
@@ -46,3 +46,7 @@
 本机 `npm run build` 通过，`npm test` 为 174/174；桌面与手机的相关浏览器测试共 10 项。首次组合运行 9 项通过，桌面评论测试在注册准备阶段超时（第一次发码约 20 秒，注册约 7 秒），服务预热后原测试单独重跑通过，未修改超时、断言或加入固定等待。完整 CI 结果及链接见 PR 描述。
 
 本地使用独立项目 `qf-plaza-ui-hub` 与端口 18796；验证结束仅停止自己的项目，不删除卷。未读取 SSH 配置、未连接旧平台或业务服务器。
+
+首轮完整 CI 的浏览器测试为 62 通过、2 失败：桌面和手机的安全头测试均在下载页等待 networkidle 超时。trace 显示缺失的 `/download/manifest.json` 被全局 error_page 改写成自定义 HTML，下载脚本处理 404 后没有消费响应体，请求读取未结束。将自定义错误页限定到页面路径的 location /，不改写专用下载清单和内部文件路由；补充下载清单错误响应边界断言，并重跑原安全头测试。没有放宽超时或跳过安全检查。
+
+修复后，本机安全头与 404 测试在桌面、手机上共 4/4 通过，其中保留对下载页和原 CSP 策略的全部断言。独立的 `/practice/` 页面路由也使用带样式的 404；专用资源路由仍保留原错误响应。

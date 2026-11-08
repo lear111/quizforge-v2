@@ -2,17 +2,21 @@ import {el,time} from '../admin/pages/format.js';
 
 /** 用户文字只通过 textContent 显示；评论与举报不支持 HTML。 */
 export async function mountFeedback(holder,packId,request,{admin=false}={}) {
-  const section=el('section',{'aria-label':'评论与举报',class:'plaza-feedback qa-panel d-section'});
+  const section=el('section',{'aria-label':'评论与举报',class:'plaza-feedback qa-panel'+(admin?'':' d-section')});
   const notice=el('p',{role:'status'}),list=el('div',{'data-comments':true});
-  const more=el('button',{class:'btn-outline',type:'button',text:'更多评论',hidden:true});
-  const body=el('textarea',{name:'body',rows:'3',maxlength:'2000',required:true,'aria-label':'评论',placeholder:'分享使用体验，或向作者提问…'});
-  const submit=el('button',{class:'btn-filled',type:'submit',text:'发表评论'});
-  const form=el('form',{class:'qa-form comment-box'},body,el('div',{class:'comment-foot'},el('span',{text:'友善交流，请勿发布广告或个人敏感信息'}),submit));
+  const more=el('button',{class:admin?undefined:'btn-outline',type:'button',text:'更多评论',hidden:true});
+  const body=el('textarea',{name:'body',rows:'3',maxlength:'2000',required:true,'aria-label':'评论',placeholder:admin?undefined:'分享使用体验，或向作者提问…'});
+  const submit=el('button',{class:admin?undefined:'btn-filled',type:'submit',text:'发表评论'});
+  // 后台复用原有结构，只有广场采用 Hub 的评论布局。
+  const form=admin?el('form',{class:'qa-form'},el('label',{},'评论',body),submit)
+    :el('form',{class:'qa-form comment-box'},body,el('div',{class:'comment-foot'},el('span',{text:'友善交流，请勿发布广告或个人敏感信息'}),submit));
   const reason=el('textarea',{name:'reason',rows:'3',maxlength:'1000',required:true});
-  const reportButton=el('button',{class:'btn-outline',type:'submit',text:'提交举报'});
+  const reportButton=el('button',{class:admin?undefined:'btn-outline',type:'submit',text:'提交举报'});
   const reportForm=el('form',{class:'qa-form'},el('label',{},'举报原因',reason),reportButton);
   const report=el('details',{},el('summary',{text:'举报题库包'}),reportForm);
-  section.append(el('h2',{text:'交流与反馈'}),form,notice,list,more,report);holder.append(section);
+  if(admin)section.append(el('h3',{text:'评论'}),notice,list,more,form,report);
+  else section.append(el('h2',{text:'交流与反馈'}),form,notice,list,more,report);
+  holder.append(section);
   let cursor=null,busy=false,loadGeneration=0;
   async function action(button,fn) {
     if(busy)return;busy=true;button.disabled=true;notice.textContent='';
@@ -25,21 +29,23 @@ export async function mountFeedback(holder,packId,request,{admin=false}={}) {
     if(!append)list.replaceChildren();
     for(const comment of data.items) {
       const heading=el('div',{class:'comment-heading'},el('b',{text:comment.author??'用户'}),el('time',{text:time(comment.createdAt)}));
-      const item=el('article',{'data-comment-id':comment.id,class:'plaza-comment comment'},
+      const item=admin?el('article',{'data-comment-id':comment.id,class:'plaza-comment'},
+        el('p',{text:`${comment.author??'用户'} · ${time(comment.createdAt)}`}),el('p',{class:'plaza-comment-body qa-prewrap',text:comment.body}))
+        :el('article',{'data-comment-id':comment.id,class:'plaza-comment comment'},
         el('span',{class:'mini-avatar','aria-hidden':true,text:Array.from(comment.author||'Q')[0]}),
         el('div',{class:'comment-content'},heading,el('p',{class:'plaza-comment-body qa-prewrap',text:comment.body})));
       if(comment.canDelete||admin) {
-        const remove=el('button',{class:'text-btn',type:'button',text:'删除评论'});
+        const remove=el('button',{class:admin?undefined:'text-btn',type:'button',text:'删除评论'});
         remove.onclick=()=>action(remove,async()=>{
           if(!confirm('删除这条评论？'))return;
           await request(`${admin?'/api/admin/catalog':'/api/plaza'}/comments/${encodeURIComponent(comment.id)}`,'DELETE');
           await load();notice.textContent='评论已删除';
-        });heading.append(remove);
+        });(admin?item:heading).append(remove);
       }
       list.append(item);
     }
     cursor=data.nextCursor;more.hidden=!cursor;
-    if(!list.children.length)list.append(el('p',{class:'comment-empty',text:'暂无评论，来分享你的使用体验吧。'}));
+    if(!list.children.length)list.append(el('p',{class:admin?undefined:'comment-empty',text:admin?'暂无评论':'暂无评论，来分享你的使用体验吧。'}));
   }
   more.onclick=()=>action(more,()=>load(true));
   form.onsubmit=event=>{event.preventDefault();action(submit,async()=>{
