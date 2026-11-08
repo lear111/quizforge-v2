@@ -45,3 +45,6 @@ deploy/monitoring/alertmanager.yml
 # 客户端安装包只放在服务器或本机，不进入仓库
 deploy/downloads/*
 !deploy/downloads/.gitkeep
+
+# 容量复测的一次性配置
+loadtest/capacity.env
