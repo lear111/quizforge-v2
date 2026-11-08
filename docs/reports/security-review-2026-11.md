@@ -53,6 +53,8 @@
 
 回归：`DeploymentSecretsTest.developmentDefaultsRequireFakeModeAndLocalOrigin`、`productionRejectsEmptyOrDefaultSecretsWithoutPrintingThem`；集成测试的真实 Spring 上下文覆盖 Bean 被实际注册。此检查不证明用户自选凭据具有足够熵；生产应使用独立随机值。
 
+> 后续（L8）：这项检查已合并进上线工程的生产配置启动检查 `ops.ProductionConfigCheck`（一次列出全部缺失项，并要求 runner 令牌 ≥ 32、数据库密码 ≥ 16 字符），`DeploymentSecrets` 与其测试删除，测试用例移到 `ProductionConfigCheckTest`（`developmentCredentialsRequireFakeModeAndLocalOrigin`、`blankOrDefaultCredentialsAreRejected`）。
+
 ### SR-05：截图授权分散在 Java，未核对当前审核/校验状态（中，边界加固）
 
 复现：保留 approved_revision 指针，但该版本 review_status 已不再 approved（例如状态不一致）时，旧文件读取只验证包可见性，仍可能公开截图。常规流程中的待审新版本原本已有保护。

@@ -1,0 +1,76 @@
+# 最小监控（叠加在 docker-compose.prod.yml 之后，可选）：Prometheus + 告警规则 + Alertmanager + MySQL exporter。
+# 合计约 400 MiB 内存。说明与不部署时的最低检查方式：docs/ops/01-deploy.md 第 7 节。
+#
+# 端口只绑定服务器回环地址，用 SSH 隧道查看；app 与 runner 的指标端口不对外（只在内部 monitoring 网络上）。
+# 需要 deploy/monitoring/alertmanager.yml（由 alertmanager.yml.example 复制并填写，已被 git 忽略）。
+services:
+  app:
+    environment:
+      QF_MANAGEMENT_ADDRESS: 0.0.0.0
+    networks: [monitoring]
+  rule-runner:
+    networks: [monitoring]
+  mysql:
+    networks: [monitoring]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    configs:
+      - source: runner-metrics-token
+        target: /etc/prometheus/runner-token
+    networks: [monitoring, public]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
+    ports: ["127.0.0.1:9093:9093"]
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [monitoring, public]
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.17.2
+    restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
+    environment:
+      # 只读账号，由 deploy/monitoring/create-exporter-user.sh 创建。
+      MYSQLD_EXPORTER_PASSWORD: ${QF_MYSQL_EXPORTER_PASSWORD:?在 prod.env 中设置 QF_MYSQL_EXPORTER_PASSWORD}
+    command:
+      - --mysqld.address=mysql:3306
+      - --mysqld.username=exporter
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [monitoring]
+
+configs:
+  runner-metrics-token:
+    content: ${QF_RULE_RUNNER_TOKEN:?在 prod.env 中设置 QF_RULE_RUNNER_TOKEN}
+
+networks:
+  monitoring:
+    internal: true
+
+volumes:
+  prometheus-data:
+  alertmanager-data:

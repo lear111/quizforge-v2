@@ -1,0 +1,96 @@
+# 生产部署（叠加在 docker-compose.yml 上），目标：一台 4 核 8G 的 Linux 服务器。需要 Docker Compose 2.24.4+（!override）。
+#
+#   docker compose --env-file /etc/quizforge/prod.env -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# 步骤与检查清单：docs/ops/01-deploy.md。所有密钥只放在服务器上的 env 文件中（模板 deploy/prod.env.example）。
+# 缺少必需变量时 Compose 直接报错；其余生产配置由应用启动检查（ProductionConfigCheck）拦截。
+#
+# 内存上限（合计 7168 MiB，给系统和 Docker 留约 1 GiB；监控叠加文件另占约 400 MiB）。
+# 基线是 M3 压测与 #116 的配额（docs/notes/m3-loadtest.md）：app 3 GiB、mysql 3 GiB、runner 1.5 GiB、nginx 0.5 GiB，
+# 合计 8 GiB，但当时系统和监控在配额之外。生产要给系统留内存，所以从下面几项收回：
+#   app          3072 MiB  与基线相同：堆 2 GiB，其余给元空间、线程栈、直接内存。提交路径的主要消耗在这里。
+#   mysql        2560 MiB  基线 3 GiB 减 512 MiB：InnoDB 缓冲池显式设为 1536 MiB，其余给连接与排序。
+#   rule-runner  1280 MiB  基线 1.5 GiB 对应 8 个工作进程；生产 4 个工作进程（浏览器判分后服务器规则负载更低，#116）。
+#   nginx         256 MiB  文件由 sendfile 发送，不占进程内存；基线 512 MiB 没有用满。
+# 不设 CPU 配额：M3 发现 CFS 限流会造成“整个进程卡住”的长尾（笔记第 7 节第 9 条），单机上让服务按需共享 4 核。
+# 这些数值需要在真实服务器上复测确认，调整方法见 loadtest/CAPACITY.md。
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  blobs-init:
+    <<: *logging
+
+  mysql:
+    <<: *logging
+    restart: unless-stopped
+    mem_limit: 2560m
+    environment:
+      MYSQL_PASSWORD: ${QF_DB_PASSWORD:?在 prod.env 中设置 QF_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${QF_DB_ROOT_PASSWORD:?在 prod.env 中设置 QF_DB_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --innodb-buffer-pool-size=1536M
+      # 二进制日志只保留 3 天：恢复以每天的备份为准，避免日志占满磁盘。
+      - --binlog-expire-logs-seconds=259200
+
+  app:
+    <<: *logging
+    restart: unless-stopped
+    mem_limit: 3072m
+    environment:
+      QF_DB_PASSWORD: ${QF_DB_PASSWORD:?在 prod.env 中设置 QF_DB_PASSWORD}
+      QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:?在 prod.env 中设置 QF_RULE_RUNNER_TOKEN}
+      QF_PUBLIC_ORIGIN: ${QF_PUBLIC_ORIGIN:?在 prod.env 中设置 QF_PUBLIC_ORIGIN}
+      # 生产值显式写出，不依赖默认值。
+      QF_VERIFICATION_MODE: provider
+      QF_GRADING_MODE: browser
+      QF_RULE_WORKER_LIMIT: "4"
+      QF_DB_POOL_SIZE: "20"
+      JAVA_TOOL_OPTIONS: -Xms1g -Xmx2g -XX:+ExitOnOutOfMemoryError
+    healthcheck:
+      # JRE 镜像没有 curl：用 bash 的 /dev/tcp 请求健康接口，要求数据库连通。
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /api/health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 240s
+
+  rule-runner:
+    <<: *logging
+    mem_limit: 1280m
+    environment:
+      QF_RULE_RUNNER_TOKEN: ${QF_RULE_RUNNER_TOKEN:?在 prod.env 中设置 QF_RULE_RUNNER_TOKEN}
+      QF_RULE_WORKER_LIMIT: "4"
+
+  nginx:
+    <<: *logging
+    restart: unless-stopped
+    mem_limit: 256m
+    # 只有 nginx 对外暴露 80 / 443；端口变量只用于本机演练。
+    ports: !override
+      - "${QF_PUBLIC_HTTP_PORT:-80}:80"
+      - "${QF_PUBLIC_HTTPS_PORT:-443}:443"
+    environment:
+      QF_SERVER_NAME: ${QF_SERVER_NAME:?在 prod.env 中设置 QF_SERVER_NAME}
+      QF_TLS_CERT: ${QF_TLS_CERT:?在 prod.env 中设置 QF_TLS_CERT}
+      QF_TLS_KEY: ${QF_TLS_KEY:?在 prod.env 中设置 QF_TLS_KEY}
+    volumes: !override
+      - ./nginx/prod.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/qf:/etc/nginx/qf:ro
+      - blobs:/data/blobs:ro
+      - ${QF_DOWNLOADS_DIR:-./downloads}:/data/downloads:ro
+      - ${QF_TLS_DIR:?在 prod.env 中设置 QF_TLS_DIR}:/etc/nginx/tls:ro
+      - ${QF_ACME_DIR:-./acme}:/var/www/acme:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/nginx-health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
