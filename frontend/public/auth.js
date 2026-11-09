@@ -1,7 +1,8 @@
-import {quotaCards} from './quota.js';
-import {bindAiBalance} from './ai-balance.js';
-import {bindDevices} from './devices.js';
+import {quotaCards} from '/quota.js';
+import {bindAiBalance} from '/ai-balance.js';
+import {bindDevices} from '/devices.js';
 import {bindActivity} from '/practice/shell/activity.js';
+import {mountNotifications} from '/practice/shell/notifications.js';
 
 function practiceReturn() {
   const raw=new URLSearchParams(location.search).get('returnTo');
@@ -348,6 +349,7 @@ function showError(error, form) {
 
 function showView(view) {
   if (view !== 'signed-in') quotaGeneration++;
+  document.body.dataset.view = view;
   byId('checking-view').hidden = view !== 'checking';
   byId('forms-view').hidden = view !== 'forms';
   byId('signed-in-view').hidden = view !== 'signed-in';
@@ -389,8 +391,12 @@ function showAccount(data) {
   }
   clearMessages();
   showView('signed-in');
-  byId('page-title').textContent = '欢迎回来';
-  byId('page-description').textContent = '你已成功登录 QuizForge。';
+  byId('page-title').textContent = `欢迎回来，${user.name}`;
+  const initial = Array.from(user.name || 'Q')[0].toUpperCase();
+  byId('account-avatar').textContent = initial;
+  byId('header-avatar').textContent = initial;
+  byId('header-name').textContent = user.name;
+  mountNotifications(byId('notification-slot'));
   const contacts = [user.email, user.phone].filter(Boolean).join('，');
   byId('identity').textContent = `已登录：${user.name}（${contacts || '未绑定联系方式'}）`;
   const unverified = Array.isArray(user.unverifiedContacts) ? user.unverifiedContacts : [];

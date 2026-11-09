@@ -57,6 +57,8 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 
 认证页 public/auth.js / index.html / auth.css 增加安全 returnTo 和练习入口。deploy 的 Nginx、Compose 与 CI 配置也有相应修改；不修改后端业务代码。完整接口与切片映射见 [设计 07](../docs/design/07-frontend-api-map.md)。
 
+账号首页与我的题库的外观按旧 Hub（`lear111/quizforge_hub@83d6dfd`）改版：`public/hub.css` 是其 `hub.css` 的分叉，只保留这两类页面用到的规则；页面专属样式在 `public/account.css` 与 `public/library/mine.css`。发布页仍使用 `public/auth.css`，改版前不要删除。
+
 ## 后续同步
 
 上游新功能按 ADR-006：记录新提交、人工移植、回归测试、更新本清单。禁止重新引入宿主运行时替换，也不直接覆盖整个分叉目录。
