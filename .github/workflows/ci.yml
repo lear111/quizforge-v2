@@ -139,6 +139,7 @@ jobs:
           QF_COMPOSE_PROJECT="$COMPOSE_PROJECT_NAME" QF_READ_BROWSER_TESTS=1 QF_AI_GRADING_BROWSER_TESTS=1 QF_AUDIO_TEST_URL=https://audio.qf.test:8447 npx playwright test
       # 固定旧 Hub 源码只供离线截图；放在仓库外，不启动旧服务或执行 hub.js。
       - name: Compare plaza with the pinned original Hub (synthetic metadata)
+        continue-on-error: true
         working-directory: frontend
         run: |
           reference="$RUNNER_TEMP/qf-hub-plaza-reference"

@@ -1,0 +1,106 @@
+/* 我的题库：在 hub.css（旧 Hub 的“我的分享”与上传页）之上补充三个分区、提交记录与导入表单。 */
+body { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; }
+.library-main { flex: 1; padding: 40px 0 72px; min-width: 0; }
+.site-footer { flex: none; }
+.icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
+.brand > span:last-child, .brand-name { display: block; }
+.brand-caption { display: block; }
+@media (max-width: 1100px) { .brand-caption { display: none; } }
+
+.library-head h1 { margin: 0; font-family: var(--serif); font-size: 30px; font-weight: 600; letter-spacing: -.3px; }
+.library-head p { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.upload-card { margin-top: 24px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.upload-card .dropzone { width: 100%; font: inherit; color: var(--ink); padding: 26px 20px; }
+.upload-card .dropzone:disabled { cursor: wait; opacity: .6; }
+.upload-progress { display: flex; align-items: center; gap: 12px; margin-top: 14px; color: var(--text); font-size: 13px; }
+.upload-progress span { flex: none; }
+.upload-progress progress { flex: 1; min-width: 0; height: 6px; accent-color: var(--accent); }
+
+.feedback, .notice { margin: 20px 0 0; padding: 12px 14px; border-radius: 14px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.feedback { border: 1px solid #f3d3d0; background: #fdf3f2; color: #c23b3b; }
+.feedback:focus { outline: none; }
+.notice { border: 1px solid #cfe6d8; background: var(--ok-soft); color: var(--ok); }
+
+.library-section .section-heading { margin: 36px 0 16px; }
+.library-section .result-count:empty { display: none; }
+.more-button { display: block; margin: 20px auto 0; }
+
+/* 卡片不做整张点击，也不随悬停位移（查看详情由卡片内的按钮打开）。 */
+.pack-card, .favorite-card { cursor: auto; animation: none; }
+.pack-card:hover, .favorite-card:hover { transform: none; }
+.pack-card .card-main, .favorite-card .card-main { padding-bottom: 18px; }
+.card-art { position: relative; margin: 8px 8px 0; border-radius: 14px; overflow: hidden; aspect-ratio: 3.4 / 1; background: linear-gradient(135deg, #efe9ff 0%, #f8f6ff 100%); }
+.card-art::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--line); pointer-events: none; }
+.cover-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--accent); }
+.cover-fallback svg { width: 28px; height: 28px; opacity: .8; }
+.card-topline { flex-wrap: wrap; }
+.card-title { white-space: normal; overflow-wrap: anywhere; font-size: 18px; }
+.approved.st-muted { background: var(--surface-2); color: var(--muted); }
+.reject-note { overflow-wrap: anywhere; }
+.reject-note span { min-width: 0; }
+.card-note { margin: 10px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.card-bottom .btn-outline { width: 100%; }
+.section-empty { grid-column: 1 / -1; padding: 28px 20px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: 13.5px; text-align: center; line-height: 1.7; }
+
+/* 链接与按钮共用 Hub 的胶囊按钮外观。 */
+a.btn-outline, a.btn-filled, a.btn-danger, .library-actions .btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.library-actions .btn-danger { transition: background .2s, border-color .2s; }
+.btn-outline, .btn-filled, .btn-danger { min-width: 0; max-width: 100%; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+.card-buttons { flex-wrap: wrap; }
+
+/* ---------- 题库包详情与提交记录 ---------- */
+.library-detail { margin-top: 28px; padding: 24px; scroll-margin-top: 84px; box-shadow: var(--shadow-md); }
+.library-detail .panel-title h2 { overflow-wrap: anywhere; min-width: 0; font-family: var(--serif); font-size: 20px; }
+.detail-note { margin: 6px 0 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.revision { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.revision-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.revision-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.revision-file { display: flex; align-items: center; gap: 12px; margin-top: 12px; min-width: 0; }
+.revision-file > div { min-width: 0; }
+.library-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+
+.import-form { margin-top: 16px; }
+.import-form .bank-list { max-height: 360px; overflow-y: auto; }
+.bank-option { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+.bank-option:last-child { border-bottom: 0; }
+.bank-option .bank-name { white-space: normal; overflow-wrap: anywhere; }
+.bank-toolbar { flex-wrap: wrap; position: sticky; top: 0; z-index: 2; }
+.import-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 14px; }
+.import-row .form-field { flex: 1 1 240px; margin: 0; }
+.import-row .btn-filled { height: 44px; padding: 0 24px; font-size: 14px; }
+.form-hint { margin: 8px 2px 0; font-size: 12px; color: var(--muted); }
+
+.form-field { display: grid; gap: 8px; margin-top: 16px; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.form-field input, .form-field select, .form-field textarea { width: 100%; min-width: 0; padding: 11px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 400; outline: 0; transition: border-color .2s, box-shadow .2s; }
+.form-field input { height: 44px; }
+.form-field select { height: 44px; padding-top: 0; padding-bottom: 0; }
+.form-field textarea { min-height: 110px; resize: vertical; line-height: 1.75; font-family: inherit; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.form-field input::placeholder { color: var(--faint); }
+
+.publish-form { margin-top: 16px; padding: 20px; border-radius: 16px; background: var(--surface-2); }
+.publish-form h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.publish-rights { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.publish-rights input { flex: none; margin-top: 5px; accent-color: var(--accent); }
+.publish-form .btn-filled { display: block; height: 44px; margin-top: 16px; padding: 0 24px; font-size: 14px; }
+
+.detail-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+
+.favorite-update { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: #fff8ec; color: #a35a00; font-size: 13px; line-height: 1.6; }
+.favorite-update .favorite-notes { margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.favorite-update button { display: block; margin-top: 6px; }
+
+@media (max-width: 640px) {
+  .library-main { padding: 24px 0 48px; }
+  .library-head h1 { font-size: 24px; }
+  .upload-card { padding: 16px; }
+  .library-detail { padding: 18px; }
+  .library-section .section-heading { margin-top: 28px; }
+  .header-inner { gap: 10px; }
+  .practice-btn { padding: 0 12px; }
+  .import-row { flex-direction: column; align-items: stretch; }
+  .import-row .form-field { flex: none; }
+  .library-actions a, .library-actions button { flex: 1 1 auto; }
+  .footer-inner { flex-direction: column; align-items: flex-start; }
+}

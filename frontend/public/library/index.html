@@ -3,27 +3,89 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f8f8fb">
   <title>我的题库 · QuizForge</title>
   <link rel="icon" href="/quizforge-icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/auth.css">
-  <link rel="stylesheet" href="/library/library.css">
+  <link rel="stylesheet" href="/hub.css">
+  <link rel="stylesheet" href="/library/mine.css">
   <script type="module" src="/library/library.js"></script>
 </head>
 <body>
+  <svg aria-hidden="true" width="0" height="0" class="icon-definitions">
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 8h16M4 16h16"/></symbol>
+    <symbol id="i-qbank" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-off" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8L12 3.5Z"/></symbol>
+  </svg>
+
   <header class="site-header">
-    <a class="brand" href="/"><img src="/quizforge-icon.svg" width="40" height="40" alt=""><span><strong>QuizForge</strong><span class="brand-caption">让学习更有条理</span></span></a>
-    <nav aria-label="我的题库导航"><a href="/practice/">练习空间</a><a href="/publish/">发布到广场</a></nav>
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="QuizForge 首页">
+        <span class="brand-mark"><svg class="icon" viewBox="0 0 32 32" aria-hidden="true"><circle cx="14.3" cy="13.6" r="9.5"/><path d="m20.9 20.9 7.2 7.2M10 13.3l3 3 5.6-6"/></svg></span>
+        <span><span class="brand-name">QuizForge</span><span class="brand-caption">我的题库 · LEARN TOGETHER</span></span>
+      </a>
+      <nav id="main-nav" class="main-nav" aria-label="我的题库导航">
+        <a class="nav-link" href="/plaza/">题库广场</a>
+        <a class="nav-link active" href="/library/" aria-current="page">我的题库</a>
+        <a class="nav-link" href="/download/">下载软件</a>
+        <a class="nav-link" href="/">账号中心</a>
+      </nav>
+      <div class="header-actions">
+        <a class="practice-btn" href="/practice/">练习空间</a>
+        <a class="share-btn" href="/publish/" aria-label="发布到广场" title="发布到广场"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span class="share-text">发布到广场</span></a>
+        <button id="menu-btn" class="mobile-menu-btn" type="button" aria-label="展开导航" aria-expanded="false" aria-controls="main-nav"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      </div>
+    </div>
   </header>
-  <main class="library-main">
-    <div class="library-heading"><div><h1>我的题库</h1><p class="description">上传原文件，审核通过后选择题库导入练习空间。</p></div><button id="upload" class="primary" type="button">上传私人题库包</button></div>
-    <input id="upload-file" type="file" accept=".qbank" hidden>
+
+  <main class="container library-main">
+    <header class="library-head">
+      <h1>我的题库</h1>
+      <p>上传原文件，审核通过后选择题库导入练习空间。</p>
+    </header>
+
+    <section class="upload-card" aria-label="上传题库包">
+      <button id="upload" class="dropzone" type="button" aria-describedby="upload-hint">
+        <span class="dz-icon"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg></span>
+        <b>上传私人题库包</b>
+        <small id="upload-hint">点击选择 .qbank 文件；原文件保存后显示待审核，无需等待校验</small>
+      </button>
+      <input id="upload-file" type="file" accept=".qbank" hidden>
+      <div id="upload-progress" class="upload-progress" role="status" hidden>
+        <span id="upload-progress-text">正在上传</span>
+        <progress id="upload-progress-bar" max="100" aria-label="上传进度"></progress>
+      </div>
+    </section>
+
     <p id="feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
     <p id="notice" class="notice" role="status" hidden></p>
-    <p id="upload-progress" role="status" hidden></p>
-    <h2>我上传与发布的题库</h2><section id="packages" aria-label="题库包列表"></section>
-    <button id="more" class="secondary" type="button" hidden>加载更多</button>
-    <section id="detail" class="library-detail" aria-label="题库包详情" hidden></section>
-  <h2>收藏</h2><section id="favorites" aria-label="收藏的题库"></section><button id="favorites-more" hidden>更多收藏</button></main>
-  <footer>QuizForge · 资源与练习进度各自保留</footer>
+
+    <div id="packages" aria-label="题库包列表">
+      <section class="library-section" aria-labelledby="public-title">
+        <div class="section-heading"><h2 id="public-title">公开题库</h2><span id="public-count" class="result-count"></span></div>
+        <div id="public-packs" class="library-grid"></div>
+      </section>
+      <section class="library-section" aria-labelledby="private-title">
+        <div class="section-heading"><h2 id="private-title">私人题库</h2><span id="private-count" class="result-count"></span></div>
+        <div id="private-packs" class="library-grid"></div>
+      </section>
+    </div>
+    <button id="more" class="btn-outline more-button" type="button" hidden>加载更多</button>
+
+    <section id="detail" class="panel library-detail" aria-label="题库包详情" hidden></section>
+
+    <section class="library-section" aria-labelledby="favorites-title">
+      <div class="section-heading"><h2 id="favorites-title">收藏</h2></div>
+      <div id="favorites" class="library-grid" aria-label="收藏的题库"></div>
+      <button id="favorites-more" class="btn-outline more-button" type="button" hidden>更多收藏</button>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span class="footer-name">QuizForge</span><span>资源与练习进度各自保留</span></div></footer>
 </body>
 </html>

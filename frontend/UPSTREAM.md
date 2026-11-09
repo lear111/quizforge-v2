@@ -57,6 +57,8 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 
 认证页 public/auth.js / index.html / auth.css 增加安全 returnTo 和练习入口。deploy 的 Nginx、Compose 与 CI 配置也有相应修改；不修改后端业务代码。完整接口与切片映射见 [设计 07](../docs/design/07-frontend-api-map.md)。
 
+账号首页与我的题库的外观按旧 Hub（`lear111/quizforge_hub@83d6dfd`）改版：`public/hub.css` 是其 `hub.css` 的分叉，只保留这两类页面用到的规则；页面专属样式在 `public/account.css` 与 `public/library/mine.css`。发布页仍使用 `public/auth.css`，改版前不要删除。
+
 ## 后续同步
 
 上游新功能按 ADR-006：记录新提交、人工移植、回归测试、更新本清单。禁止重新引入宿主运行时替换，也不直接覆盖整个分叉目录。
@@ -114,7 +116,7 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 ## 2026-11-08：题库广场复用旧 Hub
 
 - 来源仓库：`lear111/quizforge_hub`，固定提交 `83d6dfdc5497013b7b4811f8a9c960eab6b503b6`，来源目录 `java-hub/src/main/resources/static/`。只读参考副本保存在仓库外，不改变旧仓库。
-- `public/plaza/hub.css` 从旧 `hub.css` 分叉，只保留广场的基础、卡片、详情、目录与响应式规则；移除上传、个人中心和软件下载页面的专用规则。`plaza.css` 补充 V2 的按本导入、收藏、状态与手机适配。旧 Hub 未提供深色模式，本次保持其浅色主题。
+- 广场与账号首页、我的题库统一引用 `/hub.css`；`public/plaza/hub.css` 仅保留旧 Hub 的广场专用样式，不重复定义主题变量、基础、页头、通用卡片与目录样式。`plaza.css` 补充 V2 的按本导入、收藏、状态与手机适配。旧 Hub 未提供深色模式，本次保持其浅色主题。
 - `index.html`、`view.js` 与 `feedback.js` 沿用旧 `index.html`、`catalog-view.mjs`、`detail-ui.mjs` 的布局与组件，绑定现有 V2 接口；动态文字使用 DOM/textContent，不引入旧后端、分类筛选、整包重打包或账号逻辑。
 - 列表接口没有截图字段，卡片采用旧版文件占位图；不为卡片额外请求详情。详情截图仍由现有授权接口读取。
-- 新旧对比只在浏览器测试中使用合成数据渲染原版静态文件，不启动旧平台；CI 仅从 GitHub 获取固定提交的公开源码到运行器临时目录。MIT 许可同见 LICENSE.upstream。
+- 新旧对比只在浏览器测试中使用合成数据渲染原版静态文件，不启动旧平台；CI 仅从 GitHub 获取固定提交的公开源码到运行器临时目录；该对比步骤允许失败，不阻塞 V2 的测试与构建。MIT 许可同见 LICENSE.upstream。

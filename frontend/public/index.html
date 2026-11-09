@@ -4,25 +4,55 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f8f8fb">
   <title>登录 · QuizForge</title>
   <link rel="icon" href="/quizforge-icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/auth.css">
+  <link rel="stylesheet" href="/hub.css">
+  <link rel="stylesheet" href="/practice/shell/notifications.css">
+  <link rel="stylesheet" href="/account.css">
   <script type="module" src="/auth.js"></script>
 </head>
-<body>
+<body data-view="checking">
+  <svg aria-hidden="true" width="0" height="0" class="icon-definitions">
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-plaza" viewBox="0 0 24 24"><circle cx="10.9" cy="10.9" r="7.2"/><path d="m16.3 16.3 5.2 5.2"/></symbol>
+    <symbol id="i-qbank" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-practice" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.6 2.6L16 9"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/><path d="M12 9v4M12 16h.01"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M16 13.5h.01"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="12.5" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
+  </svg>
+
   <header class="site-header">
-    <a class="brand" href="/" aria-label="QuizForge 首页">
-      <img src="/quizforge-icon.svg" width="40" height="40" alt="">
-      <span><strong>QuizForge</strong><span class="brand-caption">让学习更有条理</span></span>
-    </a>
-    <span class="header-label">账号中心</span>
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="QuizForge 首页">
+        <span class="brand-mark"><svg class="icon" viewBox="0 0 32 32" aria-hidden="true"><circle cx="14.3" cy="13.6" r="9.5"/><path d="m20.9 20.9 7.2 7.2M10 13.3l3 3 5.6-6"/></svg></span>
+        <span><span class="brand-name">QuizForge</span><span class="brand-caption">账号中心 · LEARN TOGETHER</span></span>
+      </a>
+      <div class="header-actions">
+        <a class="small-link guest-only" href="/plaza/">题库广场</a>
+        <a class="small-link guest-only" href="/download/">下载软件</a>
+        <a class="practice-btn member-only" href="/practice/">练习空间</a>
+        <div id="notification-slot" class="qf-bell-slot member-only"></div>
+        <span class="user-chip member-only"><span class="user-link"><span id="header-avatar" class="mini-avatar" aria-hidden="true">Q</span><span id="header-name" class="header-name"></span></span></span>
+      </div>
+    </div>
   </header>
 
-  <main>
+  <main class="container account-main">
     <section class="account-card" aria-labelledby="page-title">
-      <div class="card-mark" aria-hidden="true">Q<span>✓</span></div>
-      <h1 id="page-title" tabindex="-1">欢迎回来</h1>
-      <p id="page-description" class="description">登录你的 QuizForge 账号。</p>
+      <div class="account-head">
+        <span id="account-avatar" class="pf-avatar member-only" aria-hidden="true">Q</span>
+        <div class="account-head-text">
+          <h1 id="page-title" tabindex="-1">欢迎回来</h1>
+          <p id="page-description" class="description guest-only">登录你的 QuizForge 账号。</p>
+          <p id="identity" class="identity member-only"></p>
+          <p id="unverified" class="signed-in-note member-only" hidden></p>
+        </div>
+      </div>
       <p id="feedback" class="feedback" role="alert" tabindex="-1" hidden></p>
       <p id="notice" class="notice" role="status" hidden></p>
 
@@ -33,7 +63,7 @@
       </div>
 
       <div id="forms-view" hidden>
-        <div id="tabs" class="tabs" role="tablist" aria-label="账号操作">
+        <div id="tabs" class="status-tabs auth-tabs" role="tablist" aria-label="账号操作">
           <button id="login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-panel">登录</button>
           <button id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-panel" tabindex="-1">注册</button>
         </div>
@@ -142,78 +172,111 @@
         </section>
       </div>
 
-      <section id="signed-in-view" class="signed-in" hidden>
-        <div class="success-mark" aria-hidden="true">✓</div>
-        <p id="identity" class="identity"></p>
-        <p id="unverified" class="signed-in-note" hidden></p>
-        <p class="signed-in-note">你可以随时退出当前账号。</p>
-        <section class="quota-section" aria-label="资源用量">
-          <div id="quota-cards" class="quota-grid"></div>
-          <p id="quota-status" class="quota-note" role="status"></p>
-          <button id="quota-refresh" class="text-button" type="button">刷新用量</button>
-        </section>
-        <section id="ai-section" class="ai-section" aria-labelledby="ai-title">
-          <h2 id="ai-title">AI 余额</h2>
-          <label><input id="ai-auto-grade" type="checkbox"> 提交后自动 AI 评分（按用量扣费）</label>
-          <p id="ai-settings-status" class="quota-note" role="status"></p>
-          <p class="ai-balance"><span id="ai-balance">—</span><span id="ai-overdrawn" class="ai-overdrawn" hidden>欠费</span></p>
-          <form id="redeem-form" class="redeem-form" novalidate>
-            <label for="redeem-code">兑换码</label>
-            <div class="code-row">
-              <input id="redeem-code" name="code" type="text" maxlength="64" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="AI-XXXX-XXXX-XXXX-XXXX">
-              <button class="secondary code-button" type="submit">兑换</button>
-            </div>
-          </form>
-          <p id="ai-status" class="quota-note" role="status"></p>
-          <details id="ai-ledger-section" class="ai-ledger">
-            <summary>余额流水</summary>
-            <ol id="ai-ledger" class="ai-ledger-list"></ol>
-            <button id="ai-ledger-more" class="text-button" type="button" hidden>加载更多</button>
-          </details>
-        </section>
-        <section id="device-section" class="ai-section" aria-labelledby="device-title">
-          <h2 id="device-title">已连接设备</h2>
-          <ul id="device-list" class="device-list"></ul>
-          <p id="device-empty" class="quota-note" hidden>暂无已连接设备。在 QuizForge 客户端的 AI 设置中登录后会显示在这里。</p>
-          <p id="device-status" class="quota-note" role="status"></p>
-        </section>
-        <details id="contact-section" class="contact-section" hidden>
-          <summary id="contact-summary">绑定联系方式</summary>
-          <form id="contact-form" novalidate>
-            <fieldset>
-              <div class="field">
-                <label for="contact-identifier">要绑定的邮箱或手机号</label>
-                <input id="contact-identifier" name="identifier" type="text" inputmode="email" autocomplete="off" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
+      <div id="signed-in-view" class="signed-in" hidden>
+        <nav class="entry-grid" aria-label="功能入口">
+          <a class="action primary" href="/library/" aria-label="我的题库" aria-describedby="entry-library-note">
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-qbank"/></svg></span>
+            <span class="entry-text"><b>我的题库</b><small id="entry-library-note">上传、审核状态与导入练习</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+          <a class="action" href="/practice/" aria-label="进入练习空间" aria-describedby="entry-practice-note">
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-practice"/></svg></span>
+            <span class="entry-text"><b>进入练习空间</b><small id="entry-practice-note">继续做题与查看历史</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+          <a class="action" href="/plaza/" aria-label="题库广场" aria-describedby="entry-plaza-note">
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-plaza"/></svg></span>
+            <span class="entry-text"><b>题库广场</b><small id="entry-plaza-note">发现大家分享的题库</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+          <a class="action" href="/publish/" aria-label="发布题库 / 我的发布" aria-describedby="entry-publish-note">
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg></span>
+            <span class="entry-text"><b>发布题库 / 我的发布</b><small id="entry-publish-note">分享题库并管理已发布内容</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+          <a class="action" href="/download/" aria-label="下载软件" aria-describedby="entry-download-note">
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></span>
+            <span class="entry-text"><b>下载软件</b><small id="entry-download-note">电脑与 Android 客户端</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+          <a id="admin-link" class="action" href="/admin/" aria-label="管理后台" aria-describedby="entry-admin-note" hidden>
+            <span class="a-icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span>
+            <span class="entry-text"><b>管理后台</b><small id="entry-admin-note">审核、用户与站点设置</small></span>
+            <svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg>
+          </a>
+        </nav>
+
+        <div class="pf-layout">
+          <div class="pf-main">
+            <section class="panel quota-section" aria-labelledby="quota-title">
+              <div class="panel-title">
+                <h2 id="quota-title">存储用量</h2>
+                <button id="quota-refresh" class="text-btn" type="button">刷新用量</button>
               </div>
-              <div class="field">
-                <label for="contact-password">当前密码</label>
-                <input id="contact-password" name="password" type="password" autocomplete="current-password" placeholder="请输入当前密码">
-              </div>
-              <div class="field" data-requires="always-captcha">
-                <span class="label">人机验证</span>
-                <div class="captcha" data-captcha></div>
-              </div>
-              <div class="field">
-                <label for="contact-code">验证码</label>
+              <div id="quota-cards" class="quota-grid"></div>
+              <p id="quota-status" class="quota-note" role="status"></p>
+            </section>
+            <section id="device-section" class="panel" aria-labelledby="device-title">
+              <div class="panel-title"><h2 id="device-title">已连接设备</h2></div>
+              <ul id="device-list" class="device-list"></ul>
+              <p id="device-empty" class="quota-note" hidden>暂无已连接设备。在 QuizForge 客户端的 AI 设置中登录后会显示在这里。</p>
+              <p id="device-status" class="quota-note" role="status"></p>
+            </section>
+            <details id="contact-section" class="panel contact-section" hidden>
+              <summary id="contact-summary">绑定联系方式</summary>
+              <form id="contact-form" novalidate>
+                <fieldset>
+                  <div class="field">
+                    <label for="contact-identifier">要绑定的邮箱或手机号</label>
+                    <input id="contact-identifier" name="identifier" type="text" inputmode="email" autocomplete="off" placeholder="邮箱或中国大陆手机号" autocapitalize="none" spellcheck="false">
+                  </div>
+                  <div class="field">
+                    <label for="contact-password">当前密码</label>
+                    <input id="contact-password" name="password" type="password" autocomplete="current-password" placeholder="请输入当前密码">
+                  </div>
+                  <div class="field" data-requires="always-captcha">
+                    <span class="label">人机验证</span>
+                    <div class="captcha" data-captcha></div>
+                  </div>
+                  <div class="field">
+                    <label for="contact-code">验证码</label>
+                    <div class="code-row">
+                      <input id="contact-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
+                      <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                    </div>
+                  </div>
+                  <button class="primary" type="submit">确认绑定</button>
+                </fieldset>
+              </form>
+            </details>
+          </div>
+          <aside class="pf-side">
+            <section id="ai-section" class="panel ai-section" aria-labelledby="ai-title">
+              <h2 id="ai-title" class="balance-label"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg>AI 余额</h2>
+              <p class="balance-num"><span id="ai-balance">—</span><span id="ai-overdrawn" class="ai-overdrawn" hidden>欠费</span></p>
+              <label class="auto-grade"><input id="ai-auto-grade" type="checkbox"> 提交后自动 AI 评分（按用量扣费）</label>
+              <p id="ai-settings-status" class="quota-note" role="status"></p>
+              <form id="redeem-form" class="redeem-form" novalidate>
+                <label for="redeem-code">兑换码</label>
                 <div class="code-row">
-                  <input id="contact-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字">
-                  <button class="secondary code-button" type="button" data-send-code>获取验证码</button>
+                  <input id="redeem-code" name="code" type="text" maxlength="64" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="AI-XXXX-XXXX-XXXX-XXXX">
+                  <button class="secondary code-button" type="submit">兑换</button>
                 </div>
-              </div>
-              <button class="primary" type="submit">确认绑定</button>
-            </fieldset>
-          </form>
-        </details>
-        <a href="/plaza/" class="secondary">题库广场</a>
-        <a href="/library/" class="primary">我的题库</a>
-        <a href="/practice/" class="secondary admin-link">进入练习空间</a>
-        <a href="/publish/" class="secondary admin-link">发布题库 / 我的发布</a>
-        <a id="admin-link" href="/admin/" class="secondary admin-link" hidden>管理后台</a>
-          <button id="logout" class="secondary" type="button">退出登录</button>
-      </section>
+              </form>
+              <p id="ai-status" class="quota-note" role="status"></p>
+              <details id="ai-ledger-section" class="ai-ledger">
+                <summary>余额流水</summary>
+                <ol id="ai-ledger" class="ai-ledger-list"></ol>
+                <button id="ai-ledger-more" class="text-btn" type="button" hidden>加载更多</button>
+              </details>
+            </section>
+            <button id="logout" class="logout-btn" type="button">退出登录</button>
+          </aside>
+        </div>
+      </div>
       <noscript><p class="feedback">请启用 JavaScript 后使用账号登录。</p></noscript>
     </section>
   </main>
-  <footer>QuizForge · 在线学习，从这里开始</footer>
+  <footer class="site-footer"><div class="container footer-inner"><span class="footer-name">QuizForge</span><span>在线学习，从这里开始</span></div></footer>
 </body>
 </html>

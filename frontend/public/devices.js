@@ -12,15 +12,27 @@ export function bindDevices(request) {
   const status = byId('device-status');
   let generation = 0;
 
+  function deviceIcon(client) {
+    const holder = document.createElement('span'); holder.className = 'dev-icon';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon'); svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', client === 'android' ? '#i-phone' : '#i-monitor');
+    svg.append(use); holder.append(svg);
+    return holder;
+  }
+
   function row(device) {
-    const item = document.createElement('li');
+    const item = document.createElement('li'); item.className = 'device';
     const name = document.createElement('input');
-    name.type = 'text'; name.maxLength = 40; name.value = device.name; name.setAttribute('aria-label', '设备名称');
+    name.type = 'text'; name.className = 'dev-name'; name.maxLength = 40; name.value = device.name; name.setAttribute('aria-label', '设备名称');
     const caption = document.createElement('small'); caption.textContent = deviceCaption(device);
+    const info = document.createElement('div'); info.className = 'dev-info'; info.append(name, caption);
     const save = document.createElement('button');
-    save.type = 'button'; save.className = 'text-button'; save.textContent = '保存名称';
+    save.type = 'button'; save.className = 'btn-outline'; save.textContent = '保存名称';
     const revoke = document.createElement('button');
-    revoke.type = 'button'; revoke.className = 'text-button'; revoke.textContent = '撤销';
+    revoke.type = 'button'; revoke.className = 'btn-danger'; revoke.textContent = '撤销';
+    const buttons = document.createElement('div'); buttons.className = 'device-actions'; buttons.append(save, revoke);
     const act = async (button, action, done) => {
       button.disabled = true; status.textContent = '';
       try { await action(); await refresh(); status.textContent = done; }
@@ -33,7 +45,7 @@ export function bindDevices(request) {
       if (!confirm(`确定撤销“${device.name}”的连接吗？这台设备需要重新登录才能继续使用 AI 额度。`)) return;
       void act(revoke, () => request(`/api/connect/devices/${encodeURIComponent(device.id)}`, 'DELETE'), '已撤销。');
     });
-    item.append(name, caption, save, revoke);
+    item.append(deviceIcon(device.client), info, buttons);
     return item;
   }
 
