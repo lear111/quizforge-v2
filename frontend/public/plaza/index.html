@@ -1,5 +1,53 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>题库广场 · QuizForge</title><link rel="stylesheet" href="/auth.css"><link rel="stylesheet" href="/library/library.css"><link rel="stylesheet" href="./plaza.css"><script type="module" src="./plaza.js"></script></head>
-<body><header class="site-header"><a class="brand" href="/">QuizForge</a><nav><a href="/library/">我的题库</a><a href="/practice/">练习空间</a></nav></header>
-<main class="library-main"><h1>题库广场</h1><form id="search"><label>搜索名称、简介或标签<input name="q" maxlength="200"></label><label>排序<select name="sort"><option value="latest">最新</option><option value="downloads">下载最多</option></select></label><button type="submit">搜索</button></form>
-<p id="feedback" role="alert"></p><section id="packs" aria-label="广场题库"></section><button id="more" hidden>加载更多</button><section id="detail" hidden></section></main></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8f8fb"><title>题库广场 · QuizForge</title>
+  <link rel="icon" href="/quizforge-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/hub.css">
+  <link rel="stylesheet" href="/plaza/hub.css"><link rel="stylesheet" href="/plaza/plaza.css">
+  <script type="module" src="/plaza/plaza.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到内容</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="QuizForge 首页">
+        <img class="brand-mark" src="/quizforge-icon.svg" width="40" height="40" alt="">
+        <span><span class="brand-name">QuizForge</span><span class="brand-caption">题库广场 · LEARN TOGETHER</span></span>
+      </a>
+      <nav class="main-nav" id="main-nav" aria-label="主导航">
+        <a class="nav-link active" href="/plaza/" aria-current="page">发现题库</a>
+        <a class="nav-link" href="/library/">我的题库</a><a class="nav-link" href="/download/">下载软件</a>
+        <a class="nav-link nav-mobile-only" href="/">用户中心</a>
+      </nav>
+      <div class="header-actions">
+        <a class="practice-btn" href="/practice/">练习空间</a>
+        <a class="share-btn" href="/publish/" aria-label="分享题库"><span aria-hidden="true">＋</span><span class="share-text">分享题库</span></a>
+        <a class="user-chip user-link" href="/">用户中心</a>
+        <button class="mobile-menu-btn" id="menu" type="button" aria-label="展开导航" aria-expanded="false" aria-controls="main-nav">☰</button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero container" id="hero" aria-label="搜索题库">
+      <h1>发现题库</h1>
+      <form class="search-panel" id="search" role="search">
+        <svg class="icon search-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0"/></svg>
+        <input class="search-input" name="q" type="search" maxlength="200" autocomplete="off" placeholder="搜索题库名称、简介或标签" aria-label="搜索题库">
+        <span class="kbd" aria-hidden="true">/</span><button class="search-btn" type="submit">搜索</button>
+      </form>
+    </section>
+    <div class="container"><p id="feedback" role="alert"></p></div>
+    <section class="library container" id="library" aria-label="广场题库">
+      <div class="section-heading"><h2>公开题库</h2><span class="result-count" id="result-count" role="status">正在读取题库…</span></div>
+      <div class="filters-row"><span class="library-hint">发现好题库，一起学习</span><label class="sort-wrap">排序<span class="select-shell"><select class="sort-select" name="sort" form="search" aria-label="题库排序"><option value="latest">最新</option><option value="downloads">下载最多</option></select></span></label></div>
+      <div class="library-grid" id="packs" aria-live="polite"></div>
+      <div class="load-more"><button class="btn-outline" id="more" type="button" hidden>加载更多</button></div>
+    </section>
+    <section class="container detail-view" id="detail" aria-label="题库详情" hidden></section>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span class="footer-name">QuizForge</span><span>分享知识，专注练习</span></div></footer>
+  <dialog id="lightbox" class="screenshot-dialog" aria-label="题库截图"><button type="button" class="btn-outline" autofocus>关闭大图</button><img alt=""></dialog>
+</body>
+</html>

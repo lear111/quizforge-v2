@@ -112,3 +112,11 @@ Dockerfile 的 Node 22 构建阶段生成产物，Nginx 阶段只复制 public/�
 - `practice/ai/ai-client.js` 保留旧 QF.ai 路径与任务视图，宿主显示排队、采用、重试、余额不足及花费；已采用任务刷新本题，不在浏览器准备或发送评分材料。
 - 账号页增加默认关闭、服务器持久化的自动 AI 评分设置。拓展源码、SDK 和答题区组件保持不变。
 - 本机 / CI 假模型只在独立 Compose 的 app 回环地址监听；桌面与手机验收使用合成题库与假 Key。
+
+## 2026-11-08：题库广场复用旧 Hub
+
+- 来源仓库：`lear111/quizforge_hub`，固定提交 `83d6dfdc5497013b7b4811f8a9c960eab6b503b6`，来源目录 `java-hub/src/main/resources/static/`。只读参考副本保存在仓库外，不改变旧仓库。
+- 广场与账号首页、我的题库统一引用 `/hub.css`；`public/plaza/hub.css` 仅保留旧 Hub 的广场专用样式，不重复定义主题变量、基础、页头、通用卡片与目录样式。`plaza.css` 补充 V2 的按本导入、收藏、状态与手机适配。旧 Hub 未提供深色模式，本次保持其浅色主题。
+- `index.html`、`view.js` 与 `feedback.js` 沿用旧 `index.html`、`catalog-view.mjs`、`detail-ui.mjs` 的布局与组件，绑定现有 V2 接口；动态文字使用 DOM/textContent，不引入旧后端、分类筛选、整包重打包或账号逻辑。
+- 列表接口没有截图字段，卡片采用旧版文件占位图；不为卡片额外请求详情。详情截图仍由现有授权接口读取。
+- 新旧对比只在浏览器测试中使用合成数据渲染原版静态文件，不启动旧平台；CI 仅从 GitHub 获取固定提交的公开源码到运行器临时目录；该对比步骤允许失败，不阻塞 V2 的测试与构建。MIT 许可同见 LICENSE.upstream。
